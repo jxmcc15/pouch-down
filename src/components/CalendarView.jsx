@@ -2,9 +2,12 @@ import { motion } from 'framer-motion';
 import { Star } from 'lucide-react';
 import { useApp } from '../state.jsx';
 import { statusForDay, pouchesForDay, dateForDayNumber, todayKey } from '../store.js';
-import { capForDay, TOTAL_DAYS } from '../plan.js';
+import { capForDay, TOTAL_DAYS, START_DATE, QUIT_DATE } from '../plan.js';
 
 const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+const fmtLong = (iso) =>
+  new Date(`${iso}T12:00:00`).toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
 
 export default function CalendarView() {
   const { state } = useApp();
@@ -23,9 +26,9 @@ export default function CalendarView() {
 
   return (
     <div>
-      <h2 style={{ fontSize: 20, margin: '4px 0 2px' }}>The 30 days</h2>
+      <h2 style={{ fontSize: 20, margin: '4px 0 2px' }}>The {TOTAL_DAYS} days</h2>
       <p className="small muted" style={{ margin: '0 0 16px' }}>
-        July 8 → August 6 · don't break the chain
+        {fmtLong(START_DATE)} → {fmtLong(QUIT_DATE)} · don't break the chain
       </p>
 
       <div className="cal-grid" style={{ marginBottom: 8 }}>

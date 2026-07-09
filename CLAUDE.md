@@ -1,7 +1,8 @@
 # Pouch Down — Project Context
 
-James's 30-day nicotine pouch cessation tracker. Built 2026-07-07; the taper
-runs July 8 → August 6, 2026 (quit day). This app is load-bearing for a real
+James's 60-day nicotine pouch cessation tracker. Built 2026-07-07; extended
+from 30 to 60 days on 2026-07-08. The taper runs July 8 → September 5, 2026
+(quit day). This app is load-bearing for a real
 health goal — treat changes with care.
 
 ## What it is
@@ -37,7 +38,7 @@ status colors. All motion is Framer springs; `MotionConfig reducedMotion="user"`
 
 ## Related
 
-- Vault plan note: `/Users/jxm/jxm-vault/Topics/Nicotine Cessation — 30-Day Plan.md`
+- Vault plan note: `/Users/jxm/jxm-vault/Topics/Nicotine Cessation — 60-Day Plan.md`
 - Todoist project "Pouch Down" holds the reminder scaffold (meal check-ins,
   stage flips, shopping deadlines).
 - v2 idea (agreed with James): native SwiftUI app via Xcode 26.3 agentic

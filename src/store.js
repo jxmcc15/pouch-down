@@ -14,7 +14,7 @@ const DAY_CUTOFF_HOURS = 4;
 export const DEFAULT_SETTINGS = {
   mealTimes: { breakfast: '08:00', lunch: '12:30', dinner: '18:30' },
   costPerTin: 5,
-  pouchesPerTin: 15,
+  pouchesPerTin: 20,
   apiKey: '',
   wakeTime: '07:00',
   sleepTime: '23:00',
@@ -74,7 +74,7 @@ export function todayKey() {
   return dayKeyFor(new Date().toISOString());
 }
 
-// Day number within the plan: 1..30. 0 or negative = pre-plan, >30 = post-quit.
+// Day number within the plan: 1..TOTAL_DAYS. 0 or negative = pre-plan, beyond = post-quit.
 export function dayNumberFor(dateStr) {
   const start = new Date(`${START_DATE}T12:00:00`);
   const d = new Date(`${dateStr}T12:00:00`);
@@ -207,7 +207,7 @@ export function markdownSummary(state, days = 7) {
   const today = todayKey();
   const endN = dayNumberFor(today);
   const lines = [
-    `## Pouch Down — log through ${today} (day ${Math.max(endN, 0)}/30)`,
+    `## Pouch Down — log through ${today} (day ${Math.max(endN, 0)}/${TOTAL_DAYS})`,
     '',
     '| Day | Date | Cap | Used | Resisted | mg | Status |',
     '|---|---|---|---|---|---|---|',

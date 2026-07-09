@@ -13,7 +13,7 @@ export default defineConfig({
       manifest: {
         name: 'Pouch Down',
         short_name: 'Pouch Down',
-        description: '30-day nicotine pouch taper — July 8 to August 6',
+        description: '60-day nicotine pouch taper — July 8 to September 5',
         theme_color: '#020203',
         background_color: '#020203',
         display: 'standalone',

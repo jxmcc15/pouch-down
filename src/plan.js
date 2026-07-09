@@ -1,11 +1,13 @@
-// The 30-day taper plan — single source of truth.
-// Hybrid method: cut count first (weeks 1-2), then strength (weeks 3-4).
+// The 60-day taper plan — single source of truth.
+// Hybrid method: cut count first (days 1-20), then strength (days 21-60).
 // Slots are meal-anchored: James uses pouches all day but always after meals,
 // so meal slots are protected and idle "floater" slots get cut first.
+// Extended 2026-07-08 from the original 30-day plan: stages 1-5 doubled
+// exactly, the push-back stage absorbs the remainder so quit lands on day 60.
 
 export const START_DATE = '2026-07-08'; // Day 1 (Wednesday)
-export const QUIT_DATE = '2026-08-06'; // Day 30 — zero
-export const TOTAL_DAYS = 30;
+export const QUIT_DATE = '2026-09-05'; // Day 60 — zero
+export const TOTAL_DAYS = 60;
 
 export const BASELINE = {
   pouchesPerDay: 9, // his 8-10/day average before the plan
@@ -29,7 +31,7 @@ export const STAGES = [
   {
     id: 1,
     name: 'Baseline hold',
-    days: [1, 5],
+    days: [1, 10],
     pouchesPerDay: 8,
     mg: 9,
     tagline: 'Lock the ceiling at 8. No new habits, just a hard cap.',
@@ -47,7 +49,7 @@ export const STAGES = [
   {
     id: 2,
     name: 'First cut',
-    days: [6, 10],
+    days: [11, 20],
     pouchesPerDay: 6,
     mg: 9,
     tagline: 'Drop the two weakest floaters. Meals stay protected.',
@@ -63,11 +65,11 @@ export const STAGES = [
   {
     id: 3,
     name: 'Strength drop I',
-    days: [11, 15],
+    days: [21, 30],
     pouchesPerDay: 6,
     mg: 6,
     tagline: 'Same rhythm, 6mg tins. Your routine won’t even notice.',
-    shopBefore: { date: '2026-07-18', what: '~4 tins of 6mg' },
+    shopBefore: { date: '2026-07-28', what: '~5 tins of 6mg' },
     slots: [
       MEAL_SLOTS.breakfast,
       slot('mid-morning', 'Mid-morning', 'fixed', '10:30'),
@@ -80,7 +82,7 @@ export const STAGES = [
   {
     id: 4,
     name: 'Meals only (+1)',
-    days: [16, 20],
+    days: [31, 40],
     pouchesPerDay: 4,
     mg: 6,
     tagline: 'Down to after-meal pouches plus one evening floater.',
@@ -94,11 +96,11 @@ export const STAGES = [
   {
     id: 5,
     name: 'Strength drop II',
-    days: [21, 25],
+    days: [41, 50],
     pouchesPerDay: 4,
     mg: 3,
     tagline: 'Same four slots, 3mg. The finish line is visible.',
-    shopBefore: { date: '2026-07-28', what: '~2 tins of 3mg' },
+    shopBefore: { date: '2026-08-17', what: '~3 tins of 3mg' },
     slots: [
       MEAL_SLOTS.breakfast,
       MEAL_SLOTS.lunch,
@@ -109,7 +111,7 @@ export const STAGES = [
   {
     id: 6,
     name: 'Push the first back',
-    days: [26, 28],
+    days: [51, 58],
     pouchesPerDay: 2,
     mg: 3,
     tagline: 'No pouch until after lunch — delaying the first of the day breaks the wake-up wiring.',
@@ -118,7 +120,7 @@ export const STAGES = [
   {
     id: 7,
     name: 'Last one',
-    days: [29, 29],
+    days: [59, 59],
     pouchesPerDay: 1,
     mg: 3,
     tagline: 'One pouch, after dinner. Say goodbye properly.',
@@ -127,7 +129,7 @@ export const STAGES = [
   {
     id: 8,
     name: 'Quit day',
-    days: [30, 30],
+    days: [60, 60],
     pouchesPerDay: 0,
     mg: 0,
     tagline: 'Zero. From here the app counts up, not down.',

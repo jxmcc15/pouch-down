@@ -4,7 +4,7 @@ import {
   dateForDayNumber, mgForDay, todayKey, dayNumberFor, moneySaved,
   pouchesForDay, plannedMgForDay,
 } from '../store.js';
-import { TOTAL_DAYS, BASELINE } from '../plan.js';
+import { TOTAL_DAYS, BASELINE, START_DATE, QUIT_DATE } from '../plan.js';
 import { TRIGGERS } from './SOSOverlay.jsx';
 import AnimatedNumber from './AnimatedNumber.jsx';
 
@@ -15,6 +15,9 @@ const PAD = { l: 30, r: 10, t: 14, b: 22 };
 function x(day) {
   return PAD.l + ((day - 1) / (TOTAL_DAYS - 1)) * (W - PAD.l - PAD.r);
 }
+
+const fmtShort = (iso) =>
+  new Date(`${iso}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 function y(mg, maxMg) {
   return PAD.t + (1 - mg / maxMg) * (H - PAD.t - PAD.b);
 }
@@ -78,8 +81,8 @@ function MgChart({ state }) {
             style={{ filter: 'drop-shadow(0 0 6px var(--accent-glow))' }}
           />
         )}
-        <text x={x(1)} y={H - 6} fontSize="9" fill="var(--fg-faint)">Jul 8</text>
-        <text x={x(TOTAL_DAYS)} y={H - 6} fontSize="9" fill="var(--fg-faint)" textAnchor="end">Aug 6</text>
+        <text x={x(1)} y={H - 6} fontSize="9" fill="var(--fg-faint)">{fmtShort(START_DATE)}</text>
+        <text x={x(TOTAL_DAYS)} y={H - 6} fontSize="9" fill="var(--fg-faint)" textAnchor="end">{fmtShort(QUIT_DATE)}</text>
       </svg>
       <div className="row small muted" style={{ gap: 16, justifyContent: 'center' }}>
         <span className="row" style={{ gap: 6 }}>
@@ -190,7 +193,7 @@ export default function StatsView() {
           </div>
           <div className="tiny faint">saved so far</div>
           <div className="small muted num" style={{ marginTop: 4 }}>
-            ≈ ${projected.toFixed(0)} by Aug 6
+            ≈ ${projected.toFixed(0)} by {fmtShort(QUIT_DATE)}
           </div>
         </div>
         <div className="card" style={{ flex: 1, textAlign: 'center' }}>

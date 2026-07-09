@@ -3,19 +3,34 @@ import { motion } from 'framer-motion';
 import { Eye, EyeOff, ClipboardCopy, Check } from 'lucide-react';
 import { useApp } from '../state.jsx';
 import { markdownSummary } from '../store.js';
+import { TOTAL_DAYS } from '../plan.js';
 
 export default function SettingsSheet({ onClose }) {
   const { state, api } = useApp();
   const s = state.settings;
   const [showKey, setShowKey] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Numeric inputs hold a draft while typing so the field can sit empty
+  // mid-edit; only valid numbers commit, and blur reverts to the last good one.
+  const [drafts, setDrafts] = useState({});
+
+  const numberField = (key, min) => ({
+    value: drafts[key] ?? s[key],
+    onChange: (e) => {
+      const raw = e.target.value;
+      setDrafts((d) => ({ ...d, [key]: raw }));
+      const num = Number(raw);
+      if (raw !== '' && Number.isFinite(num) && num >= min) api.updateSettings({ [key]: num });
+    },
+    onBlur: () => setDrafts(({ [key]: _, ...rest }) => rest),
+  });
 
   const setMeal = (meal, value) =>
     api.updateSettings({ mealTimes: { ...s.mealTimes, [meal]: value } });
 
   const copyExport = async () => {
     try {
-      await navigator.clipboard.writeText(markdownSummary(state, 30));
+      await navigator.clipboard.writeText(markdownSummary(state, TOTAL_DAYS));
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
     } catch {
@@ -73,8 +88,7 @@ export default function SettingsSheet({ onClose }) {
               inputMode="decimal"
               min="0"
               step="0.25"
-              value={s.costPerTin}
-              onChange={(e) => api.updateSettings({ costPerTin: Number(e.target.value) || 0 })}
+              {...numberField('costPerTin', 0)}
             />
           </div>
           <div style={{ flex: 1 }}>
@@ -84,8 +98,7 @@ export default function SettingsSheet({ onClose }) {
               type="number"
               inputMode="numeric"
               min="1"
-              value={s.pouchesPerTin}
-              onChange={(e) => api.updateSettings({ pouchesPerTin: Number(e.target.value) || 15 })}
+              {...numberField('pouchesPerTin', 1)}
             />
           </div>
         </div>

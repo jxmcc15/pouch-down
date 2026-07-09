@@ -1,6 +1,6 @@
 # Pouch Down
 
-A 30-day nicotine pouch taper tracker (July 8 – August 6, 2026). Personal
+A 60-day nicotine pouch taper tracker (July 8 – September 5, 2026). Personal
 PWA — installs to an iPhone home screen, works offline, all data stays
 on-device in localStorage.
 

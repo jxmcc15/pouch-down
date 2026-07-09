@@ -2,7 +2,7 @@
 // this device's localStorage (settings). Never ships in the repo.
 
 import { markdownSummary, todayKey, dayNumberFor, pouchesForDay, resistedForDay, currentStreak } from './store.js';
-import { stageForDay, capForDay, TOTAL_DAYS, QUIT_DATE } from './plan.js';
+import { stageForDay, capForDay, TOTAL_DAYS, QUIT_DATE, START_DATE } from './plan.js';
 
 const MODEL = 'claude-haiku-4-5-20251001';
 
@@ -10,7 +10,7 @@ function systemPrompt(state) {
   const today = todayKey();
   const n = dayNumberFor(today);
   const stage = stageForDay(Math.min(Math.max(n, 1), TOTAL_DAYS));
-  return `You are the in-app coach for "Pouch Down", James's 30-day nicotine pouch taper (July 8 – Aug 6, 2026, quit date ${QUIT_DATE}).
+  return `You are the in-app coach for "Pouch Down", James's ${TOTAL_DAYS}-day nicotine pouch taper (${START_DATE} to ${QUIT_DATE}, quit date ${QUIT_DATE}).
 
 Method: hybrid taper — count first, then strength. Slots are meal-anchored (his habit: always after meals). Slip policy: "absorb and continue" — an over day breaks the streak but NEVER changes tomorrow's cap or moves the quit date. The 10-minute rule: wait 10 minutes before deciding on a craving.
 
