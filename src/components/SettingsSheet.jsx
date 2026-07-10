@@ -5,11 +5,14 @@ import { useApp } from '../state.jsx';
 import { markdownSummary } from '../store.js';
 import { TOTAL_DAYS } from '../plan.js';
 
+const SHORTCUT_URL = 'https://jxmcc15.github.io/pouch-down/?checkin=hours:[Duration]';
+
 export default function SettingsSheet({ onClose }) {
   const { state, api } = useApp();
   const s = state.settings;
   const [showKey, setShowKey] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
   // Numeric inputs hold a draft while typing so the field can sit empty
   // mid-edit; only valid numbers commit, and blur reverts to the last good one.
   const [drafts, setDrafts] = useState({});
@@ -27,6 +30,16 @@ export default function SettingsSheet({ onClose }) {
 
   const setMeal = (meal, value) =>
     api.updateSettings({ mealTimes: { ...s.mealTimes, [meal]: value } });
+
+  const copyShortcutUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(SHORTCUT_URL);
+      setCopiedUrl(true);
+      setTimeout(() => setCopiedUrl(false), 2500);
+    } catch {
+      // clipboard can fail outside secure contexts; the button just won't confirm
+    }
+  };
 
   const copyExport = async () => {
     try {
@@ -126,6 +139,49 @@ export default function SettingsSheet({ onClose }) {
         <p className="small faint" style={{ margin: '6px 0 0' }}>
           Stored only in this phone's browser storage. Get one at
           console.anthropic.com → API keys.
+        </p>
+
+        <label>Apple Watch / Health import</label>
+        <p className="small muted" style={{ margin: 0 }}>
+          iOS doesn't let web apps read HealthKit — but a Shortcut can send
+          last night's sleep here every morning:
+        </p>
+        <ol className="small muted" style={{ margin: '8px 0 0', paddingLeft: 20, lineHeight: 1.6 }}>
+          <li>Shortcuts app → Automation → New → Time of Day, daily 8:30 AM</li>
+          <li>Add action: <em>Find Health Samples</em> where Type is Sleep</li>
+          <li>Add action: <em>Calculate Statistics</em> → Duration in hours</li>
+          <li>Add action: <em>Open URL</em> with:</li>
+        </ol>
+        <div
+          className="small num"
+          style={{
+            marginTop: 8,
+            padding: '8px 10px',
+            borderRadius: 10,
+            border: '1px solid var(--border)',
+            background: 'rgba(255,255,255,0.04)',
+            wordBreak: 'break-all',
+            color: 'var(--fg-muted)',
+          }}
+        >
+          {SHORTCUT_URL}
+        </div>
+        <div className="row" style={{ gap: 8, marginTop: 8 }}>
+          <button className="btn btn-ghost small" style={{ flex: 1 }} onClick={copyShortcutUrl}>
+            {copiedUrl ? <Check size={15} color="var(--green)" /> : <ClipboardCopy size={15} />}
+            {copiedUrl ? 'Copied' : 'Copy URL template'}
+          </button>
+          <a
+            className="btn btn-ghost small"
+            style={{ flex: 1, textDecoration: 'none' }}
+            href="?checkin=hours:7.4,workout:1,quality:4"
+          >
+            Simulate import
+          </a>
+        </div>
+        <p className="small faint" style={{ margin: '6px 0 0' }}>
+          Replace [Duration] with the Shortcut's duration variable. Simulate
+          runs a fake 7.4h import locally so you can see it land.
         </p>
 
         <label>Export</label>

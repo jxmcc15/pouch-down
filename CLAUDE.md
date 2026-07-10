@@ -28,7 +28,18 @@ status colors. All motion is Framer springs; `MotionConfig reducedMotion="user"`
   and shows amber, but never changes tomorrow's cap or the quit date. Don't
   add guilt mechanics.
 - **Never rewrite logged events** — history is the product. Undo of the
-  just-logged event is the only allowed deletion.
+  just-logged event is the only allowed deletion, and `api.tagEvent` is the
+  only allowed mutation: it may set the mood trigger on the *most recent*
+  pouch event within 15 seconds of logging — "completing" the log, same
+  spirit as undo. Nothing else, ever.
+- **Event types**: `pouch` (carries a `ctx` snapshot of slot/cap/nth facts
+  stamped at log time; verdicts always derive at read time via
+  `classifyPouch`), `resisted`, and `checkin` (morning sleep/workout;
+  append-only, latest check-in per day wins at read time; `source:
+  'manual' | 'shortcut'`, shortcut arriving via the `?checkin=` deep link
+  parsed in App.jsx).
+- **NEVER push without James**: pushing `main` auto-deploys to the live PWA
+  on his phone (`.github/workflows/deploy.yml`). Commit locally; he pushes.
 - **Days run 4am→4am** (`DAY_CUTOFF_HOURS` in store.js) so late nights count
   against the right day.
 - **The AI coach** (`src/coach.js`) calls the Claude API directly from the
