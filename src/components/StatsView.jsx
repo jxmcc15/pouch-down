@@ -7,6 +7,12 @@ import {
 import { TOTAL_DAYS, BASELINE, START_DATE, QUIT_DATE } from '../plan.js';
 import { TRIGGERS } from './SOSOverlay.jsx';
 import AnimatedNumber from './AnimatedNumber.jsx';
+import DisciplineCard from './DisciplineCard.jsx';
+import FirstPouchChart from './FirstPouchChart.jsx';
+import RhythmChart from './RhythmChart.jsx';
+import GapsCard from './GapsCard.jsx';
+import CorrelationCard from './CorrelationCard.jsx';
+import HistoryTimeline from './HistoryTimeline.jsx';
 
 const W = 440;
 const H = 180;
@@ -207,6 +213,12 @@ export default function StatsView() {
         </div>
       </motion.div>
 
+      <DisciplineCard />
+      <FirstPouchChart />
+      <RhythmChart />
+      <GapsCard />
+      <CorrelationCard />
+
       <motion.div
         className="card"
         style={{ marginTop: 14 }}
@@ -217,6 +229,8 @@ export default function StatsView() {
         <div className="tiny muted" style={{ marginBottom: 12 }}>Your triggers</div>
         <TriggerBars state={state} />
       </motion.div>
+
+      <HistoryTimeline />
     </div>
   );
 }

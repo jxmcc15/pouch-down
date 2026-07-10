@@ -1,18 +1,24 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Flame, PiggyBank, ShieldCheck, Undo2 } from 'lucide-react';
+import { Flame, PiggyBank, ShieldCheck } from 'lucide-react';
 import { useApp } from '../state.jsx';
 import {
   pacingForNow, todayKey, dayNumberFor, pouchesForDay, resistedForDay,
-  currentStreak, moneySaved,
+  currentStreak, moneySaved, checkinForDay,
 } from '../store.js';
 import { stageForDay, capForDay, TOTAL_DAYS, QUIT_DATE, WITHDRAWAL_NOTES, STAGES } from '../plan.js';
 import LogRing from './LogRing.jsx';
+import LogToast from './LogToast.jsx';
+import TodayLog from './TodayLog.jsx';
+import CheckinCard from './CheckinCard.jsx';
 import PacingCard from './PacingCard.jsx';
 import SOSOverlay from './SOSOverlay.jsx';
 import RecoveryTimeline from './RecoveryTimeline.jsx';
 import AnimatedNumber from './AnimatedNumber.jsx';
 import { celebrate } from '../confetti.js';
+
+// The toast doubles as the mood-tag window, so it outlives the old 6s.
+const TOAST_MS = 12000;
 
 const spring = { type: 'spring', damping: 24, stiffness: 180 };
 
@@ -47,7 +53,7 @@ export default function TodayView() {
 
   const logPouch = (trigger = null) => {
     const id = api.logPouch(trigger);
-    setLastLog({ id, until: Date.now() + 6000 });
+    setLastLog({ id, until: Date.now() + TOAST_MS });
   };
 
   useEffect(() => {
@@ -109,6 +115,12 @@ export default function TodayView() {
         </motion.p>
       )}
 
+      <AnimatePresence>
+        {!checkinForDay(state, dateStr) && state.checkinDismissedFor !== dateStr && (
+          <CheckinCard key="checkin" />
+        )}
+      </AnimatePresence>
+
       <LogRing
         used={used}
         cap={cap}
@@ -119,27 +131,13 @@ export default function TodayView() {
 
       <AnimatePresence>
         {lastLog && (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
-            className="row"
-            style={{ justifyContent: 'center', marginTop: -4, marginBottom: 8 }}
-          >
-            <button
-              className="chip"
-              onClick={() => {
-                api.undoEvent(lastLog.id);
-                setLastLog(null);
-              }}
-            >
-              <Undo2 size={15} /> Logged — undo?
-            </button>
-          </motion.div>
+          <LogToast key={lastLog.id} eventId={lastLog.id} onUndo={() => setLastLog(null)} />
         )}
       </AnimatePresence>
 
       {pacing.mode === 'plan' && <PacingCard pacing={{ ...pacing, tick }} />}
+
+      <TodayLog />
 
       <motion.div
         className="row"
