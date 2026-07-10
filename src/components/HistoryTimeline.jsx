@@ -40,7 +40,8 @@ function pouchVerdict(state, ev) {
   if (v.bucket === 'early') return { text: `${Math.abs(v.deltaMin ?? 0)}m early`, color: 'var(--amber)' };
   if (v.bucket === 'over-cap') return { text: 'over cap', color: 'var(--amber)' };
   if (v.bucket === 'baseline') return { text: 'baseline', color: 'var(--fg-muted)' };
-  return { text: v.deltaMin != null ? `on time +${v.deltaMin}m` : 'on time', color: 'var(--green)' };
+  // ≥1 matches TodayLog: a 0-minute delta reads "on time", not "on time +0m"
+  return { text: v.deltaMin >= 1 ? `on time +${v.deltaMin}m` : 'on time', color: 'var(--green)' };
 }
 
 // A single "a · b · c" line whose segments wrap gracefully at 375px.
@@ -118,16 +119,13 @@ function DayRows({ state, dateStr }) {
 export default function HistoryTimeline() {
   const { state } = useApp();
   const todayN = dayNumberFor(todayKey());
-  const [expanded, setExpanded] = useState(() => new Set([todayN])); // today starts open
+  // Today defaults open against the LIVE day number (correct across the 4am
+  // rollover); explicit taps are stored as overrides on top of that default.
+  const [overrides, setOverrides] = useState({});
   const [showAll, setShowAll] = useState(false);
 
-  const toggle = (n) =>
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(n)) next.delete(n);
-      else next.add(n);
-      return next;
-    });
+  const isOpen = (n) => overrides[n] ?? (n === todayN);
+  const toggle = (n) => setOverrides((prev) => ({ ...prev, [n]: !isOpen(n) }));
 
   // Before day 1 there is no plan history to show yet.
   if (todayN < 1) {
@@ -167,7 +165,7 @@ export default function HistoryTimeline() {
         const used = pouchesForDay(state, dateStr);
         const cap = capForDay(n);
         const status = statusForDay(state, dateStr);
-        const open = expanded.has(n);
+        const open = isOpen(n);
         return (
           <div key={n} style={{ borderTop: idx === 0 ? 'none' : '1px solid var(--border)' }}>
             <button

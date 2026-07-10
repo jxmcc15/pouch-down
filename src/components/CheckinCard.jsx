@@ -35,7 +35,10 @@ export default function CheckinCard() {
 
   const save = () => {
     if (!canSave) return;
-    const payload = { workout, source: 'manual' };
+    // An untouched toggle means "unanswered", not "rest day" — only an explicit
+    // tap records a workout boolean (mirrors the deep-link path's omission).
+    const payload = { source: 'manual' };
+    if (workoutTouched) payload.workout = workout;
     if (sleepQuality != null) payload.sleepQuality = sleepQuality;
     if (hoursValid) payload.sleepHours = hoursNum;
     if (scoreValid) payload.sleepScore = scoreNum;

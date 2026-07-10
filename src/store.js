@@ -299,7 +299,9 @@ export function disciplineStats(state) {
       if (v.bucket === 'on-time') c.onTime++;
       else if (v.bucket === 'early') c.early++;
       else c.overCap++;
-      if (v.preFirstSlot) c.preFirstSlot++;
+      // counted only within the early bucket so it stays a true subset of
+      // `early` — the card and export both present it as "of which N…"
+      if (v.preFirstSlot && v.bucket === 'early') c.preFirstSlot++;
     };
     add(totals);
     if (dayKeyFor(ev.ts) === today) add(todayCounts);

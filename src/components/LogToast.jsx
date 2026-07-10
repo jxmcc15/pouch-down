@@ -60,6 +60,11 @@ export default function LogToast({ eventId, onUndo }) {
         : '';
   const { text, color } = verdictLine(bucket, deltaMin, time, slotTime);
 
+  // tagEvent only mutates the most recent event (domain rule), so once any
+  // newer event lands (check-in, SOS log) the chips would silently no-op —
+  // hide them instead of lying about what a tap will do. Undo stays.
+  const canTag = state.events[state.events.length - 1]?.id === eventId;
+
   const chipStyle = { minHeight: 36, padding: '6px 13px', fontSize: 13 };
 
   return (
@@ -87,22 +92,24 @@ export default function LogToast({ eventId, onUndo }) {
         >
           <Undo2 size={14} /> undo
         </motion.button>
-        <span className="tiny faint">tag it · optional</span>
+        {canTag && <span className="tiny faint">tag it · optional</span>}
       </div>
 
-      <div className="row" style={{ marginTop: 8, flexWrap: 'wrap', gap: 6 }}>
-        {TRIGGERS.map((t) => (
-          <motion.button
-            key={t}
-            className={`chip ${ev.trigger === t ? 'selected' : ''}`}
-            style={chipStyle}
-            whileTap={{ scale: 0.94 }}
-            onClick={() => api.tagEvent(eventId, t)}
-          >
-            {t}
-          </motion.button>
-        ))}
-      </div>
+      {canTag && (
+        <div className="row" style={{ marginTop: 8, flexWrap: 'wrap', gap: 6 }}>
+          {TRIGGERS.map((t) => (
+            <motion.button
+              key={t}
+              className={`chip ${ev.trigger === t ? 'selected' : ''}`}
+              style={chipStyle}
+              whileTap={{ scale: 0.94 }}
+              onClick={() => api.tagEvent(eventId, t)}
+            >
+              {t}
+            </motion.button>
+          ))}
+        </div>
+      )}
     </motion.div>
   );
 }
