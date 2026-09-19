@@ -5,6 +5,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 // Served from https://<user>.github.io/pouch-down/
 export default defineConfig({
   base: '/pouch-down/',
+  test: { environment: 'node', include: ['src/**/*.test.js'] },
   plugins: [
     react(),
     VitePWA({
