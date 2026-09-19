@@ -83,6 +83,7 @@ status colors. All motion is Framer springs; `MotionConfig reducedMotion="user"`
 
 ## Related
 
+- **Before reviewing James's data, run `pouch-ingest`** and read `Pouch Down/Live Log.md` in the vault — never ask him to paste an export.
 - Vault plan note: `/Users/jxm/jxm-vault/Topics/Nicotine Cessation — 60-Day Plan.md`
 - Todoist project "Pouch Down" holds the reminder scaffold (meal check-ins,
   stage flips, shopping deadlines).
