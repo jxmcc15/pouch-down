@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Eye, EyeOff, ClipboardCopy, Check } from 'lucide-react';
+import { Eye, EyeOff, ClipboardCopy, Check, Download } from 'lucide-react';
 import { useApp } from '../state.jsx';
-import { markdownSummary } from '../store.js';
+import { markdownSummary, fullBackup, todayKey } from '../store.js';
 import { TOTAL_DAYS } from '../plan.js';
 
 const SHORTCUT_URL = 'https://jxmcc15.github.io/pouch-down/?checkin=hours:[Duration]';
@@ -13,6 +13,7 @@ export default function SettingsSheet({ onClose }) {
   const [showKey, setShowKey] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const [backedUp, setBackedUp] = useState(null); // 'shared' | 'copied'
   // Numeric inputs hold a draft while typing so the field can sit empty
   // mid-edit; only valid numbers commit, and blur reverts to the last good one.
   const [drafts, setDrafts] = useState({});
@@ -46,6 +47,37 @@ export default function SettingsSheet({ onClose }) {
       await navigator.clipboard.writeText(markdownSummary(state, TOTAL_DAYS));
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
+    } catch {
+      // clipboard can fail outside secure contexts; the button just won't confirm
+    }
+  };
+
+  // Installed iOS web apps can't reliably download files, so the backup goes
+  // out through the share sheet (AirDrop / Save to Files). Browsers that won't
+  // share a .json get a .txt; browsers that won't share files get the clipboard.
+  const downloadBackup = async () => {
+    const json = fullBackup(state);
+    const name = `pouch-down-backup-${todayKey()}`;
+    const file = [
+      new File([json], `${name}.json`, { type: 'application/json' }),
+      new File([json], `${name}.txt`, { type: 'text/plain' }),
+    ].find((f) => navigator.canShare?.({ files: [f] }));
+    const confirm = (how) => {
+      setBackedUp(how);
+      setTimeout(() => setBackedUp(null), 2500);
+    };
+    if (file) {
+      try {
+        await navigator.share({ files: [file] });
+        confirm('shared');
+        return;
+      } catch (err) {
+        if (err.name === 'AbortError') return; // share sheet dismissed
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(json);
+      confirm('copied');
     } catch {
       // clipboard can fail outside secure contexts; the button just won't confirm
     }
@@ -192,6 +224,15 @@ export default function SettingsSheet({ onClose }) {
         <p className="small faint" style={{ margin: '6px 0 0' }}>
           Formatted for Obsidian — paste into your vault or a Claude chat for a
           weekly review.
+        </p>
+
+        <motion.button className="btn" style={{ width: '100%', marginTop: 12 }} whileTap={{ scale: 0.98 }} onClick={downloadBackup}>
+          {backedUp ? <Check size={17} color="var(--green)" /> : <Download size={17} />}
+          {backedUp === 'shared' ? 'Backup sent' : backedUp === 'copied' ? 'Copied — paste into a file' : 'Download full backup'}
+        </motion.button>
+        <p className="small faint" style={{ margin: '6px 0 0' }}>
+          Every log, trigger, and check-in as one JSON file — AirDrop it to your
+          Mac or save it to Files. Your API key is left out.
         </p>
 
         <button className="btn btn-ghost" style={{ width: '100%', marginTop: 20 }} onClick={onClose}>
