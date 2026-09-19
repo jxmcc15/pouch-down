@@ -1,10 +1,10 @@
 import { motion } from 'framer-motion';
 import { useApp } from '../state.jsx';
 import {
-  dateForDayNumber, mgForDay, todayKey, dayNumberFor, moneySaved,
+  dateForDayNumber, mgForDay, todayKey, dayNumberFor,
   pouchesForDay, plannedMgForDay,
 } from '../store.js';
-import { TOTAL_DAYS, BASELINE, START_DATE, QUIT_DATE } from '../plan.js';
+import { moneyStats } from '../money.js';
 import { TRIGGERS } from './SOSOverlay.jsx';
 import AnimatedNumber from './AnimatedNumber.jsx';
 import DisciplineCard from './DisciplineCard.jsx';
@@ -18,8 +18,8 @@ const W = 440;
 const H = 180;
 const PAD = { l: 30, r: 10, t: 14, b: 22 };
 
-function x(day) {
-  return PAD.l + ((day - 1) / (TOTAL_DAYS - 1)) * (W - PAD.l - PAD.r);
+function x(day, totalDays) {
+  return PAD.l + ((day - 1) / (totalDays - 1)) * (W - PAD.l - PAD.r);
 }
 
 const fmtShort = (iso) =>
@@ -31,19 +31,20 @@ function y(mg, maxMg) {
 // Planned descent (staircase) vs actual daily mg. The staircase falling off
 // a cliff is the motivational core of the stats tab.
 function MgChart({ state }) {
+  const { totalDays, startDate, quitDate } = state.plan;
   const maxMg = 90;
-  const todayN = Math.min(dayNumberFor(todayKey()), TOTAL_DAYS);
+  const todayN = Math.min(dayNumberFor(state, todayKey()), totalDays);
 
   const plannedPts = [];
-  for (let n = 1; n <= TOTAL_DAYS; n++) plannedPts.push(`${x(n)},${y(plannedMgForDay(n), maxMg)}`);
+  for (let n = 1; n <= totalDays; n++) plannedPts.push(`${x(n, totalDays)},${y(plannedMgForDay(state, n), maxMg)}`);
   const plannedPath = `M ${plannedPts.join(' L ')}`;
 
   let actualPath = null;
   if (todayN >= 1) {
     const pts = [];
     for (let n = 1; n <= todayN; n++) {
-      const d = dateForDayNumber(n);
-      pts.push(`${x(n)},${y(mgForDay(state, d), maxMg)}`);
+      const d = dateForDayNumber(state, n);
+      pts.push(`${x(n, totalDays)},${y(mgForDay(state, d), maxMg)}`);
     }
     actualPath = `M ${pts.join(' L ')}`;
   }
@@ -87,8 +88,8 @@ function MgChart({ state }) {
             style={{ filter: 'drop-shadow(0 0 6px var(--accent-glow))' }}
           />
         )}
-        <text x={x(1)} y={H - 6} fontSize="9" fill="var(--fg-faint)">{fmtShort(START_DATE)}</text>
-        <text x={x(TOTAL_DAYS)} y={H - 6} fontSize="9" fill="var(--fg-faint)" textAnchor="end">{fmtShort(QUIT_DATE)}</text>
+        <text x={x(1, totalDays)} y={H - 6} fontSize="9" fill="var(--fg-faint)">{fmtShort(startDate)}</text>
+        <text x={x(totalDays, totalDays)} y={H - 6} fontSize="9" fill="var(--fg-faint)" textAnchor="end">{fmtShort(quitDate)}</text>
       </svg>
       <div className="row small muted" style={{ gap: 16, justifyContent: 'center' }}>
         <span className="row" style={{ gap: 6 }}>
@@ -158,21 +159,23 @@ function TriggerBars({ state }) {
 
 export default function StatsView() {
   const { state } = useApp();
-  const saved = moneySaved(state);
-  const todayN = dayNumberFor(todayKey());
-  const perPouch = state.settings.costPerTin / state.settings.pouchesPerTin;
+  const { totalDays, baseline, quitDate } = state.plan;
+  const money = moneyStats(state);
+  const saved = money.kept;
+  const perPouch = money.perPouch;
+  const todayN = dayNumberFor(state, todayKey());
 
   // Projection: money saved by quit day if the rest of the plan is followed.
   let projected = saved;
-  for (let n = Math.max(todayN + 1, 1); n <= TOTAL_DAYS; n++) {
-    projected += (BASELINE.pouchesPerDay * BASELINE.mg - plannedMgForDay(n)) / BASELINE.mg * perPouch;
+  for (let n = Math.max(todayN + 1, 1); n <= totalDays; n++) {
+    projected += (baseline.pouchesPerDay * baseline.mg - plannedMgForDay(state, n)) / baseline.mg * perPouch;
   }
 
   let avoided = 0;
   const resistedTotal = state.events.filter((e) => e.type === 'resisted').length;
-  for (let n = 1; n <= Math.min(todayN, TOTAL_DAYS); n++) {
-    const d = dateForDayNumber(n);
-    if (d <= todayKey()) avoided += Math.max(0, BASELINE.pouchesPerDay - pouchesForDay(state, d));
+  for (let n = 1; n <= Math.min(todayN, totalDays); n++) {
+    const d = dateForDayNumber(state, n);
+    if (d <= todayKey()) avoided += Math.max(0, baseline.pouchesPerDay - pouchesForDay(state, d));
   }
 
   const spring = { type: 'spring', damping: 24, stiffness: 180 };
@@ -199,7 +202,7 @@ export default function StatsView() {
           </div>
           <div className="tiny faint">saved so far</div>
           <div className="small muted num" style={{ marginTop: 4 }}>
-            ≈ ${projected.toFixed(0)} by {fmtShort(QUIT_DATE)}
+            ≈ ${projected.toFixed(0)} by {fmtShort(quitDate)}
           </div>
         </div>
         <div className="card" style={{ flex: 1, textAlign: 'center' }}>

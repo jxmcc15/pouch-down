@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { useApp } from '../state.jsx';
-import { gapStats, fmtDuration, dayKeyFor } from '../store.js';
+import { gapStats, fmtDuration, fmtTime } from '../store.js';
+import { dayKeyOf } from '../time.js';
 
 const spring = { type: 'spring', damping: 24, stiffness: 180 };
 
@@ -14,10 +15,10 @@ const fromMin = (min) => (min == null ? null : min * 60000);
 
 export default function GapsCard() {
   const { state, tick } = useApp();
-  const { avgGapTodayMin, avgGap7dMin, longestGapMs, longestGapEndedAt, currentGapMs } = gapStats(state);
+  const { avgGapTodayMin, avgGap7dMin, longestGapMs, longestGapEnd, currentGapMs } = gapStats(state);
 
   const noPouches = currentGapMs == null;
-  const hasLongest = longestGapMs != null && longestGapEndedAt != null;
+  const hasLongest = longestGapMs != null && longestGapEnd != null;
 
   // currentGapMs is (now − last pouch), recomputed by gapStats on every render.
   // `tick` from useApp() bumps once a second; rendering it as data-tick keeps
@@ -63,7 +64,7 @@ export default function GapsCard() {
             <div className="tiny faint">longest gap ever</div>
             {hasLongest && (
               <div className="small faint" style={{ marginTop: 3 }}>
-                incl. sleep · ended {fmtShortDate(dayKeyFor(longestGapEndedAt))}
+                incl. sleep · ended {fmtShortDate(dayKeyOf(longestGapEnd))} {fmtTime(longestGapEnd)}
               </div>
             )}
           </div>

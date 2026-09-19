@@ -49,7 +49,7 @@ export default function LogToast({ eventId, onUndo }) {
   if (!ev || ev.type !== 'pouch') return null;
 
   const { bucket, deltaMin } = classifyPouch(state, ev);
-  const time = fmtTime(ev.ts);
+  const time = fmtTime(ev);
   // Prefer the stamped slot time; fall back to reconstructing it from the
   // signed delta so old ctx-less events (or any surprise) never blank out.
   const slotTime =

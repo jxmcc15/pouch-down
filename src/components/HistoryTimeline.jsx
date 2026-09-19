@@ -6,7 +6,7 @@ import {
   eventsForDay, pouchesForDay, todayKey, dayNumberFor, dateForDayNumber,
   statusForDay, classifyPouch, fmtTime,
 } from '../store.js';
-import { capForDay, TOTAL_DAYS } from '../plan.js';
+import { capForDay } from '../plan.js';
 
 const spring = { type: 'spring', damping: 24, stiffness: 180 };
 // A gentle tween reads smoother than a spring on animated `height: auto`.
@@ -22,13 +22,14 @@ const fmtHours = (h) => {
   return Number.isInteger(r) ? `${r}` : r.toFixed(1);
 };
 
-// 8px status dot — green on-plan, amber over, accent outline for today.
+// 8px status dot — green on-plan, amber over, gray no-log, accent outline for today.
 function dotStyle(status) {
   const base = { width: 8, height: 8, borderRadius: '50%', flexShrink: 0, display: 'block' };
   if (status === 'today-under' || status === 'today-over')
     return { ...base, background: 'transparent', border: '1.5px solid var(--accent-bright)', boxShadow: '0 0 6px var(--accent-glow)' };
   if (status === 'yellow') return { ...base, background: 'var(--amber)' };
   if (status === 'green') return { ...base, background: 'var(--green)' };
+  if (status === 'nolog') return { ...base, background: 'var(--nolog)' };
   return { ...base, background: 'var(--fg-faint)' }; // pre/future — shouldn't reach a rendered section
 }
 
@@ -90,6 +91,14 @@ function EventRow({ state, ev }) {
     if (ev.sleepQuality != null) segs.push(<span key="q" className="muted num">quality {ev.sleepQuality}/5</span>);
     if (ev.sleepHours != null) segs.push(<span key="h" className="muted num">{fmtHours(ev.sleepHours)}h sleep</span>);
     if (ev.workout === true) segs.push(<span key="w" className="muted">workout</span>);
+  } else if (ev.type === 'backfill') {
+    // Backfills carry a count but no timing — they were entered after the fact.
+    const c = Number.isInteger(ev.count) && ev.count >= 0 ? ev.count : 0;
+    icon = <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--fg-muted)', display: 'block', opacity: 0.85 }} />;
+    segs = [
+      <span key="c" className="muted">{c} {c === 1 ? 'pouch' : 'pouches'} backfilled</span>,
+      <span key="n" className="faint">no timing</span>,
+    ];
   } else {
     return null; // unknown event type — never crash
   }
@@ -118,7 +127,7 @@ function DayRows({ state, dateStr }) {
 
 export default function HistoryTimeline() {
   const { state } = useApp();
-  const todayN = dayNumberFor(todayKey());
+  const todayN = dayNumberFor(state, todayKey());
   // Today defaults open against the LIVE day number (correct across the 4am
   // rollover); explicit taps are stored as overrides on top of that default.
   const [overrides, setOverrides] = useState({});
@@ -145,7 +154,7 @@ export default function HistoryTimeline() {
     );
   }
 
-  const lastDay = Math.min(todayN, TOTAL_DAYS);
+  const lastDay = Math.min(todayN, state.plan.totalDays);
   const days = [];
   for (let n = lastDay; n >= 1; n--) days.push(n); // newest-first
   const visibleDays = showAll ? days : days.slice(0, DEFAULT_VISIBLE);
@@ -161,9 +170,9 @@ export default function HistoryTimeline() {
       <div className="tiny muted" style={{ marginBottom: 6 }}>History</div>
 
       {visibleDays.map((n, idx) => {
-        const dateStr = dateForDayNumber(n);
+        const dateStr = dateForDayNumber(state, n);
         const used = pouchesForDay(state, dateStr);
-        const cap = capForDay(n);
+        const cap = capForDay(state.plan, n);
         const status = statusForDay(state, dateStr);
         const open = isOpen(n);
         return (
@@ -180,7 +189,11 @@ export default function HistoryTimeline() {
                 <span className="small" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   <span style={{ fontWeight: 600 }}>Day {n}</span>
                   <span className="muted">{` · ${fmtShort(dateStr)} · `}</span>
-                  <span className="num" style={{ color: used > cap ? 'var(--amber)' : 'var(--fg-muted)' }}>{used}/{cap}</span>
+                  {status === 'nolog' ? (
+                    <span className="num" style={{ color: 'var(--fg-faint)' }}>no log</span>
+                  ) : (
+                    <span className="num" style={{ color: used > cap ? 'var(--amber)' : 'var(--fg-muted)' }}>{used}/{cap}</span>
+                  )}
                 </span>
               </span>
               <motion.span

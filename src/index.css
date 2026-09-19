@@ -17,6 +17,7 @@
   --green-glow: rgba(52, 211, 153, 0.18);
   --amber: #fbbf24;
   --amber-glow: rgba(251, 191, 36, 0.16);
+  --nolog: rgba(255, 255, 255, 0.18);
   --red: #f87171;
   --border: rgba(255, 255, 255, 0.08);
   --border-strong: rgba(255, 255, 255, 0.14);
@@ -260,6 +261,7 @@ label { display: block; font-size: 13px; color: var(--fg-muted); margin: 16px 0 
 .cal-cell .cap { font-size: 9px; color: var(--fg-faint); font-weight: 500; }
 .cal-green { background: var(--green-glow); border-color: rgba(52, 211, 153, 0.4); color: var(--green); }
 .cal-yellow { background: var(--amber-glow); border-color: rgba(251, 191, 36, 0.4); color: var(--amber); }
+.cal-nolog { background: var(--surface); border-color: var(--nolog); color: var(--fg-faint); }
 .cal-today { border-color: var(--accent-bright); box-shadow: 0 0 16px var(--accent-glow); }
 .cal-future { opacity: 0.45; }
 

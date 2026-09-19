@@ -3,10 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Flame, PiggyBank, ShieldCheck } from 'lucide-react';
 import { useApp } from '../state.jsx';
 import {
-  pacingForNow, todayKey, dayNumberFor, pouchesForDay, resistedForDay,
-  currentStreak, moneySaved, checkinForDay,
+  pacingForNow, todayKey, dayNumberFor, dateForDayNumber, pouchesForDay, resistedForDay,
+  currentStreak, checkinForDay,
 } from '../store.js';
-import { stageForDay, capForDay, TOTAL_DAYS, QUIT_DATE, WITHDRAWAL_NOTES, STAGES } from '../plan.js';
+import { stageForDay, capForDay, WITHDRAWAL_NOTES } from '../plan.js';
+import { moneyStats } from '../money.js';
 import LogRing from './LogRing.jsx';
 import LogToast from './LogToast.jsx';
 import TodayLog from './TodayLog.jsx';
@@ -22,28 +23,47 @@ const TOAST_MS = 12000;
 
 const spring = { type: 'spring', damping: 24, stiffness: 180 };
 
+// Parsed at noon so the calendar date (and its weekday) can't shift with the
+// device's zone — same trick store.js uses for day math.
+function formatWeekdayMonthDay(dateStr) {
+  return new Date(`${dateStr}T12:00:00`).toLocaleDateString('en-US', {
+    weekday: 'long', month: 'long', day: 'numeric',
+  });
+}
+function formatMonthDay(dateStr) {
+  return new Date(`${dateStr}T12:00:00`).toLocaleDateString('en-US', {
+    month: 'long', day: 'numeric',
+  });
+}
+
 export default function TodayView() {
   const { state, api, tick } = useApp();
   const [sosOpen, setSosOpen] = useState(false);
   const [lastLog, setLastLog] = useState(null); // {id, until}
 
   const dateStr = todayKey();
-  const dayNum = dayNumberFor(dateStr);
-  const stage = stageForDay(Math.min(Math.max(dayNum, 1), TOTAL_DAYS));
+  const dayNum = dayNumberFor(state, dateStr);
+  const stage = stageForDay(state.plan, Math.min(Math.max(dayNum, 1), state.plan.totalDays));
   const used = pouchesForDay(state, dateStr);
-  const cap = capForDay(dayNum);
+  const cap = capForDay(state.plan, dayNum);
   const resisted = resistedForDay(state, dateStr);
   const streak = currentStreak(state);
-  const saved = moneySaved(state);
+  const saved = moneyStats(state).kept;
   const pacing = pacingForNow(state);
-  const postQuit = dayNum > TOTAL_DAYS;
+  const postQuit = dayNum > state.plan.totalDays;
   const prePlan = dayNum < 1;
-  const quitDay = dayNum === TOTAL_DAYS;
+  const quitDay = dayNum === state.plan.totalDays;
+  // Pre-plan card facts: the first real (non-quit) stage's strength, and the
+  // first later stage that steps it down, if the plan ever does.
+  const firstStage = state.plan.stages[0];
+  const nextMgStage = prePlan
+    ? state.plan.stages.find((s) => s.pouchesPerDay > 0 && s.mg < firstStage.mg)
+    : null;
 
   // Celebrate completed stages once (entering a new stage fires confetti).
   useEffect(() => {
     if (prePlan || postQuit || !stage) return;
-    const completed = STAGES.filter((s) => s.days[1] < dayNum && s.pouchesPerDay > 0);
+    const completed = state.plan.stages.filter((s) => s.days[1] < dayNum && s.pouchesPerDay > 0);
     const uncelebrated = completed.find((s) => !state.celebratedStages.includes(s.id));
     if (uncelebrated) {
       api.markStageCelebrated(uncelebrated.id);
@@ -71,11 +91,14 @@ export default function TodayView() {
       {prePlan && (
         <motion.div className="card" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={spring}>
           <div style={{ fontWeight: 600 }}>
-            Day 1 is Wednesday, July 8.
+            Day 1 is {formatWeekdayMonthDay(state.plan.startDate)}.
           </div>
           <div className="small muted" style={{ marginTop: 4 }}>
             Logging now builds your honest baseline — no caps judged yet. Stock
-            check: you have 9mg on hand; 6mg isn't needed until July 18.
+            check: you have {firstStage.mg}mg on hand
+            {nextMgStage
+              ? `; ${nextMgStage.mg}mg isn't needed until ${formatMonthDay(dateForDayNumber(state, nextMgStage.days[0]))}.`
+              : '.'}
           </div>
         </motion.div>
       )}
@@ -90,13 +113,13 @@ export default function TodayView() {
         >
           <div>
             <div className="tiny muted">
-              Day {dayNum} of {TOTAL_DAYS} · Stage {stage.id === 8 ? '— quit' : stage.id}
+              Day {dayNum} of {state.plan.totalDays} · Stage {stage.id === 8 ? '— quit' : stage.id}
             </div>
             <h2 style={{ fontSize: 20 }}>{stage.name}</h2>
           </div>
           <div className="card num" style={{ padding: '8px 14px', textAlign: 'center' }}>
             <div style={{ fontSize: 20, fontWeight: 800 }}>
-              <AnimatedNumber value={Math.max(TOTAL_DAYS - dayNum, 0)} />
+              <AnimatedNumber value={Math.max(state.plan.totalDays - dayNum, 0)} />
             </div>
             <div className="tiny faint">days to quit</div>
           </div>
@@ -124,7 +147,7 @@ export default function TodayView() {
       <LogRing
         used={used}
         cap={cap}
-        mg={prePlan ? 9 : stage?.mg ?? 0}
+        mg={prePlan ? firstStage.mg : stage?.mg ?? 0}
         onLog={() => logPouch(null)}
         disabled={quitDay || (stage && stage.pouchesPerDay === 0)}
       />
@@ -201,7 +224,7 @@ export default function TodayView() {
             ? `Quit day. ${WITHDRAWAL_NOTES.postQuit}`
             : stage && dayNum === stage.days[0] && stage.id > 1
               ? WITHDRAWAL_NOTES.stageFlip
-              : `Quit date: ${QUIT_DATE} · slips never move it.`}
+              : `Quit date: ${state.plan.quitDate} · slips never move it.`}
         </motion.p>
       )}
 

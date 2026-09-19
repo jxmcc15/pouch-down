@@ -1,6 +1,5 @@
 import { motion } from 'framer-motion';
 import { ShoppingCart, Scale, Timer, HeartHandshake } from 'lucide-react';
-import { STAGES, TOTAL_DAYS } from '../plan.js';
 import { dateForDayNumber, dayNumberFor, todayKey } from '../store.js';
 import { useApp } from '../state.jsx';
 
@@ -28,7 +27,8 @@ const RULES = [
 
 export default function PlanView() {
   const { state } = useApp();
-  const todayN = dayNumberFor(todayKey());
+  const { plan } = state;
+  const todayN = dayNumberFor(state, todayKey());
   const spring = { type: 'spring', damping: 24, stiffness: 180 };
 
   return (
@@ -38,7 +38,7 @@ export default function PlanView() {
         Count first, then strength. Meals stay protected — floaters get cut.
       </p>
 
-      {STAGES.map((s, i) => {
+      {plan.stages.map((s, i) => {
         const active = todayN >= s.days[0] && todayN <= s.days[1];
         const done = todayN > s.days[1];
         return (
@@ -57,8 +57,8 @@ export default function PlanView() {
             <div className="spread">
               <div className="tiny" style={{ color: active ? 'var(--accent-bright)' : done ? 'var(--green)' : 'var(--fg-faint)' }}>
                 {done ? 'done · ' : active ? 'now · ' : ''}
-                days {s.days[0]}{s.days[1] !== s.days[0] ? `–${s.days[1]}` : ''} · {fmtDate(dateForDayNumber(s.days[0]))}
-                {s.days[1] !== s.days[0] ? `–${fmtDate(dateForDayNumber(s.days[1]))}` : ''}
+                days {s.days[0]}{s.days[1] !== s.days[0] ? `–${s.days[1]}` : ''} · {fmtDate(dateForDayNumber(state, s.days[0]))}
+                {s.days[1] !== s.days[0] ? `–${fmtDate(dateForDayNumber(state, s.days[1]))}` : ''}
               </div>
               <div className="num" style={{ fontWeight: 800, fontSize: 17 }}>
                 {s.pouchesPerDay === 0 ? 'zero' : `${s.pouchesPerDay}/day · ${s.mg}mg`}
@@ -123,7 +123,7 @@ export default function PlanView() {
       ))}
 
       <p className="small faint" style={{ textAlign: 'center', margin: '18px 0 4px' }}>
-        Baseline: ~9/day @ 9mg (~81mg/day) · Day {TOTAL_DAYS} = zero ·{' '}
+        Baseline: ~{plan.baseline.pouchesPerDay}/day @ {plan.baseline.mg}mg (~{plan.baseline.pouchesPerDay * plan.baseline.mg}mg/day) · Day {plan.totalDays} = zero ·{' '}
         {state.settings.mealTimes.breakfast} / {state.settings.mealTimes.lunch} /{' '}
         {state.settings.mealTimes.dinner} meals
       </p>

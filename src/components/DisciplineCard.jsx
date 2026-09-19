@@ -77,6 +77,12 @@ export default function DisciplineCard() {
             />
           </div>
 
+          {d.backfilled > 0 && (
+            <div className="small faint" style={{ marginTop: 10 }}>
+              {d.backfilled} entered after the fact (no timing)
+            </div>
+          )}
+
           {showAvgs && (
             <div
               style={{

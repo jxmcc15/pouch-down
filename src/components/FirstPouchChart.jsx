@@ -1,7 +1,6 @@
 import { motion } from 'framer-motion';
 import { useApp } from '../state.jsx';
 import { firstPouchTimes } from '../store.js';
-import { TOTAL_DAYS, START_DATE, QUIT_DATE } from '../plan.js';
 
 // Same drawing box + padding as MgChart so the two charts read as a set.
 const W = 440;
@@ -16,8 +15,8 @@ const Y_MIN = 120; // 6:00 AM
 const Y_MAX = 960; // 8:00 PM
 const Y_TICKS = [120, 300, 480, 660, 840]; // 6a, 9a, 12p, 3p, 6p
 
-function x(day) {
-  return PAD.l + ((day - 1) / (TOTAL_DAYS - 1)) * (W - PAD.l - PAD.r);
+function x(day, totalDays) {
+  return PAD.l + ((day - 1) / (totalDays - 1)) * (W - PAD.l - PAD.r);
 }
 
 // Later in the day plots HIGHER — holding out longer makes the line climb.
@@ -41,10 +40,10 @@ function clockLabel(minSince4am) {
 
 const spring = { type: 'spring', damping: 24, stiffness: 180 };
 
-function Graph({ points, lunchMin }) {
+function Graph({ points, lunchMin, totalDays, startDate, quitDate }) {
   const linePath =
     points.length > 1
-      ? `M ${points.map((p) => `${x(p.dayNum)},${y(p.minutesSince4am)}`).join(' L ')}`
+      ? `M ${points.map((p) => `${x(p.dayNum, totalDays)},${y(p.minutesSince4am)}`).join(' L ')}`
       : null;
 
   return (
@@ -110,7 +109,7 @@ function Graph({ points, lunchMin }) {
         {points.map((p, i) => (
           <motion.circle
             key={p.date}
-            cx={x(p.dayNum)}
+            cx={x(p.dayNum, totalDays)}
             cy={y(p.minutesSince4am)}
             r={3}
             fill="var(--accent-bright)"
@@ -122,8 +121,8 @@ function Graph({ points, lunchMin }) {
         ))}
 
         {/* plan start / quit-day anchors, matching MgChart */}
-        <text x={x(1)} y={H - 6} fontSize="9" fill="var(--fg-faint)">{fmtShort(START_DATE)}</text>
-        <text x={x(TOTAL_DAYS)} y={H - 6} fontSize="9" fill="var(--fg-faint)" textAnchor="end">{fmtShort(QUIT_DATE)}</text>
+        <text x={x(1, totalDays)} y={H - 6} fontSize="9" fill="var(--fg-faint)">{fmtShort(startDate)}</text>
+        <text x={x(totalDays, totalDays)} y={H - 6} fontSize="9" fill="var(--fg-faint)" textAnchor="end">{fmtShort(quitDate)}</text>
       </svg>
     </div>
   );
@@ -154,7 +153,13 @@ export default function FirstPouchChart() {
           each day, and you'll watch it drift later as you hold out longer.
         </p>
       ) : (
-        <Graph points={points} lunchMin={lunchMin} />
+        <Graph
+          points={points}
+          lunchMin={lunchMin}
+          totalDays={state.plan.totalDays}
+          startDate={state.plan.startDate}
+          quitDate={state.plan.quitDate}
+        />
       )}
     </motion.div>
   );

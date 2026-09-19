@@ -1,14 +1,14 @@
 import { motion } from 'framer-motion';
 import { HeartPulse, Check } from 'lucide-react';
-import { RECOVERY_MILESTONES, QUIT_DATE } from '../plan.js';
+import { RECOVERY_MILESTONES } from '../plan.js';
 import { useApp } from '../state.jsx';
 import AnimatedNumber from './AnimatedNumber.jsx';
 
 // Post-quit mode: the app counts UP. Milestones are approximations from
 // standard cessation guidance, not medical advice.
 export default function RecoveryTimeline() {
-  useApp(); // subscribe to the 1s tick so counters stay live
-  const quitAt = new Date(`${QUIT_DATE}T00:00:00`);
+  const { state } = useApp(); // subscribe to the 1s tick so counters stay live
+  const quitAt = new Date(`${state.plan.quitDate}T00:00:00`);
   const now = new Date();
   const hoursSince = Math.max(0, (now - quitAt) / 3600000);
   const daysSince = hoursSince / 24;
