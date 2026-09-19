@@ -21,9 +21,10 @@ export function freshRoot() {
 
 // → { root, problem: null | 'corrupt' | 'migration-failed' }. With a problem the
 // returned root is a placeholder: the caller must NOT save it over what's stored.
+// Only null means "nothing stored" — an empty string is stored data we can't read.
 export function loadRoot(storage = localStorage, now = new Date().toISOString()) {
   const rawV2 = storage.getItem(KEY_V2);
-  if (rawV2) {
+  if (rawV2 !== null) {
     try {
       const root = JSON.parse(rawV2);
       if (root?.version === 2 && Array.isArray(root.attempts)) return { root: { ...freshRoot(), ...root }, problem: null };
@@ -31,9 +32,13 @@ export function loadRoot(storage = localStorage, now = new Date().toISOString())
     return { root: freshRoot(), problem: 'corrupt' };
   }
   const rawV1 = storage.getItem(KEY_V1);
-  if (rawV1) {
+  if (rawV1 !== null) {
     try {
-      return { root: migrateV1(JSON.parse(rawV1), { legacyPlan: LEGACY_PLAN, now }), problem: null };
+      const v1 = JSON.parse(rawV1);
+      // migrateV1 trusts its input; anything that isn't a v1 state (a plain
+      // object with an events array) would migrate to an empty attempt.
+      if (!v1 || typeof v1 !== 'object' || Array.isArray(v1) || !Array.isArray(v1.events)) throw new Error('not a v1 state');
+      return { root: migrateV1(v1, { legacyPlan: LEGACY_PLAN, now }), problem: null };
     } catch {
       return { root: freshRoot(), problem: 'migration-failed' };
     }

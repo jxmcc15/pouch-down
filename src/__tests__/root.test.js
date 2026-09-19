@@ -80,6 +80,32 @@ describe('data-safety guards', () => {
     expect(setItemCalls).toEqual([]);
   });
 
+  // An empty string is something stored, not nothing stored — only null means
+  // the key is absent. Otherwise the app would save a fresh root over it.
+  it('an empty stored v2 is corrupt, and nothing is written', () => {
+    const setItemCalls = [];
+    const s = { getItem: (k) => (k === KEY_V2 ? '' : null), setItem: (k) => setItemCalls.push(k) };
+    expect(loadRoot(s, NOW).problem).toBe('corrupt');
+    expect(setItemCalls).toEqual([]);
+  });
+
+  it('an empty stored v2 is corrupt even when a good v1 exists (v1 is not re-migrated over it)', () => {
+    expect(loadRoot(mem({ [KEY_V1]: V1, [KEY_V2]: '' }), NOW).problem).toBe('corrupt');
+  });
+
+  it('an empty stored v1 (no v2) is a failed migration, not a fresh start', () => {
+    expect(loadRoot(mem({ [KEY_V1]: '' }), NOW).problem).toBe('migration-failed');
+  });
+
+  it('a v1 blob that parses but is not a v1 state (no events array) is a failed migration, and nothing is written', () => {
+    for (const raw of ['5', 'null', '[]', '{"version":1}']) {
+      const setItemCalls = [];
+      const s = { getItem: (k) => (k === KEY_V1 ? raw : null), setItem: (k) => setItemCalls.push(k) };
+      expect(loadRoot(s, NOW).problem, raw).toBe('migration-failed');
+      expect(setItemCalls, raw).toEqual([]);
+    }
+  });
+
   it('startAttempt numbering stays unique even if attempts were somehow not sequential', () => {
     const root = { ...freshRoot(), attempts: [
       { id: 'a1', status: 'archived', createdAt: NOW, archivedAt: NOW, settings: DEFAULT_SETTINGS, plan, events: [], celebratedStages: [], celebratedAwards: [], checkinDismissedFor: null },

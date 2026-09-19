@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { loadRoot, saveRoot, freshRoot, attemptById, updateAttempt, startAttempt, archiveActive } from './root.js';
 import { makeEvent, pouchCtxForNow, todayKey } from './store.js';
 
@@ -9,19 +9,24 @@ const SAVE_ERROR = "Couldn't save to this phone. Keep the app open — it retrie
 
 const Ctx = createContext(null);
 
-export function AppStateProvider({ children }) {
-  const [{ root, problem }, setLoaded] = useState(() => loadRoot());
-  const [viewingId, setViewingId] = useState(null);
-  const [saveError, setSaveError] = useState(null); // null, or a short message for the toast
-  const [tick, setTick] = useState(0); // re-render clock for countdowns
-
+// What's on screen, and may it change? Read-only = viewing an existing attempt,
+// or the attempt that would be mutated isn't active. The render path and every
+// mutation guard call this on the same state object, so the UI and the guard
+// can never disagree — even for several api calls in one handler.
+function view({ root, viewingId }) {
   const viewing = viewingId ? attemptById(root, viewingId) : null;
   const state = viewing ?? attemptById(root, root.activeAttemptId);
-  const readOnly = !!viewing || state?.status === 'archived';
-  // The api is memoized once, so it reads "is this read-only?" through a ref —
-  // the same flag the UI renders from, so the guard can never disagree with it.
-  const readOnlyRef = useRef(readOnly);
-  readOnlyRef.current = readOnly;
+  return { state, readOnly: !!viewing || (!!state && state.status !== 'active') };
+}
+
+export function AppStateProvider({ children }) {
+  // root, problem, and viewingId live in ONE state object so each api updater
+  // sees the latest of all three (a render-time ref would lag within a tick).
+  const [app, setApp] = useState(() => ({ ...loadRoot(), viewingId: null }));
+  const { root, problem } = app;
+  const { state, readOnly } = view(app);
+  const [saveError, setSaveError] = useState(null); // null, or a short message for the toast
+  const [tick, setTick] = useState(0); // re-render clock for countdowns
 
   // Never save over stored data we could not read. A failed write (quota) keeps
   // state in memory and surfaces a toast; the next successful save clears it.
@@ -44,7 +49,7 @@ export function AppStateProvider({ children }) {
   const api = useMemo(() => {
     // Every mutation goes through here: nothing while storage is unreadable,
     // nothing while read-only (viewing a past attempt).
-    const setRoot = (fn) => setLoaded((l) => (l.problem || readOnlyRef.current ? l : { ...l, root: fn(l.root) }));
+    const setRoot = (fn) => setApp((cur) => (cur.problem || view(cur).readOnly ? cur : { ...cur, root: fn(cur.root) }));
     // Log mutations touch the active attempt only.
     const onActive = (fn) => setRoot((r) => (r.activeAttemptId ? updateAttempt(r, r.activeAttemptId, fn) : r));
     const append = (ev) => onActive((a) => ({ ...a, events: [...a.events, ev] }));
@@ -103,10 +108,11 @@ export function AppStateProvider({ children }) {
       // state updater would take the whole app down, so no-op instead.
       startAttempt({ plan, settings }) { setRoot((r) => (r.activeAttemptId ? r : startAttempt(r, { plan, settings }))); },
       archiveActive() { setRoot((r) => archiveActive(r)); },
-      viewAttempt(id) { setViewingId(id); },
-      exitViewing() { setViewingId(null); },
-      // Recovery screen only: abandon unreadable storage and begin clean.
-      startFresh() { setLoaded({ root: freshRoot(), problem: null }); },
+      viewAttempt(id) { setApp((cur) => ({ ...cur, viewingId: id })); },
+      exitViewing() { setApp((cur) => (cur.viewingId === null ? cur : { ...cur, viewingId: null })); },
+      // Recovery screen only: abandon unreadable storage and begin clean. A no-op
+      // unless storage really is unreadable — it must never wipe readable data.
+      startFresh() { setApp((cur) => (cur.problem ? { root: freshRoot(), problem: null, viewingId: null } : cur)); },
     };
   }, []);
 
