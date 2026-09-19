@@ -59,7 +59,7 @@ Order: **A1 → (A2 ‖ A3) → (A4 → A5) ‖ A6 → (A7 ‖ A8) → A9** (A9 
 
 **Files:** Modify `src/plan.js`, `src/legacyPlan.js` · Test `src/__tests__/plan.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```js
 // src/__tests__/plan.test.js
@@ -88,9 +88,9 @@ describe('plan helpers read from a plan object', () => {
 });
 ```
 
-- [ ] **Step 2: Run — expect FAIL** (`stageForDay` currently takes one argument): `npx vitest run src/__tests__/plan.test.js`
+- [x] **Step 2: Run — expect FAIL** (`stageForDay` currently takes one argument): `npx vitest run src/__tests__/plan.test.js`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   - Move the `slot` helper, `MEAL_SLOTS`, and the entire `STAGES` array **verbatim** from `src/plan.js` into `src/legacyPlan.js`; inline the four constants so `legacyPlan.js` imports nothing:
 
 ```js
@@ -123,8 +123,8 @@ export function capForDay(plan, dayNum) {
 }
 ```
 
-- [ ] **Step 4: Run — expect PASS** for `plan.test.js` and the existing generator golden test. (The app build is expected to be broken until A7; that is fine on this branch.)
-- [ ] **Step 5: Commit** `git add src/plan.js src/legacyPlan.js src/__tests__/plan.test.js && git commit -m "plan.js: helpers over a plan object; freeze legacy plan as data"`
+- [x] **Step 4: Run — expect PASS** for `plan.test.js` and the existing generator golden test. (The app build is expected to be broken until A7; that is fine on this branch.)
+- [x] **Step 5: Commit** `git add src/plan.js src/legacyPlan.js src/__tests__/plan.test.js && git commit -m "plan.js: helpers over a plan object; freeze legacy plan as data"`
 
 ### Task A2: `store.js` derives from the attempt; honest scoring
 
@@ -132,7 +132,7 @@ export function capForDay(plan, dayNum) {
 
 `state` below always means *an attempt* (`{ status, archivedAt, settings, plan, events, … }`).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```js
 // src/__tests__/store.test.js
@@ -242,9 +242,9 @@ describe('discipline stats', () => {
 });
 ```
 
-- [ ] **Step 2: Run — expect FAIL**: `npx vitest run src/__tests__/store.test.js`
+- [x] **Step 2: Run — expect FAIL**: `npx vitest run src/__tests__/store.test.js`
 
-- [ ] **Step 3: Implement** — edit `src/store.js`:
+- [x] **Step 3: Implement** — edit `src/store.js`:
   1. Imports: `import { stageForDay, capForDay } from './plan.js';` and `import { stampNow, dayKeyOf, localHM } from './time.js';`. Delete the `START_DATE/TOTAL_DAYS/BASELINE` import, `KEY`, `SCHEMA_VERSION`, `DAY_CUTOFF_HOURS`, `DEFAULT_SETTINGS`, `loadState`, `freshState`, `migrate`, `saveState` (persistence moves to `root.js`, A3).
   2. Replace day/time helpers:
 
@@ -369,14 +369,14 @@ export function missedDays(state, { max = 3, windowDays = 7 } = {}) {
   6. `markdownSummary(state, days)`: iterate `for (let i = Math.max(1, last - days + 1); i <= last; i++)` where `const last = Math.min(dayNumberFor(state, asOfDay(state)), state.plan.totalDays)`; when `!isLogged(state, d)` emit `| ${i} | ${d} | ${capForDay(state.plan, i)} | — | — | — | — | — | — | no log |`. Replace the `Saved:` figure with `moneyStats(state).kept` once A4 lands (A4 step 5 does this).
   7. Leave `fullBackup` for A8.
 
-- [ ] **Step 4: Run — expect PASS**: `npx vitest run src/__tests__/store.test.js`
-- [ ] **Step 5: Commit** `git add src/store.js src/__tests__/store.test.js && git commit -m "store: derive from the attempt's plan; honest scoring, streaks, missed days"`
+- [x] **Step 4: Run — expect PASS**: `npx vitest run src/__tests__/store.test.js`
+- [x] **Step 5: Commit** `git add src/store.js src/__tests__/store.test.js && git commit -m "store: derive from the attempt's plan; honest scoring, streaks, missed days"`
 
 ### Task A3: `root.js` — the v2 root (parallel with A2)
 
 **Files:** Create `src/root.js` · Test `src/__tests__/root.test.js`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```js
 // src/__tests__/root.test.js
@@ -441,8 +441,8 @@ describe('attempt lifecycle', () => {
 });
 ```
 
-- [ ] **Step 2: Run — expect FAIL** (module missing).
-- [ ] **Step 3: Implement**
+- [x] **Step 2: Run — expect FAIL** (module missing).
+- [x] **Step 3: Implement**
 
 ```js
 // src/root.js
@@ -518,14 +518,14 @@ export function lastSettings(root) {
 }
 ```
 
-- [ ] **Step 4: Run — expect PASS.**
-- [ ] **Step 5: Commit** `git add src/root.js src/__tests__/root.test.js && git commit -m "root: v2 storage, attempt lifecycle, v1 key never written"`
+- [x] **Step 4: Run — expect PASS.**
+- [x] **Step 5: Commit** `git add src/root.js src/__tests__/root.test.js && git commit -m "root: v2 storage, attempt lifecycle, v1 key never written"`
 
 ### Task A4: `money.js`
 
 **Files:** Create `src/money.js` · Test `src/__tests__/money.test.js` · Modify `src/store.js` (markdown footer)
 
-- [ ] **Step 1: Failing test** (reuse the `attempt/pouches/ev` fixture helpers from `store.test.js` — copy them into this file):
+- [x] **Step 1: Failing test** (reuse the `attempt/pouches/ev` fixture helpers from `store.test.js` — copy them into this file):
 
 ```js
 describe('moneyStats counts logged days only', () => {
@@ -552,8 +552,8 @@ describe('moneyStats counts logged days only', () => {
 });
 ```
 
-- [ ] **Step 2: Run — FAIL.**
-- [ ] **Step 3: Implement**
+- [x] **Step 2: Run — FAIL.**
+- [x] **Step 3: Implement**
 
 ```js
 // src/money.js
@@ -580,15 +580,15 @@ export function moneyStats(state) {
 }
 ```
 
-- [ ] **Step 4: Run — PASS.**
-- [ ] **Step 5:** In `store.js` `markdownSummary`, import `moneyStats` lazily to avoid a cycle — pass it in instead: change the signature to `markdownSummary(state, days = 7, kept = null)` and render `Kept: $${kept.toFixed(2)}` only when `kept != null`; callers (`SettingsSheet`, `coach.js`) pass `moneyStats(state).kept`.
-- [ ] **Step 6: Commit** `git commit -m "money: logged-days-only model (old pace / spent / kept / after-quit)"`
+- [x] **Step 4: Run — PASS.**
+- [x] **Step 5:** In `store.js` `markdownSummary`, import `moneyStats` lazily to avoid a cycle — pass it in instead: change the signature to `markdownSummary(state, days = 7, kept = null)` and render `Kept: $${kept.toFixed(2)}` only when `kept != null`; callers (`SettingsSheet`, `coach.js`) pass `moneyStats(state).kept`.
+- [x] **Step 6: Commit** `git commit -m "money: logged-days-only model (old pace / spent / kept / after-quit)"`
 
 ### Task A5: `awards.js` (parallel with A6)
 
 **Files:** Create `src/awards.js` · Test `src/__tests__/awards.test.js`
 
-- [ ] **Step 1: Failing tests** (same fixtures as `store.test.js`, plus `import { awardsFor } from '../awards.js'` and `import { LEGACY_PLAN } from '../legacyPlan.js'`; system time 2026-09-25 unless noted):
+- [x] **Step 1: Failing tests** (same fixtures as `store.test.js`, plus `import { awardsFor } from '../awards.js'` and `import { LEGACY_PLAN } from '../legacyPlan.js'`; system time 2026-09-25 unless noted):
 
 ```js
 const get = (s, id) => awardsFor(s).find((a) => a.id === id);
@@ -640,8 +640,8 @@ it('works on the legacy plan, which has no stage.kind', () => {
 });
 ```
 
-- [ ] **Step 2: Run — FAIL.**
-- [ ] **Step 3: Implement**
+- [x] **Step 2: Run — FAIL.**
+- [x] **Step 3: Implement**
 
 ```js
 // src/awards.js
@@ -750,8 +750,8 @@ export function awardsFor(state) {
 export const newlyEarned = (state) => awardsFor(state).filter((a) => a.earned && !state.celebratedAwards.includes(a.id));
 ```
 
-- [ ] **Step 4: Run — PASS.** If `first-cut` progress math disagrees with a test, the test is the contract — fix the code.
-- [ ] **Step 5: Commit** `git commit -m "awards: derived catalog (streaks, honesty, stages, money, quit day)"`
+- [x] **Step 4: Run — PASS.** If `first-cut` progress math disagrees with a test, the test is the contract — fix the code.
+- [x] **Step 5: Commit** `git commit -m "awards: derived catalog (streaks, honesty, stages, money, quit day)"`
 
 ### Task A6: `state.jsx` — provider over the root (parallel with A5)
 
@@ -759,7 +759,7 @@ export const newlyEarned = (state) => awardsFor(state).filter((a) => a.earned &&
 
 `useApp()` returns `{ root, state, readOnly, problem, device, api, tick }`. `state` = the attempt being viewed, else the active attempt, else `null`.
 
-- [ ] **Step 1: Implement**
+- [x] **Step 1: Implement**
 
 ```jsx
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
@@ -851,14 +851,14 @@ export function useApp() {
 
   Note: `pouchCtxForNow(a)` must run against the pre-append attempt — it does, inside the updater.
 
-- [ ] **Step 2: Verify** `npm run lint` — the lint baseline stays at 2 warnings (the `only-export-components` one on this file is pre-existing).
-- [ ] **Step 3: Commit** `git commit -m "state: provider over the v2 root; read-only viewing; backfill + awards api"`
+- [x] **Step 2: Verify** `npm run lint` — the lint baseline stays at 2 warnings (the `only-export-components` one on this file is pre-existing).
+- [x] **Step 3: Commit** `git commit -m "state: provider over the v2 root; read-only viewing; backfill + awards api"`
 
 ### Task A7: consumers compile and run on the new model
 
 **Files:** Modify `src/coach.js`, `src/App.jsx`, and these components: `CalendarView`, `FirstPouchChart`, `HistoryTimeline`, `PlanView`, `RecoveryTimeline`, `SettingsSheet`, `TodayView`, `StatsView` (+ any other file the build flags). One agent per file is safe — they don't overlap.
 
-- [ ] **Step 1:** Run `npm run build` and fix every error with these substitutions (the deleted constants make each site fail loudly):
+- [x] **Step 1:** Run `npm run build` and fix every error with these substitutions (the deleted constants make each site fail loudly):
 
 | Old | New |
 |---|---|
@@ -873,17 +873,17 @@ export function useApp() {
 | `state.settings.apiKey` | `device.apiKey` from `useApp()`; write via `api.updateDevice({ apiKey })` |
 | `new Date(e.ts).getHours()` for display | `localHM(e)` / `fmtTime(e)` |
 
-- [ ] **Step 2:** `src/coach.js` — `askCoach(state, messages, apiKey)`; build the prompt from `state.plan`; replace every "James"/"his"/"he" with "you"/"your"; say `${state.plan.totalDays}-day` and the plan's real dates. Load the `claude-api` skill before editing. Keep `MODEL` as is.
-- [ ] **Step 3:** `src/App.jsx` — temporary gate until B1: `if (problem) return <p>Storage problem: {problem}</p>; if (!state) return <p>No active attempt yet.</p>;`
-- [ ] **Step 4:** Calendar/History: map status `nolog` → a gray cell/row labelled "no log" (never the green style). Add `--nolog: rgba(255,255,255,0.18)` next to the existing status colors in `src/index.css`.
-- [ ] **Step 5: Verify** `npm test && npm run lint && npm run build && node docs/superpowers/reports/2026-07-10-math-harness.mjs`. The math harness imports the old `store.js` API — update its calls with the same substitution table, building an attempt fixture with `LEGACY_PLAN`; its expected numbers must not change.
-- [ ] **Step 6: Commit** per file or as one: `git commit -m "consumers: read the plan from the attempt; nolog styling; coach de-personalised"`
+- [x] **Step 2:** `src/coach.js` — `askCoach(state, messages, apiKey)`; build the prompt from `state.plan`; replace every "James"/"his"/"he" with "you"/"your"; say `${state.plan.totalDays}-day` and the plan's real dates. Load the `claude-api` skill before editing. Keep `MODEL` as is.
+- [x] **Step 3:** `src/App.jsx` — temporary gate until B1: `if (problem) return <p>Storage problem: {problem}</p>; if (!state) return <p>No active attempt yet.</p>;`
+- [x] **Step 4:** Calendar/History: map status `nolog` → a gray cell/row labelled "no log" (never the green style). Add `--nolog: rgba(255,255,255,0.18)` next to the existing status colors in `src/index.css`.
+- [x] **Step 5: Verify** `npm test && npm run lint && npm run build && node docs/superpowers/reports/2026-07-10-math-harness.mjs`. The math harness imports the old `store.js` API — update its calls with the same substitution table, building an attempt fixture with `LEGACY_PLAN`; its expected numbers must not change.
+- [x] **Step 6: Commit** per file or as one: `git commit -m "consumers: read the plan from the attempt; nolog styling; coach de-personalised"`
 
 ### Task A8: backup + export on v2 (parallel with A7)
 
 **Files:** Modify `src/store.js` (`fullBackup`), `src/components/SettingsSheet.jsx` · Test `src/__tests__/backup.test.js`
 
-- [ ] **Step 1: Failing test**
+- [x] **Step 1: Failing test**
 
 ```js
 import { fullBackup } from '../store.js';
@@ -899,7 +899,7 @@ it('exports the whole root without the API key, without mutating it', () => {
 });
 ```
 
-- [ ] **Step 2–4:** Implement and pass:
+- [x] **Step 2–4:** Implement and pass:
 
 ```js
 export function fullBackup(root) {
@@ -908,7 +908,7 @@ export function fullBackup(root) {
 ```
 
   In `SettingsSheet.jsx` call `fullBackup(root)` (from `useApp()`), and `markdownSummary(state, state.plan.totalDays, moneyStats(state).kept)`.
-- [ ] **Step 5: Commit** `git commit -m "backup: export the v2 root, key stripped"`
+- [x] **Step 5: Commit** `git commit -m "backup: export the v2 root, key stripped"`
 
 ### Task A9: `pouch-ingest` — get data off the phone without pasting (parallel lane, any time after A8)
 
@@ -916,7 +916,7 @@ export function fullBackup(root) {
 
 **Files:** Create `src/ingest.js` (pure), `scripts/ingest-backup.mjs` (I/O), `src/__tests__/ingest.test.js` · Install `~/.local/bin/pouch-ingest` (2-line shell wrapper; James's other tools live there) · Personal output goes ONLY to the vault, never this repo.
 
-- [ ] **Step 1: Failing tests**
+- [x] **Step 1: Failing tests**
 
 ```js
 // src/__tests__/ingest.test.js
@@ -974,25 +974,25 @@ describe('renderLiveLog', () => {
 });
 ```
 
-- [ ] **Step 2: Run — FAIL** (module missing).
-- [ ] **Step 3: Implement `src/ingest.js`** (pure, no `fs`):
+- [x] **Step 2: Run — FAIL** (module missing).
+- [x] **Step 3: Implement `src/ingest.js`** (pure, no `fs`):
   - `parseBackup(text)` → `{ format, exportedAt, root }`. `JSON.parse`; require `app === 'pouch-down'` else `throw new Error('not a Pouch Down backup')`; if `/sk-ant-/.test(text)` → `throw new Error('backup contains an API key — refusing to store it')`; `format === 2` → `root` as is; otherwise (v1 wrapper with `.state`) → `migrateV1(j.state, { legacyPlan: LEGACY_PLAN, now: j.exportedAt }) `.
   - `renderLiveLog(root, { exportedAt, now = new Date() })` → Markdown string: YAML frontmatter (`title: Pouch Down — Live Log`, `type: reference`, `tags: [health/cessation, project/pouch-down, live-log]`, `created: <exportedAt date>`, `data_as_of: <exportedAt>`); a line linking `[[Pouch Down — Cessation System]]` and `[[Attempt 2 — Build Schedule]]`; `> [!warning] This backup is N days old — ask James to AirDrop a fresh one.` when `now − exportedAt > 3 days`; "Data as of YYYY-MM-DD HH:MM"; then for the active attempt (else the most recent): stage + day N of total, `streaks()` current/best, `moneyStats()` old pace/spent/kept, earned award titles from `awardsFor()`, `disciplineStats()` line, top triggers, and a table of the **last 21 days** — `| Day | Date | Cap | Used | Early | Over | First | Resisted | Sleep | Status |` where Status is `no log` / `backfilled` (any backfill event that day) / `over` / `on plan`, and unlogged rows show `—` in every numeric column. All day math comes from the existing `store.js` functions (which read the real clock); `now` is used only for the staleness warning. The tests pin the clock with fake timers, so never hardcode a date in the renderer.
-- [ ] **Step 4: Implement `scripts/ingest-backup.mjs`** (I/O shell around the pure module):
+- [x] **Step 4: Implement `scripts/ingest-backup.mjs`** (I/O shell around the pure module):
   - Inputs: `POUCH_BACKUP_DIR` (default `/Users/jxm/jxm-vault/Pouch Down`); search dirs `~/Downloads` and `~/Library/Mobile Documents/com~apple~CloudDocs/PouchDown` for `pouch-down-backup-*.{json,txt}`.
   - For each file, newest first: `parseBackup` → on success **copy** to `$POUCH_BACKUP_DIR/Backups/<exportedAt with : → ->.json` (skip if an identical SHA-256 already exists), then **move** the Downloads original into `$POUCH_BACKUP_DIR/Backups/_ingested/` (never delete; leave iCloud copies alone). On failure: leave the file where it is and print why.
   - Render the newest valid backup to `$POUCH_BACKUP_DIR/Live Log.md`. Print a 3-line summary (files ingested, data as of, current streak). Exit 0 when there was nothing new. **Do not `git commit` in the vault** — Obsidian Git's auto-commit and Claude's own `claude:` commits cover it.
   - `--dry-run` prints what it would do and writes nothing.
-- [ ] **Step 5: Install the command:** write `~/.local/bin/pouch-ingest` = `#!/bin/sh` + `exec node /Users/jxm/Projects/pouch-down/scripts/ingest-backup.mjs "$@"`, `chmod +x`. Verify: `pouch-ingest --dry-run` from any directory.
-- [ ] **Step 6: Verify for real:** copy the step-1 backup from the vault into a temp dir, point the script at it with a temp `POUCH_BACKUP_DIR`, run, and read the generated Live Log — it must show attempt 1 with **no** streak and "no log" rows. Never write test output into the real vault folder.
-- [ ] **Step 7 (ONLY if James said yes up front):** a launchd agent `~/Library/LaunchAgents/com.jxm.pouch-ingest.plist` (`WatchPaths`: the two search dirs; `ProgramArguments`: the wrapper; logs to `~/Library/Logs/pouch-ingest.log`) so ingestion happens the moment the AirDrop lands. **Known macOS gotcha:** a background agent reading `~/Downloads` / iCloud Drive is often blocked by privacy protection (TCC) with "Operation not permitted" and can't show a permission prompt. Test it; if blocked, do NOT try to work around it — tell James exactly which binary needs *Files and Folders* access and let him grant it in System Settings. Without the agent everything still works: Claude just runs `pouch-ingest` first.
-- [ ] **Step 8:** add one line to `CLAUDE.md` under Related: "**Before reviewing James's data, run `pouch-ingest`** and read `Pouch Down/Live Log.md` in the vault — never ask him to paste an export." Commit: `git commit -m "ingest: pouch-ingest command + live log renderer (no more pasting exports)"`
+- [x] **Step 5: Install the command:** write `~/.local/bin/pouch-ingest` = `#!/bin/sh` + `exec node /Users/jxm/Projects/pouch-down/scripts/ingest-backup.mjs "$@"`, `chmod +x`. Verify: `pouch-ingest --dry-run` from any directory.
+- [x] **Step 6: Verify for real:** copy the step-1 backup from the vault into a temp dir, point the script at it with a temp `POUCH_BACKUP_DIR`, run, and read the generated Live Log — it must show attempt 1 with **no** streak and "no log" rows. Never write test output into the real vault folder.
+- [x] **Step 7 (ONLY if James said yes up front):** a launchd agent `~/Library/LaunchAgents/com.jxm.pouch-ingest.plist` (`WatchPaths`: the two search dirs; `ProgramArguments`: the wrapper; logs to `~/Library/Logs/pouch-ingest.log`) so ingestion happens the moment the AirDrop lands. **Known macOS gotcha:** a background agent reading `~/Downloads` / iCloud Drive is often blocked by privacy protection (TCC) with "Operation not permitted" and can't show a permission prompt. Test it; if blocked, do NOT try to work around it — tell James exactly which binary needs *Files and Folders* access and let him grant it in System Settings. Without the agent everything still works: Claude just runs `pouch-ingest` first.
+- [x] **Step 8:** add one line to `CLAUDE.md` under Related: "**Before reviewing James's data, run `pouch-ingest`** and read `Pouch Down/Live Log.md` in the vault — never ask him to paste an export." Commit: `git commit -m "ingest: pouch-ingest command + live log renderer (no more pasting exports)"`
 
 ### Session A exit gate
 
-- [ ] `npm test` (expect ≥ 70 tests), lint (2 warnings), build, math harness — all pass.
-- [ ] `POUCH_BACKUP_DIR="/Users/jxm/jxm-vault/Pouch Down" npm test` passes (real-data migration).
-- [ ] Append a dated section to `docs/superpowers/reports/2026-09-19-attempt-2-build-log.md`: what shipped, test counts, anything deferred, surprises.
+- [x] `npm test` (expect ≥ 70 tests), lint (2 warnings), build, math harness — all pass.
+- [x] `POUCH_BACKUP_DIR="/Users/jxm/jxm-vault/Pouch Down" npm test` passes (real-data migration).
+- [x] Append a dated section to `docs/superpowers/reports/2026-09-19-attempt-2-build-log.md`: what shipped, test counts, anything deferred, surprises.
 
 ---
 
