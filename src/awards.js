@@ -59,8 +59,13 @@ export function awardsFor(state) {
   const asOf = asOfDay(state);
   const facts = dayFacts(state);
   const out = [];
-  const add = (id, tier, title, body, earnedOn, progress = 0) =>
-    out.push({ id, tier, title, body, earned: earnedOn != null, earnedOn: earnedOn ?? null, progress: earnedOn != null ? 1 : Math.max(0, Math.min(1, progress)) });
+  // Unearned progress is clamped below 1 so a badge never LOOKS earned before it
+  // is (a stage share or money-kept fraction can otherwise round up to exactly
+  // 1 while still unearned); NaN (e.g. a 0-length divisor) becomes 0.
+  const add = (id, tier, title, body, earnedOn, progress = 0) => {
+    const clamped = Number.isFinite(progress) ? Math.max(0, Math.min(0.99, progress)) : 0;
+    out.push({ id, tier, title, body, earned: earnedOn != null, earnedOn: earnedOn ?? null, progress: earnedOn != null ? 1 : clamped });
+  };
 
   // "First log of the attempt" — a log before Day 1 counts too.
   const eventDays = [...new Set(state.events.map(dayKeyOf))].filter((d) => d <= asOf).sort();

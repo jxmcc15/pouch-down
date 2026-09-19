@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { loadRoot, saveRoot, freshRoot, attemptById, updateAttempt, startAttempt, archiveActive } from './root.js';
-import { makeEvent, pouchCtxForNow, todayKey } from './store.js';
+import { makeEvent, pouchCtxForNow, todayKey, isLogged, dayNumberFor } from './store.js';
 
 // Mood tags may only *complete* the just-made log — same spirit as undo.
 const TAG_WINDOW_MS = 15000;
@@ -79,7 +79,10 @@ export function AppStateProvider({ children }) {
           && (streak === 'keep' || streak === 'break');
         if (!valid) return null;
         const ev = { ...makeEvent('backfill'), day, count, streak };
-        onActive((a) => (a.events.some((e) => e.type === 'backfill' && e.day === day) ? a : { ...a, events: [...a.events, ev] }));
+        // Only an unlogged, in-plan day may be filled — a day already logged (pouch/
+        // resisted/backfill) or before the plan starts is a no-op here too, even though
+        // the UI only offers eligible days; the id is still returned (see comment above).
+        onActive((a) => (isLogged(a, day) || dayNumberFor(a, day) < 1 ? a : { ...a, events: [...a.events, ev] }));
         return ev.id;
       },
       // The one sanctioned mutation besides undo: completing the just-made log

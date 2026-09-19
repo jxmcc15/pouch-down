@@ -87,6 +87,26 @@ describe('awards stay honest (coordinator additions)', () => {
     expect(fresh.map((a) => a.id)).not.toContain('showed-up'); // already celebrated
     expect(fresh.every((a) => a.earned)).toBe(true);
   });
+  it('a stage award never shows earned-level progress before the stage is over', () => {
+    vi.setSystemTime(new Date('2026-10-02T17:00:00Z')); // day 12, inside stage 1 (days 1-15)
+    const s = attempt(days('2026-09-21', 11).flatMap((d) => pouches(d, 8))); // 11/15 logged: share > 0.7, but stage isn't finished
+    const a = get(s, 'stage-1');
+    expect(a.earned).toBe(false);
+    expect(a.progress).toBeLessThan(1);
+  });
+  it('every award progress is a finite number in [0, 1], for an empty attempt and a mixed one', () => {
+    const mixed = attempt([
+      ...pouches('2026-09-21', 8), ...pouches('2026-09-22', 12), ev('resisted', '2026-09-23'),
+      ev('backfill', '2026-09-24', { count: 5, streak: 'keep' }), ...pouches('2026-09-25', 3),
+    ]);
+    for (const s of [attempt([]), mixed]) {
+      for (const a of awardsFor(s)) {
+        expect(Number.isFinite(a.progress)).toBe(true);
+        expect(a.progress).toBeGreaterThanOrEqual(0);
+        expect(a.progress).toBeLessThanOrEqual(1);
+      }
+    }
+  });
   it('a nolog day never earns or extends a streak badge', () => {
     const s = attempt([...pouches('2026-09-21', 8), ...pouches('2026-09-22', 8), ...pouches('2026-09-24', 8)]);
     expect(get(s, 'streak-3')).toMatchObject({ earned: false, progress: 2 / 3 });
