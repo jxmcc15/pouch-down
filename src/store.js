@@ -1,70 +1,23 @@
-// Event-sourced localStorage store. Events are the truth; everything else
-// (counts, streaks, money, calendar colors) is derived at read time.
-// Never mutate or delete history except explicit single-event undo.
+// Derivations over one attempt ({ status, archivedAt, settings, plan, events, … }).
+// Events are the truth; everything else (counts, streaks, calendar colors) is
+// derived at read time. Persistence lives in root.js. Never mutate or delete
+// history except explicit single-event undo.
 
-import { START_DATE, TOTAL_DAYS, BASELINE, stageForDay, capForDay } from './plan.js';
-
-const KEY = 'pouch-down-v1';
-const SCHEMA_VERSION = 1;
-
-// A "day" runs 4am → 4am so a 1am pouch counts against the evening it
-// belongs to, not the next morning.
-const DAY_CUTOFF_HOURS = 4;
-
-export const DEFAULT_SETTINGS = {
-  mealTimes: { breakfast: '08:00', lunch: '12:30', dinner: '18:30' },
-  costPerTin: 5,
-  pouchesPerTin: 20,
-  apiKey: '',
-  wakeTime: '07:00',
-  sleepTime: '23:00',
-};
-
-export function loadState() {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return freshState();
-    const parsed = JSON.parse(raw);
-    if (parsed.version !== SCHEMA_VERSION) return migrate(parsed);
-    return { ...freshState(), ...parsed, settings: { ...DEFAULT_SETTINGS, ...parsed.settings } };
-  } catch {
-    return freshState();
-  }
-}
-
-function freshState() {
-  return {
-    version: SCHEMA_VERSION,
-    settings: { ...DEFAULT_SETTINGS },
-    events: [],
-    celebratedStages: [],
-    checkinDismissedFor: null, // dayKey — hides the morning check-in card for that day
-  };
-}
-
-function migrate(old) {
-  // Future schema versions upgrade here; v1 has nothing to migrate from.
-  return { ...freshState(), ...old, version: SCHEMA_VERSION };
-}
-
-export function saveState(state) {
-  localStorage.setItem(KEY, JSON.stringify(state));
-}
+import { stageForDay, capForDay } from './plan.js';
+import { stampNow, dayKeyOf, localHM, DAY_CUTOFF_HOURS } from './time.js';
 
 // ---- events ----------------------------------------------------------------
 
 let idCounter = 0;
-export function makeEvent(type, trigger = null) {
-  return {
-    id: `${Date.now()}-${idCounter++}`,
-    ts: new Date().toISOString(),
-    type, // 'pouch' | 'resisted' | 'checkin'
-    trigger, // 'coffee' | 'driving' | 'stress' | 'after-meal' | 'boredom' | null
-  };
+// type: 'pouch' | 'resisted' | 'checkin' ('backfill' events are built by the caller)
+// trigger: 'coffee' | 'driving' | 'stress' | 'after-meal' | 'boredom' | null
+export function makeEvent(type, trigger = null, now = new Date()) {
+  return { id: `${now.getTime()}-${idCounter++}`, ...stampNow(now), type, trigger };
 }
 
-export function fmtTime(ts) {
-  return new Date(ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+export function fmtTime(tsOrEvent) {
+  const { h, m } = localHM(typeof tsOrEvent === 'object' && tsOrEvent.ts ? tsOrEvent : { ts: new Date(tsOrEvent).toISOString() });
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
 }
 
 export function fmtDuration(ms) {
@@ -73,10 +26,8 @@ export function fmtDuration(ms) {
   return h >= 1 ? `${h}h ${min % 60}m` : `${min % 60}m`;
 }
 
-export function dayKeyFor(ts) {
-  const d = new Date(ts);
-  d.setHours(d.getHours() - DAY_CUTOFF_HOURS);
-  return localDateStr(d);
+export function dayKeyFor(tsOrEvent) { // kept for callers holding only a timestamp
+  return dayKeyOf(typeof tsOrEvent === 'string' ? { ts: tsOrEvent } : tsOrEvent);
 }
 
 export function localDateStr(d) {
@@ -86,29 +37,42 @@ export function localDateStr(d) {
   return `${y}-${m}-${day}`;
 }
 
-export function todayKey() {
-  return dayKeyFor(new Date().toISOString());
+export function todayKey(now = new Date()) {
+  return stampNow(now).day;
 }
 
-// Day number within the plan: 1..TOTAL_DAYS. 0 or negative = pre-plan, beyond = post-quit.
-export function dayNumberFor(dateStr) {
-  const start = new Date(`${START_DATE}T12:00:00`);
-  const d = new Date(`${dateStr}T12:00:00`);
-  return Math.round((d - start) / 86400000) + 1;
+// Day number within the attempt's plan: 1..totalDays. 0 or negative = pre-plan, beyond = post-quit.
+export function dayNumberFor(state, dateStr) {
+  const start = new Date(`${state.plan.startDate}T12:00:00`);
+  return Math.round((new Date(`${dateStr}T12:00:00`) - start) / 86400000) + 1;
 }
 
-export function dateForDayNumber(n) {
-  const start = new Date(`${START_DATE}T12:00:00`);
-  const d = new Date(start.getTime() + (n - 1) * 86400000);
+export function dateForDayNumber(state, n) {
+  const d = new Date(`${state.plan.startDate}T12:00:00`);
+  d.setDate(d.getDate() + n - 1);
   return localDateStr(d);
 }
 
-export function eventsForDay(state, dateStr) {
-  return state.events.filter((e) => dayKeyFor(e.ts) === dateStr);
+// The day an attempt is scored "as of": today while active; for an archived
+// attempt, the earlier of the day it was archived and its quit date.
+export function asOfDay(state) {
+  if (state.status !== 'archived') return todayKey();
+  const archived = dayKeyFor(state.archivedAt);
+  return archived < state.plan.quitDate ? archived : state.plan.quitDate;
 }
 
+export function eventsForDay(state, dateStr) {
+  return state.events.filter((e) => dayKeyOf(e) === dateStr);
+}
+
+// Pouches used that day: taps plus anything backfilled afterwards.
 export function pouchesForDay(state, dateStr) {
-  return eventsForDay(state, dateStr).filter((e) => e.type === 'pouch').length;
+  let n = 0;
+  for (const e of eventsForDay(state, dateStr)) {
+    if (e.type === 'pouch') n++;
+    else if (e.type === 'backfill') n += e.count;
+  }
+  return n;
 }
 
 export function resistedForDay(state, dateStr) {
@@ -117,65 +81,73 @@ export function resistedForDay(state, dateStr) {
 
 // ---- day status / streak ----------------------------------------------------
 
-// 'future' | 'pre' | 'green' | 'yellow' | 'today-under' | 'today-over'
+// Silence is not success: a day counts as logged only if the user told the app
+// something about nicotine that day. A sleep check-in alone doesn't.
+export function isLogged(state, dateStr) {
+  return eventsForDay(state, dateStr).some((e) => e.type === 'pouch' || e.type === 'resisted' || e.type === 'backfill');
+}
+
+// 'future' | 'pre' | 'green' | 'yellow' | 'nolog' | 'today-under' | 'today-over'
 export function statusForDay(state, dateStr) {
-  const today = todayKey();
-  const n = dayNumberFor(dateStr);
-  const used = pouchesForDay(state, dateStr);
-  const cap = capForDay(n);
+  const today = asOfDay(state);
+  const n = dayNumberFor(state, dateStr);
   if (dateStr > today) return 'future';
   if (n < 1) return 'pre';
-  if (dateStr === today) return used > cap ? 'today-over' : 'today-under';
-  return used > cap ? 'yellow' : 'green';
+  const over = pouchesForDay(state, dateStr) > capForDay(state.plan, n);
+  if (dateStr === today && state.status !== 'archived') return over ? 'today-over' : 'today-under';
+  if (n <= state.plan.totalDays && !isLogged(state, dateStr)) return 'nolog';
+  return over ? 'yellow' : 'green';
 }
 
-// Consecutive on-plan days ending today (today counts only if not over).
-export function currentStreak(state) {
-  let streak = 0;
-  const today = todayKey();
-  let n = dayNumberFor(today);
-  if (n < 1) return 0;
-  // today counts toward the streak while it's still under cap
-  if (pouchesForDay(state, today) <= capForDay(n)) streak = 1;
-  for (let i = n - 1; i >= 1; i--) {
-    const d = dateForDayNumber(i);
-    if (pouchesForDay(state, d) <= capForDay(i)) streak++;
-    else break;
-  }
-  return streak;
+export function dayCountsForStreak(state, dateStr) {
+  if (!isLogged(state, dateStr)) return false;
+  if (pouchesForDay(state, dateStr) > capForDay(state.plan, dayNumberFor(state, dateStr))) return false;
+  return !eventsForDay(state, dateStr).some((e) => e.type === 'backfill' && e.streak === 'break');
 }
 
-// ---- money ------------------------------------------------------------------
-
-export function moneySaved(state) {
-  const { costPerTin, pouchesPerTin } = state.settings;
-  const perPouch = costPerTin / pouchesPerTin;
-  const today = todayKey();
-  const startN = 1;
-  const endN = Math.min(dayNumberFor(today), 10000);
-  if (endN < startN) return 0;
-  let saved = 0;
-  for (let i = startN; i <= endN; i++) {
-    const d = dateForDayNumber(i);
-    if (d > today) break;
-    const used = pouchesForDay(state, d);
-    saved += (BASELINE.pouchesPerDay - used) * perPouch;
+// Consecutive green days ending yesterday, plus today once it's logged and
+// under cap. nolog, over-cap, and "break it here" backfills all break it.
+export function streaks(state) {
+  const asOf = asOfDay(state);
+  const endN = Math.min(dayNumberFor(state, asOf), state.plan.totalDays);
+  let run = 0, best = 0;
+  for (let i = 1; i <= endN; i++) {
+    const d = dateForDayNumber(state, i);
+    if (dayCountsForStreak(state, d)) run++;
+    else if (state.status !== 'archived' && d === asOf && !isLogged(state, d)) continue; // today, not logged yet
+    else run = 0;
+    if (run > best) best = run;
   }
-  return Math.max(0, saved);
+  return { current: run, best };
+}
+
+export const currentStreak = (state) => streaks(state).current;
+
+// Recent unlogged plan days to offer for backfill, newest first. Never today.
+export function missedDays(state, { max = 3, windowDays = 7 } = {}) {
+  if (state.status === 'archived') return [];
+  const n = dayNumberFor(state, todayKey());
+  const out = [];
+  for (let i = Math.min(n - 1, state.plan.totalDays); i >= Math.max(1, n - windowDays) && out.length < max; i--) {
+    const day = dateForDayNumber(state, i);
+    if (!isLogged(state, day)) out.push({ day, dayNum: i, cap: capForDay(state.plan, i) });
+  }
+  return out;
 }
 
 // ---- nicotine ---------------------------------------------------------------
 
 export function mgForDay(state, dateStr) {
-  const n = dayNumberFor(dateStr);
-  const stage = stageForDay(Math.max(1, Math.min(n, TOTAL_DAYS)));
-  const mgPerPouch = n < 1 ? BASELINE.mg : stage ? stage.mg : 0;
+  const n = dayNumberFor(state, dateStr);
+  const stage = stageForDay(state.plan, Math.max(1, Math.min(n, state.plan.totalDays)));
+  const mgPerPouch = n < 1 ? state.plan.baseline.mg : stage ? stage.mg : 0;
   return pouchesForDay(state, dateStr) * mgPerPouch;
 }
 
-export function plannedMgForDay(n) {
-  if (n < 1) return BASELINE.pouchesPerDay * BASELINE.mg;
-  const s = stageForDay(n);
+export function plannedMgForDay(state, n) {
+  const { baseline } = state.plan;
+  if (n < 1) return baseline.pouchesPerDay * baseline.mg;
+  const s = stageForDay(state.plan, n);
   return s ? s.pouchesPerDay * s.mg : 0;
 }
 
@@ -196,13 +168,14 @@ function slotTimeToday(slotDef, settings, dateStr) {
 
 // Returns today's slots with times, how many pouches are logged, and which
 // slot is "next" — the pacing model: slot k unlocks at its scheduled time,
-// and you've "spent" slots equal to pouches logged today.
+// and you've "spent" slots equal to pouches used today (a count, not a time,
+// so a backfill for today — which the UI never offers — would still spend slots).
 export function pacingForNow(state) {
   const now = new Date();
   const dateStr = todayKey();
-  const n = dayNumberFor(dateStr);
-  const stage = stageForDay(n);
-  if (!stage || n < 1 || n > TOTAL_DAYS) return { mode: n < 1 ? 'pre' : 'post', slots: [] };
+  const n = dayNumberFor(state, dateStr);
+  const stage = stageForDay(state.plan, n);
+  if (!stage || n < 1 || n > state.plan.totalDays) return { mode: n < 1 ? 'pre' : 'post', slots: [] };
 
   const used = pouchesForDay(state, dateStr);
   const cap = stage.pouchesPerDay;
@@ -225,12 +198,12 @@ export function pacingForNow(state) {
 // Raw facts to stamp on a pouch event, computed against the pre-append state.
 export function pouchCtxForNow(state) {
   const dateStr = todayKey();
-  const n = dayNumberFor(dateStr);
+  const n = dayNumberFor(state, dateStr);
   const pacing = pacingForNow(state);
   if (pacing.mode !== 'plan') {
     return {
       nth: pouchesForDay(state, dateStr) + 1,
-      cap: capForDay(n),
+      cap: capForDay(state.plan, n),
       slotId: null,
       slotLabel: null,
       slotAt: null,
@@ -250,8 +223,8 @@ export function pouchCtxForNow(state) {
 // Events logged before ctx stamping existed get their ctx reconstructed from
 // the stage plus *current* settings — a small, accepted drift. Never written back.
 function deriveCtx(state, ev, dateStr, n) {
-  const stage = stageForDay(Math.min(n, TOTAL_DAYS));
-  const cap = capForDay(n);
+  const stage = stageForDay(state.plan, Math.min(n, state.plan.totalDays));
+  const cap = capForDay(state.plan, n);
   const dayPouches = eventsForDay(state, dateStr)
     .filter((e) => e.type === 'pouch')
     .sort((a, b) => new Date(a.ts) - new Date(b.ts));
@@ -271,8 +244,8 @@ function deriveCtx(state, ev, dateStr, n) {
 // → { bucket: 'baseline'|'on-time'|'early'|'over-cap', deltaMin: number|null, preFirstSlot: bool }
 // deltaMin is signed: negative = minutes early, positive = minutes held past unlock.
 export function classifyPouch(state, ev) {
-  const dateStr = dayKeyFor(ev.ts);
-  const n = dayNumberFor(dateStr);
+  const dateStr = dayKeyOf(ev);
+  const n = dayNumberFor(state, dateStr);
   if (n < 1) return { bucket: 'baseline', deltaMin: null, preFirstSlot: false };
   const ctx = ev.ctx || deriveCtx(state, ev, dateStr, n);
   const ts = new Date(ev.ts).getTime();
@@ -287,11 +260,13 @@ export function classifyPouch(state, ev) {
 
 export function disciplineStats(state) {
   const today = todayKey();
-  const zero = () => ({ onTime: 0, early: 0, overCap: 0, preFirstSlot: 0 });
+  const zero = () => ({ onTime: 0, early: 0, overCap: 0, preFirstSlot: 0, backfilled: 0 });
   const totals = zero();
   const todayCounts = zero();
   let earlySum = 0, earlyN = 0, heldSum = 0, heldN = 0;
   for (const ev of state.events) {
+    // backfilled pouches carry no timing, so they get their own bucket
+    if (ev.type === 'backfill') { totals.backfilled += ev.count; continue; }
     if (ev.type !== 'pouch') continue;
     const v = classifyPouch(state, ev);
     if (v.bucket === 'baseline') continue;
@@ -304,7 +279,7 @@ export function disciplineStats(state) {
       if (v.preFirstSlot && v.bucket === 'early') c.preFirstSlot++;
     };
     add(totals);
-    if (dayKeyFor(ev.ts) === today) add(todayCounts);
+    if (dayKeyOf(ev) === today) add(todayCounts);
     if (v.deltaMin != null) {
       if (v.bucket === 'early') { earlySum += -v.deltaMin; earlyN++; }
       else if (v.bucket === 'on-time') { heldSum += v.deltaMin; heldN++; }
@@ -320,29 +295,33 @@ export function disciplineStats(state) {
 
 // First pouch per plan day, as minutes since the 4am day cutoff (so a 1am
 // pouch reads as ~21h into the *previous* day, which is where it belongs).
+// Wall-clock time is the zone the pouch was logged in. Taps only: backfills
+// carry no timing.
 export function firstPouchTimes(state) {
   const firstByDay = new Map();
   for (const e of state.events) {
     if (e.type !== 'pouch') continue;
-    const k = dayKeyFor(e.ts);
-    const t = new Date(e.ts).getTime();
-    if (!firstByDay.has(k) || t < firstByDay.get(k)) firstByDay.set(k, t);
+    const k = dayKeyOf(e);
+    const prev = firstByDay.get(k);
+    if (!prev || Date.parse(e.ts) < Date.parse(prev.ts)) firstByDay.set(k, e);
   }
   const out = [];
-  for (const [date, t] of firstByDay) {
-    const dayNum = dayNumberFor(date);
-    if (dayNum < 1 || dayNum > TOTAL_DAYS) continue;
-    const d = new Date(t);
-    const minutesSince4am = (d.getHours() * 60 + d.getMinutes() - DAY_CUTOFF_HOURS * 60 + 1440) % 1440;
+  for (const [date, e] of firstByDay) {
+    const dayNum = dayNumberFor(state, date);
+    if (dayNum < 1 || dayNum > state.plan.totalDays) continue;
+    const { h, m } = localHM(e);
+    const minutesSince4am = (h * 60 + m - DAY_CUTOFF_HOURS * 60 + 1440) % 1440;
     out.push({ dayNum, date, minutesSince4am });
   }
   return out.sort((a, b) => a.dayNum - b.dayNum);
 }
 
+// Taps only: backfills carry no timing. `longestGapEnd` is the pouch event that
+// ended the longest gap, for display in the zone it was logged in.
 export function gapStats(state) {
   const pouches = state.events
     .filter((e) => e.type === 'pouch')
-    .map((e) => ({ ts: new Date(e.ts).getTime(), dayKey: dayKeyFor(e.ts) }))
+    .map((e) => ({ ev: e, ts: new Date(e.ts).getTime(), dayKey: dayKeyOf(e) }))
     .sort((a, b) => a.ts - b.ts);
   const today = todayKey();
   const d7 = new Date(`${today}T12:00:00`);
@@ -353,7 +332,7 @@ export function gapStats(state) {
   let longest = null, longestEnd = null;
   for (let i = 1; i < pouches.length; i++) {
     const gap = pouches[i].ts - pouches[i - 1].ts;
-    if (longest == null || gap > longest) { longest = gap; longestEnd = pouches[i].ts; }
+    if (longest == null || gap > longest) { longest = gap; longestEnd = pouches[i]; }
     // averages only pair pouches within the same day, so sleep never inflates them
     if (pouches[i].dayKey === pouches[i - 1].dayKey) {
       if (pouches[i].dayKey === today) { todaySum += gap; todayN++; }
@@ -365,20 +344,22 @@ export function gapStats(state) {
     avgGapTodayMin: todayN ? todaySum / todayN / 60000 : null,
     avgGap7dMin: weekN ? weekSum / weekN / 60000 : null,
     longestGapMs: longest,
-    longestGapEndedAt: longestEnd ? new Date(longestEnd).toISOString() : null,
+    longestGapEndedAt: longestEnd ? new Date(longestEnd.ts).toISOString() : null,
+    longestGapEnd: longestEnd ? longestEnd.ev : null,
     currentGapMs: last ? Date.now() - last.ts : null,
   };
 }
 
-// 24 buckets by local hour: on-time vs everything off-plan (early + over-cap).
-// Baseline-day events carry no verdict and are excluded, same as discipline stats.
+// 24 buckets by local hour (the zone each pouch was logged in): on-time vs
+// everything off-plan (early + over-cap). Baseline-day events carry no verdict
+// and are excluded, same as discipline stats. Taps only.
 export function hourHistogram(state) {
   const buckets = Array.from({ length: 24 }, (_, hour) => ({ hour, onTime: 0, off: 0 }));
   for (const e of state.events) {
     if (e.type !== 'pouch') continue;
     const v = classifyPouch(state, e);
     if (v.bucket === 'baseline') continue;
-    const h = new Date(e.ts).getHours();
+    const { h } = localHM(e);
     if (v.bucket === 'on-time') buckets[h].onTime++;
     else buckets[h].off++;
   }
@@ -389,7 +370,7 @@ export function hourHistogram(state) {
 export function checkinForDay(state, dateStr) {
   let latest = null;
   for (const e of state.events) {
-    if (e.type !== 'checkin' || dayKeyFor(e.ts) !== dateStr) continue;
+    if (e.type !== 'checkin' || dayKeyOf(e) !== dateStr) continue;
     if (!latest || new Date(e.ts) >= new Date(latest.ts)) latest = e;
   }
   return latest;
@@ -403,8 +384,8 @@ export function correlationStats(state) {
   const byDay = new Map();
   for (const e of state.events) {
     if (e.type !== 'checkin') continue;
-    const k = dayKeyFor(e.ts);
-    if (dayNumberFor(k) < 1) continue;
+    const k = dayKeyOf(e);
+    if (dayNumberFor(state, k) < 1) continue;
     const prev = byDay.get(k);
     if (!prev || new Date(e.ts) >= new Date(prev.ts)) byDay.set(k, e);
   }
@@ -437,6 +418,7 @@ export function correlationStats(state) {
   return { totalCheckins: byDay.size, sleep, workout };
 }
 
+// Taps only: a backfill is not a pouch taken at the moment it was entered.
 export function timeSinceLastPouch(state) {
   let last = null;
   for (const e of state.events) {
@@ -450,17 +432,20 @@ export function timeSinceLastPouch(state) {
 // ---- export -----------------------------------------------------------------
 
 export function markdownSummary(state, days = 7) {
-  const today = todayKey();
-  const endN = dayNumberFor(today);
+  const asOf = asOfDay(state);
+  const last = Math.min(dayNumberFor(state, asOf), state.plan.totalDays);
   const lines = [
-    `## Pouch Down — log through ${today} (day ${Math.max(endN, 0)}/${TOTAL_DAYS})`,
+    `## Pouch Down — log through ${asOf} (day ${Math.max(last, 0)}/${state.plan.totalDays})`,
     '',
     '| Day | Date | Cap | Used | Early | Over | First | Resisted | mg | Status |',
     '|---|---|---|---|---|---|---|---|---|---|',
   ];
-  for (let i = Math.max(1, endN - days + 1); i <= endN; i++) {
-    const d = dateForDayNumber(i);
-    if (d > today) break;
+  for (let i = Math.max(1, last - days + 1); i <= last; i++) {
+    const d = dateForDayNumber(state, i);
+    if (!isLogged(state, d)) {
+      lines.push(`| ${i} | ${d} | ${capForDay(state.plan, i)} | — | — | — | — | — | — | no log |`);
+      continue;
+    }
     const used = pouchesForDay(state, d);
     const res = resistedForDay(state, d);
     const status = statusForDay(state, d);
@@ -470,17 +455,16 @@ export function markdownSummary(state, days = 7) {
       const v = classifyPouch(state, e);
       if (v.bucket === 'early') early++;
       if (v.bucket === 'over-cap') over++;
-      const t = new Date(e.ts).getTime();
-      if (first == null || t < first) first = t;
+      if (first == null || Date.parse(e.ts) < Date.parse(first.ts)) first = e;
     }
-    lines.push(`| ${i} | ${d} | ${capForDay(i)} | ${used} | ${early} | ${over} | ${first != null ? fmtTime(first) : '—'} | ${res} | ${mgForDay(state, d)}mg | ${status.includes('over') || status === 'yellow' ? 'over' : 'on plan'} |`);
+    lines.push(`| ${i} | ${d} | ${capForDay(state.plan, i)} | ${used} | ${early} | ${over} | ${first != null ? fmtTime(first) : '—'} | ${res} | ${mgForDay(state, d)}mg | ${status.includes('over') || status === 'yellow' ? 'over' : 'on plan'} |`);
   }
   const triggers = {};
   state.events.filter((e) => e.trigger).forEach((e) => {
     triggers[e.trigger] = (triggers[e.trigger] || 0) + 1;
   });
   const trigLine = Object.entries(triggers).sort((a, b) => b[1] - a[1]).map(([t, c]) => `${t} (${c})`).join(', ');
-  lines.push('', `Streak: ${currentStreak(state)} · Saved: $${moneySaved(state).toFixed(2)}${trigLine ? ` · Triggers: ${trigLine}` : ''}`);
+  lines.push('', `Streak: ${currentStreak(state)}${trigLine ? ` · Triggers: ${trigLine}` : ''}`);
 
   const disc = disciplineStats(state);
   if (disc.onTime + disc.early + disc.overCap > 0) {
@@ -491,12 +475,12 @@ export function markdownSummary(state, days = 7) {
     );
   }
   const gaps = gapStats(state);
-  if (gaps.longestGapMs != null) {
-    lines.push(`Longest gap: ${fmtDuration(gaps.longestGapMs)} (incl. sleep, ended ${dayKeyFor(gaps.longestGapEndedAt)} ${fmtTime(gaps.longestGapEndedAt)})`);
+  if (gaps.longestGapEnd != null) {
+    lines.push(`Longest gap: ${fmtDuration(gaps.longestGapMs)} (incl. sleep, ended ${dayKeyOf(gaps.longestGapEnd)} ${fmtTime(gaps.longestGapEnd)})`);
   }
   let cN = 0, qSum = 0, qN = 0, hSum = 0, hN = 0, wYes = 0, wN = 0;
   for (let i = 0; i < 7; i++) {
-    const d = new Date(`${today}T12:00:00`);
+    const d = new Date(`${asOf}T12:00:00`);
     d.setDate(d.getDate() - i);
     const c = checkinForDay(state, localDateStr(d));
     if (!c) continue;
@@ -519,7 +503,7 @@ export function fullBackup(state) {
     {
       app: 'pouch-down',
       exportedAt: new Date().toISOString(),
-      plan: { startDate: START_DATE, totalDays: TOTAL_DAYS, baseline: BASELINE },
+      plan: { startDate: state.plan.startDate, totalDays: state.plan.totalDays, baseline: state.plan.baseline },
       state: { ...state, settings: { ...state.settings, apiKey: '' } },
     },
     null,
