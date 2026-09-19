@@ -431,7 +431,7 @@ export function timeSinceLastPouch(state) {
 
 // ---- export -----------------------------------------------------------------
 
-export function markdownSummary(state, days = 7) {
+export function markdownSummary(state, days = 7, kept = null) {
   const asOf = asOfDay(state);
   const last = Math.min(dayNumberFor(state, asOf), state.plan.totalDays);
   const lines = [
@@ -464,7 +464,7 @@ export function markdownSummary(state, days = 7) {
     triggers[e.trigger] = (triggers[e.trigger] || 0) + 1;
   });
   const trigLine = Object.entries(triggers).sort((a, b) => b[1] - a[1]).map(([t, c]) => `${t} (${c})`).join(', ');
-  lines.push('', `Streak: ${currentStreak(state)}${trigLine ? ` · Triggers: ${trigLine}` : ''}`);
+  lines.push('', `Streak: ${currentStreak(state)}${kept != null ? ` · Kept: $${kept.toFixed(2)}` : ''}${trigLine ? ` · Triggers: ${trigLine}` : ''}`);
 
   const disc = disciplineStats(state);
   if (disc.onTime + disc.early + disc.overCap > 0) {
