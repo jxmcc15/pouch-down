@@ -36,6 +36,7 @@
 | `src/money.js` | `moneyStats` | A4 |
 | `src/awards.js` | `awardsFor` catalog + evaluation | A5 |
 | `src/state.jsx` | React provider over the root; `api` | A6 |
+| `src/ingest.js` + `scripts/ingest-backup.mjs` | `pouch-ingest`: backup file → vault + Live Log | A9 |
 | `src/priceHelp.js` | free-text → price via Claude | B3 |
 | `src/components/onboarding/*` | FrontDoor, SetupFlow, steps, PlanPreview | B1–B2 |
 | `src/components/{ReadOnlyBanner,BackfillPrompt,MoneyCard}.jsx` | as named | B4–B6 |
@@ -52,7 +53,7 @@ Already built and verified: generator (golden test reproduces the hand-written p
 
 # SESSION A — foundation logic (Sat AM)
 
-Order: **A1 → (A2 ‖ A3) → (A4 → A5) ‖ A6 → (A7 ‖ A8)**. A2 and A3 touch disjoint files and may run as parallel agents; so may A5 and A6; so may A7's per-file edits.
+Order: **A1 → (A2 ‖ A3) → (A4 → A5) ‖ A6 → (A7 ‖ A8) → A9** (A9 is an independent lane — start it as soon as A8's backup format is settled). A2 and A3 touch disjoint files and may run as parallel agents; so may A5 and A6; so may A7's per-file edits.
 
 ### Task A1: `plan.js` becomes plan-as-data helpers
 
@@ -908,6 +909,84 @@ export function fullBackup(root) {
 
   In `SettingsSheet.jsx` call `fullBackup(root)` (from `useApp()`), and `markdownSummary(state, state.plan.totalDays, moneyStats(state).kept)`.
 - [ ] **Step 5: Commit** `git commit -m "backup: export the v2 root, key stripped"`
+
+### Task A9: `pouch-ingest` — get data off the phone without pasting (parallel lane, any time after A8)
+
+**Why:** James does not want to upload or paste his data weekly. Permanent fix is Firebase sync (next spec, due 2026-09-27). Until then: phone → Settings → *Download full backup* → **AirDrop** (lands in `~/Downloads`) or *Save to Files → iCloud Drive → PouchDown* (syncs to the Mac on its own). A Mac-side command picks the file up, files it in the vault, and regenerates a readable live log. Any Claude session runs `pouch-ingest` before reviewing his data, so James's whole job is two taps. The renderer is source-agnostic so the Firebase pull reuses it.
+
+**Files:** Create `src/ingest.js` (pure), `scripts/ingest-backup.mjs` (I/O), `src/__tests__/ingest.test.js` · Install `~/.local/bin/pouch-ingest` (2-line shell wrapper; James's other tools live there) · Personal output goes ONLY to the vault, never this repo.
+
+- [ ] **Step 1: Failing tests**
+
+```js
+// src/__tests__/ingest.test.js
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { parseBackup, renderLiveLog } from '../ingest.js';
+import { generatePlan } from '../planGenerator.js';
+
+const settings = { mealTimes: { breakfast: '08:00', lunch: '12:30', dinner: '18:30' }, costPerTin: 5, pouchesPerTin: 20, wakeTime: '07:00', sleepTime: '23:00' };
+const plan = generatePlan({ pouchesPerDay: 9, mg: 9, strengths: [6, 3], lengthDays: 90, startDate: '2026-09-21', ...settings });
+const ev = (type, day, extra = {}) => ({ id: `${type}-${day}-${Math.random()}`, ts: `${day}T17:00:00.000Z`, tzOffsetMin: -300, day, type, trigger: null, ...extra });
+const a2 = { id: 'a2', status: 'active', createdAt: '2026-09-21T12:00:00Z', archivedAt: null, settings, plan, events: [...Array.from({ length: 8 }, () => ev('pouch', '2026-09-21')), ev('backfill', '2026-09-23', { count: 7, streak: 'keep' })], celebratedStages: [], celebratedAwards: [], checkinDismissedFor: null };
+const v2 = JSON.stringify({ app: 'pouch-down', format: 2, exportedAt: '2026-09-25T17:00:00.000Z', root: { version: 2, device: { apiKey: '' }, activeAttemptId: 'a2', attempts: [a2] } });
+const v1 = JSON.stringify({ app: 'pouch-down', exportedAt: '2026-09-19T02:01:37.910Z', plan: {}, state: { version: 1, settings: { ...settings, apiKey: '' }, events: [{ id: 'e1', ts: '2026-07-08T11:33:12.569Z', type: 'pouch', trigger: null }], celebratedStages: [], checkinDismissedFor: null } });
+
+describe('parseBackup', () => {
+  it('reads a v2 backup', () => expect(parseBackup(v2)).toMatchObject({ format: 2, exportedAt: '2026-09-25T17:00:00.000Z', root: { activeAttemptId: 'a2' } }));
+  it('upgrades a v1 backup to a root with one archived attempt', () => {
+    const b = parseBackup(v1);
+    expect(b.format).toBe(1);
+    expect(b.root.attempts.map((a) => [a.id, a.status])).toEqual([['a1', 'archived']]);
+  });
+  it('rejects anything that is not a Pouch Down backup', () => {
+    expect(() => parseBackup('{"app":"other"}')).toThrow(/not a Pouch Down backup/);
+    expect(() => parseBackup('nope')).toThrow();
+  });
+  it('refuses a file that still contains an API key', () => {
+    expect(() => parseBackup(v2.replace('"apiKey":""', '"apiKey":"sk-ant-LEAK"'))).toThrow(/API key/);
+  });
+});
+
+describe('renderLiveLog', () => {
+  // Pin the clock: statuses and the 21-day window are relative to "today".
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date('2026-09-25T18:00:00.000Z')); });
+  afterEach(() => vi.useRealTimers());
+  const render = () => renderLiveLog(parseBackup(v2).root, { exportedAt: '2026-09-25T17:00:00.000Z', now: new Date() });
+
+  it('is a valid vault note', () => {
+    const md = render();
+    expect(md.startsWith('---\ntitle: Pouch Down — Live Log\n')).toBe(true);
+    expect(md).toMatch(/type: reference/);
+    expect(md).toMatch(/project\/pouch-down/);
+    expect(md).toMatch(/\[\[Pouch Down — Cessation System\]\]/);
+  });
+  it('never calls an unlogged day on plan', () => {
+    const md = render();
+    expect(md).toMatch(/\| 2 \| 2026-09-22 \|.*no log/);
+    expect(md).toMatch(/\| 3 \| 2026-09-23 \|.*backfilled/);
+    expect(md).not.toMatch(/2026-09-22.*on plan/);
+  });
+  it('states how fresh the data is', () => expect(render()).toMatch(/Data as of 2026-09-25/));
+  it('warns when the backup is stale', () => {
+    vi.setSystemTime(new Date('2026-10-05T18:00:00.000Z'));
+    expect(render()).toMatch(/\[!warning\].*10 days old/);
+  });
+});
+```
+
+- [ ] **Step 2: Run — FAIL** (module missing).
+- [ ] **Step 3: Implement `src/ingest.js`** (pure, no `fs`):
+  - `parseBackup(text)` → `{ format, exportedAt, root }`. `JSON.parse`; require `app === 'pouch-down'` else `throw new Error('not a Pouch Down backup')`; if `/sk-ant-/.test(text)` → `throw new Error('backup contains an API key — refusing to store it')`; `format === 2` → `root` as is; otherwise (v1 wrapper with `.state`) → `migrateV1(j.state, { legacyPlan: LEGACY_PLAN, now: j.exportedAt }) `.
+  - `renderLiveLog(root, { exportedAt, now = new Date() })` → Markdown string: YAML frontmatter (`title: Pouch Down — Live Log`, `type: reference`, `tags: [health/cessation, project/pouch-down, live-log]`, `created: <exportedAt date>`, `data_as_of: <exportedAt>`); a line linking `[[Pouch Down — Cessation System]]` and `[[Attempt 2 — Build Schedule]]`; `> [!warning] This backup is N days old — ask James to AirDrop a fresh one.` when `now − exportedAt > 3 days`; "Data as of YYYY-MM-DD HH:MM"; then for the active attempt (else the most recent): stage + day N of total, `streaks()` current/best, `moneyStats()` old pace/spent/kept, earned award titles from `awardsFor()`, `disciplineStats()` line, top triggers, and a table of the **last 21 days** — `| Day | Date | Cap | Used | Early | Over | First | Resisted | Sleep | Status |` where Status is `no log` / `backfilled` (any backfill event that day) / `over` / `on plan`, and unlogged rows show `—` in every numeric column. All day math comes from the existing `store.js` functions (which read the real clock); `now` is used only for the staleness warning. The tests pin the clock with fake timers, so never hardcode a date in the renderer.
+- [ ] **Step 4: Implement `scripts/ingest-backup.mjs`** (I/O shell around the pure module):
+  - Inputs: `POUCH_BACKUP_DIR` (default `/Users/jxm/jxm-vault/Pouch Down`); search dirs `~/Downloads` and `~/Library/Mobile Documents/com~apple~CloudDocs/PouchDown` for `pouch-down-backup-*.{json,txt}`.
+  - For each file, newest first: `parseBackup` → on success **copy** to `$POUCH_BACKUP_DIR/Backups/<exportedAt with : → ->.json` (skip if an identical SHA-256 already exists), then **move** the Downloads original into `$POUCH_BACKUP_DIR/Backups/_ingested/` (never delete; leave iCloud copies alone). On failure: leave the file where it is and print why.
+  - Render the newest valid backup to `$POUCH_BACKUP_DIR/Live Log.md`. Print a 3-line summary (files ingested, data as of, current streak). Exit 0 when there was nothing new. **Do not `git commit` in the vault** — Obsidian Git's auto-commit and Claude's own `claude:` commits cover it.
+  - `--dry-run` prints what it would do and writes nothing.
+- [ ] **Step 5: Install the command:** write `~/.local/bin/pouch-ingest` = `#!/bin/sh` + `exec node /Users/jxm/Projects/pouch-down/scripts/ingest-backup.mjs "$@"`, `chmod +x`. Verify: `pouch-ingest --dry-run` from any directory.
+- [ ] **Step 6: Verify for real:** copy the step-1 backup from the vault into a temp dir, point the script at it with a temp `POUCH_BACKUP_DIR`, run, and read the generated Live Log — it must show attempt 1 with **no** streak and "no log" rows. Never write test output into the real vault folder.
+- [ ] **Step 7 (ONLY if James said yes up front):** a launchd agent `~/Library/LaunchAgents/com.jxm.pouch-ingest.plist` (`WatchPaths`: the two search dirs; `ProgramArguments`: the wrapper; logs to `~/Library/Logs/pouch-ingest.log`) so ingestion happens the moment the AirDrop lands. **Known macOS gotcha:** a background agent reading `~/Downloads` / iCloud Drive is often blocked by privacy protection (TCC) with "Operation not permitted" and can't show a permission prompt. Test it; if blocked, do NOT try to work around it — tell James exactly which binary needs *Files and Folders* access and let him grant it in System Settings. Without the agent everything still works: Claude just runs `pouch-ingest` first.
+- [ ] **Step 8:** add one line to `CLAUDE.md` under Related: "**Before reviewing James's data, run `pouch-ingest`** and read `Pouch Down/Live Log.md` in the vault — never ask him to paste an export." Commit: `git commit -m "ingest: pouch-ingest command + live log renderer (no more pasting exports)"`
 
 ### Session A exit gate
 
