@@ -3,12 +3,12 @@ import { motion } from 'framer-motion';
 import { Eye, EyeOff, ClipboardCopy, Check, Download } from 'lucide-react';
 import { useApp } from '../state.jsx';
 import { markdownSummary, fullBackup, todayKey } from '../store.js';
-import { TOTAL_DAYS } from '../plan.js';
+import { moneyStats } from '../money.js';
 
 const SHORTCUT_URL = 'https://jxmcc15.github.io/pouch-down/?checkin=hours:[Duration]';
 
 export default function SettingsSheet({ onClose }) {
-  const { state, api } = useApp();
+  const { state, root, device, api } = useApp();
   const s = state.settings;
   const [showKey, setShowKey] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -44,7 +44,7 @@ export default function SettingsSheet({ onClose }) {
 
   const copyExport = async () => {
     try {
-      await navigator.clipboard.writeText(markdownSummary(state, TOTAL_DAYS));
+      await navigator.clipboard.writeText(markdownSummary(state, state.plan.totalDays, moneyStats(state).kept));
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
     } catch {
@@ -56,7 +56,7 @@ export default function SettingsSheet({ onClose }) {
   // out through the share sheet (AirDrop / Save to Files). Browsers that won't
   // share a .json get a .txt; browsers that won't share files get the clipboard.
   const downloadBackup = async () => {
-    const json = fullBackup(state);
+    const json = fullBackup(root);
     const name = `pouch-down-backup-${todayKey()}`;
     const file = [
       new File([json], `${name}.json`, { type: 'application/json' }),
@@ -155,8 +155,8 @@ export default function SettingsSheet({ onClose }) {
             type={showKey ? 'text' : 'password'}
             autoComplete="off"
             placeholder="sk-ant-…"
-            value={s.apiKey}
-            onChange={(e) => api.updateSettings({ apiKey: e.target.value })}
+            value={device.apiKey}
+            onChange={(e) => api.updateDevice({ apiKey: e.target.value })}
             style={{ flex: 1 }}
           />
           <button

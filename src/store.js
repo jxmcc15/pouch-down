@@ -513,16 +513,17 @@ export function markdownSummary(state, days = 7, kept = null) {
   return lines.join('\n');
 }
 
-// Complete raw state as JSON — every event, check-in, and setting — for
-// off-device safekeeping. Unlike markdownSummary this is lossless. The API
-// key is the one thing that never leaves the phone, so it's blanked here.
-export function fullBackup(state) {
+// Complete raw v2 root as JSON — every attempt, event, check-in, and setting —
+// for off-device safekeeping. Unlike markdownSummary this is lossless. The
+// device API key is the one thing that never leaves the phone, so it's
+// blanked here; the input root itself is never mutated.
+export function fullBackup(root) {
   return JSON.stringify(
     {
       app: 'pouch-down',
+      format: 2,
       exportedAt: new Date().toISOString(),
-      plan: { startDate: state.plan.startDate, totalDays: state.plan.totalDays, baseline: state.plan.baseline },
-      state: { ...state, settings: { ...state.settings, apiKey: '' } },
+      root: { ...root, device: { ...root.device, apiKey: '' } },
     },
     null,
     2
