@@ -103,3 +103,50 @@ describe('discipline stats', () => {
     expect(d.onTime + d.early + d.overCap).toBe(0);
   });
 });
+
+describe('post-quit days are scored honestly (fix 1)', () => {
+  it('a silent post-quit day is nolog; resisted-only is green; a pouch is yellow (cap 0)', () => {
+    vi.setSystemTime(new Date('2026-12-25T17:00:00.000Z'));
+    const s = attempt([ev('resisted', '2026-12-23'), ev('pouch', '2026-12-24')]);
+    expect(S.statusForDay(s, '2026-12-22')).toBe('nolog'); // silent, past quit day (2026-12-19)
+    expect(S.statusForDay(s, '2026-12-23')).toBe('green');
+    expect(S.statusForDay(s, '2026-12-24')).toBe('yellow');
+  });
+});
+
+describe('day math is pure calendar arithmetic, not device-zone Date math (fix 2)', () => {
+  it('is correct across the US DST end transition', () => {
+    const s = attempt([]);
+    expect(S.dayNumberFor(s, '2026-11-02')).toBe(43);
+    expect(S.dateForDayNumber(s, 43)).toBe('2026-11-02');
+  });
+  it('round-trips for a wide range of day numbers', () => {
+    const s = attempt([]);
+    for (let n = -5; n <= 400; n++) {
+      expect(S.dayNumberFor(s, S.dateForDayNumber(s, n))).toBe(n);
+    }
+  });
+});
+
+describe('invalid backfill counts are ignored, not trusted (fix 3)', () => {
+  it.each([-5, '2', NaN, 2.5])('count %p leaves the day unlogged with 0 pouches', (count) => {
+    const s = attempt([ev('backfill', '2026-09-22', { count, streak: 'keep' })]);
+    expect(S.isLogged(s, '2026-09-22')).toBe(false);
+    expect(S.pouchesForDay(s, '2026-09-22')).toBe(0);
+    expect(S.statusForDay(s, '2026-09-22')).toBe('nolog');
+  });
+  it('count 0 logs the day with 0 used, green', () => {
+    const s = attempt([ev('backfill', '2026-09-22', { count: 0, streak: 'keep' })]);
+    expect(S.isLogged(s, '2026-09-22')).toBe(true);
+    expect(S.pouchesForDay(s, '2026-09-22')).toBe(0);
+    expect(S.statusForDay(s, '2026-09-22')).toBe('green');
+  });
+  it('an invalid-count backfill contributes nothing to discipline stats', () => {
+    const d = S.disciplineStats(attempt([ev('backfill', '2026-09-22', { count: -1, streak: 'keep' })]));
+    expect(d.backfilled).toBe(0);
+  });
+  it('an invalid-count backfill\'s "break" flag does not break an otherwise-valid day', () => {
+    const s = attempt([...pouches('2026-09-22', 8), ev('backfill', '2026-09-22', { count: -1, streak: 'break' })]);
+    expect(S.dayCountsForStreak(s, '2026-09-22')).toBe(true);
+  });
+});

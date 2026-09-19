@@ -41,16 +41,29 @@ export function todayKey(now = new Date()) {
   return stampNow(now).day;
 }
 
+// Pure calendar-day arithmetic on UTC midnights. Device-zone Date objects
+// (constructing at noon local, diffing/setDate) break in zones that skip a
+// wall-clock day around a DST transition; this doesn't.
+function epochDayOf(dateStr) {
+  return Math.round(Date.parse(`${dateStr}T00:00:00Z`) / 86400000);
+}
+function dateStrOfEpochDay(epochDay) {
+  return new Date(epochDay * 86400000).toISOString().slice(0, 10);
+}
+
 // Day number within the attempt's plan: 1..totalDays. 0 or negative = pre-plan, beyond = post-quit.
 export function dayNumberFor(state, dateStr) {
-  const start = new Date(`${state.plan.startDate}T12:00:00`);
-  return Math.round((new Date(`${dateStr}T12:00:00`) - start) / 86400000) + 1;
+  return epochDayOf(dateStr) - epochDayOf(state.plan.startDate) + 1;
 }
 
 export function dateForDayNumber(state, n) {
-  const d = new Date(`${state.plan.startDate}T12:00:00`);
-  d.setDate(d.getDate() + n - 1);
-  return localDateStr(d);
+  return dateStrOfEpochDay(epochDayOf(state.plan.startDate) + n - 1);
+}
+
+// A backfill's count is trusted only if it's a real whole number ≥ 0 — an
+// invalid one is treated everywhere as if the backfill never happened.
+function backfillCount(e) {
+  return Number.isInteger(e.count) && e.count >= 0 ? e.count : null;
 }
 
 // The day an attempt is scored "as of": today while active; for an archived
@@ -70,7 +83,10 @@ export function pouchesForDay(state, dateStr) {
   let n = 0;
   for (const e of eventsForDay(state, dateStr)) {
     if (e.type === 'pouch') n++;
-    else if (e.type === 'backfill') n += e.count;
+    else if (e.type === 'backfill') {
+      const c = backfillCount(e);
+      if (c != null) n += c;
+    }
   }
   return n;
 }
@@ -84,7 +100,7 @@ export function resistedForDay(state, dateStr) {
 // Silence is not success: a day counts as logged only if the user told the app
 // something about nicotine that day. A sleep check-in alone doesn't.
 export function isLogged(state, dateStr) {
-  return eventsForDay(state, dateStr).some((e) => e.type === 'pouch' || e.type === 'resisted' || e.type === 'backfill');
+  return eventsForDay(state, dateStr).some((e) => e.type === 'pouch' || e.type === 'resisted' || (e.type === 'backfill' && backfillCount(e) != null));
 }
 
 // 'future' | 'pre' | 'green' | 'yellow' | 'nolog' | 'today-under' | 'today-over'
@@ -95,14 +111,15 @@ export function statusForDay(state, dateStr) {
   if (n < 1) return 'pre';
   const over = pouchesForDay(state, dateStr) > capForDay(state.plan, n);
   if (dateStr === today && state.status !== 'archived') return over ? 'today-over' : 'today-under';
-  if (n <= state.plan.totalDays && !isLogged(state, dateStr)) return 'nolog';
+  // silence is never success — a past unlogged day is nolog, quit day or not
+  if (!isLogged(state, dateStr)) return 'nolog';
   return over ? 'yellow' : 'green';
 }
 
 export function dayCountsForStreak(state, dateStr) {
   if (!isLogged(state, dateStr)) return false;
   if (pouchesForDay(state, dateStr) > capForDay(state.plan, dayNumberFor(state, dateStr))) return false;
-  return !eventsForDay(state, dateStr).some((e) => e.type === 'backfill' && e.streak === 'break');
+  return !eventsForDay(state, dateStr).some((e) => e.type === 'backfill' && backfillCount(e) != null && e.streak === 'break');
 }
 
 // Consecutive green days ending yesterday, plus today once it's logged and
@@ -266,7 +283,11 @@ export function disciplineStats(state) {
   let earlySum = 0, earlyN = 0, heldSum = 0, heldN = 0;
   for (const ev of state.events) {
     // backfilled pouches carry no timing, so they get their own bucket
-    if (ev.type === 'backfill') { totals.backfilled += ev.count; continue; }
+    if (ev.type === 'backfill') {
+      const c = backfillCount(ev);
+      if (c != null) totals.backfilled += c;
+      continue;
+    }
     if (ev.type !== 'pouch') continue;
     const v = classifyPouch(state, ev);
     if (v.bucket === 'baseline') continue;
@@ -324,9 +345,7 @@ export function gapStats(state) {
     .map((e) => ({ ev: e, ts: new Date(e.ts).getTime(), dayKey: dayKeyOf(e) }))
     .sort((a, b) => a.ts - b.ts);
   const today = todayKey();
-  const d7 = new Date(`${today}T12:00:00`);
-  d7.setDate(d7.getDate() - 6);
-  const weekStart = localDateStr(d7);
+  const weekStart = dateStrOfEpochDay(epochDayOf(today) - 6);
 
   let todaySum = 0, todayN = 0, weekSum = 0, weekN = 0;
   let longest = null, longestEnd = null;
@@ -480,9 +499,8 @@ export function markdownSummary(state, days = 7, kept = null) {
   }
   let cN = 0, qSum = 0, qN = 0, hSum = 0, hN = 0, wYes = 0, wN = 0;
   for (let i = 0; i < 7; i++) {
-    const d = new Date(`${asOf}T12:00:00`);
-    d.setDate(d.getDate() - i);
-    const c = checkinForDay(state, localDateStr(d));
+    const d = dateStrOfEpochDay(epochDayOf(asOf) - i);
+    const c = checkinForDay(state, d);
     if (!c) continue;
     cN++;
     if (c.sleepQuality != null) { qSum += c.sleepQuality; qN++; }
