@@ -8,13 +8,15 @@
 // (iCloud copies stay put), and writes $POUCH_BACKUP_DIR/Live Log.md from the
 // newest backup. It never deletes a file and never overwrites a different one.
 //
-// Usage: pouch-ingest [--dry-run]
+// Usage: pouch-ingest [--dry-run] [--notify]
 // Env:   POUCH_BACKUP_DIR   where backups + Live Log go (default: the vault's Pouch Down folder)
 //        POUCH_SEARCH_DIRS  colon-separated folders to pick backups up from
 //                           (default: ~/Downloads and iCloud Drive/PouchDown)
 //
-// `ingest()` returns a structured result so other modes (e.g. notifications)
-// can be built on it without re-reading the folders.
+// `ingest()` returns a structured result so other modes can be built on it
+// without re-reading the folders. --notify is the launchd watcher's mode
+// (~/Library/LaunchAgents/com.jxm.pouch-ingest.plist): it messages James on
+// Telegram about what happened or what needs him — see scripts/notify-telegram.mjs.
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -23,6 +25,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { parseBackup, renderLiveLog, liveAttempt, backupAgeDays, isStale } from '../src/ingest.js';
 import { streaks } from '../src/store.js';
+import { planMessages, nextState, isDue, errorText, statePath, loadState, saveState, notify } from './notify-telegram.mjs';
 
 const BACKUP_NAME = /^pouch-down-backup-.*\.(json|txt)$/i;
 const ICLOUD_PLACEHOLDER = /^\.(pouch-down-backup-.*\.(json|txt))\.icloud$/i; // not downloaded to this Mac yet
@@ -76,22 +79,46 @@ function freePath(dir, name) {
   }
 }
 
-// Newest valid backup already archived in Backups/ (names sort by export time).
-function newestArchived(archiveDir) {
-  let names;
+const readBackup = (file) => {
+  try {
+    return { file, ...parseBackup(fs.readFileSync(file, 'utf8')) };
+  } catch {
+    return null; // not a backup
+  }
+};
+const newer = (a, b) => (!b || (a && Date.parse(a.exportedAt) > Date.parse(b.exportedAt)) ? a : b);
+
+// Newest valid backup already in the folder. Backups/ names sort by export time,
+// so its first valid one is its newest. Backups filed by hand elsewhere in the
+// folder count too: a phone copy identical to one of those is a duplicate, so
+// it only goes to _ingested/ and never lands in Backups/.
+function newestArchived(backupDir) {
+  const archiveDir = path.join(backupDir, 'Backups');
+  let names = [];
   try {
     names = fs.readdirSync(archiveDir).filter((n) => n.endsWith('.json')).sort().reverse();
   } catch (err) {
-    if (err.code === 'ENOENT') return null;
-    throw err;
+    if (err.code !== 'ENOENT') throw err;
   }
-  for (const name of names) {
-    const file = path.join(archiveDir, name);
+  let best = null;
+  for (const name of names) if ((best = readBackup(path.join(archiveDir, name)))) break;
+  const walk = (d) => {
+    let entries;
     try {
-      return { file, ...parseBackup(fs.readFileSync(file, 'utf8')) };
-    } catch { /* not a backup — keep looking */ }
-  }
-  return null;
+      entries = fs.readdirSync(d, { withFileTypes: true });
+    } catch (err) {
+      if (err.code === 'ENOENT') return;
+      throw err;
+    }
+    for (const e of entries) {
+      const p = path.join(d, e.name);
+      if (e.name.startsWith('.') || p === archiveDir) continue;
+      if (e.isDirectory()) walk(p);
+      else if (e.isFile() && /\.(json|txt)$/i.test(e.name)) best = newer(readBackup(p), best);
+    }
+  };
+  walk(backupDir);
+  return best;
 }
 
 // → { dryRun, ingested, duplicates, failed, blocked, waiting, readableDirs, newest, liveLog }
@@ -198,7 +225,7 @@ export function ingest(opts = {}) {
 
   // 3. Render the newest backup we know of — new or already archived. Every run
   //    re-renders, so the staleness warning stays current.
-  let newest = newestArchived(archiveDir);
+  let newest = newestArchived(backupDir);
   for (const p of parsed) if (!newest || Date.parse(p.exportedAt) > Date.parse(newest.exportedAt)) newest = p;
   if (newest) {
     const attempt = liveAttempt(newest.root);
@@ -255,31 +282,38 @@ export function summaryLines(r) {
   return lines;
 }
 
-const USAGE = `Usage: pouch-ingest [--dry-run]
+const USAGE = `Usage: pouch-ingest [--dry-run] [--notify]
 
 Files Pouch Down backups (pouch-down-backup-*.json|.txt) from ~/Downloads and
 iCloud Drive/PouchDown into the vault, then re-renders "Live Log.md".
 
-  --dry-run   print what would happen; write, copy and move nothing
+  --dry-run   print what would happen; write, copy, move and send nothing
+  --notify    watcher mode: message James on Telegram (macOS notification as
+              fallback) when a backup is filed, a file fails, macOS blocks a
+              folder, or the newest backup is stale; log only when something
+              happened. With --dry-run, prints the messages instead.
   --help      this text
 
 Env:
   POUCH_BACKUP_DIR   destination folder (default: /Users/jxm/jxm-vault/Pouch Down)
   POUCH_SEARCH_DIRS  colon-separated folders to search (default: ~/Downloads and
-                     ~/Library/Mobile Documents/com~apple~CloudDocs/PouchDown)`;
+                     ~/Library/Mobile Documents/com~apple~CloudDocs/PouchDown)
+  POUCH_TELEGRAM_ENV, POUCH_TELEGRAM_CHAT, POUCH_INGEST_STATE  (--notify; see
+                     scripts/notify-telegram.mjs)`;
 
-// → exit code: 0 ok (including "nothing new"), 1 error, 2 when no search folder could be read, 64 bad usage.
-export function main(argv = process.argv.slice(2), env = process.env) {
+// → Promise of the exit code: 0 ok (including "nothing new"), 1 error, 2 when no search folder could be read, 64 bad usage.
+export async function main(argv = process.argv.slice(2), env = process.env) {
   const flags = new Set(argv);
   if (flags.has('--help') || flags.has('-h')) {
     console.log(USAGE);
     return 0;
   }
-  const unknown = argv.filter((a) => a !== '--dry-run');
+  const unknown = argv.filter((a) => a !== '--dry-run' && a !== '--notify');
   if (unknown.length) {
     console.error(`pouch-ingest: unknown argument ${unknown[0]}\n\n${USAGE}`);
     return 64;
   }
+  if (flags.has('--notify')) return watch(env, flags.has('--dry-run'));
   let r;
   try {
     r = ingest({ ...config(env), dryRun: flags.has('--dry-run') });
@@ -295,5 +329,57 @@ export function main(argv = process.argv.slice(2), env = process.env) {
   return 0;
 }
 
+const stamp = (d) => `${fmtLocal(d.toISOString())}:${String(d.getSeconds()).padStart(2, '0')}`;
+
+// --notify: launchd runs this on every change in the watched folders and at
+// 09:00. Same ingest, then the messages planMessages() picks, deduped through
+// the state file. The log gets a block only when something happened, so a
+// busy ~/Downloads doesn't fill it with "nothing new".
+async function watch(env, dryRun) {
+  const now = new Date();
+  const lines = [];
+  let r = null, error = null;
+  try {
+    r = ingest({ ...config(env), dryRun, now, log: (line) => lines.push(line) });
+  } catch (err) {
+    error = err;
+    lines.push(`pouch-ingest: ${err.message}`);
+  }
+
+  const file = statePath(env);
+  const state = loadState(file);
+  const messages = error
+    ? isDue(state.errorSentAt, now) ? [{ kind: 'error', text: errorText(error) }] : []
+    : planMessages(r, state, { now });
+  const delivered = [];
+  for (const m of messages) {
+    if (dryRun) {
+      lines.push(`[dry run] would send (${m.kind}): ${m.text}`);
+      continue;
+    }
+    const sent = await notify(m.text, { env, log: (line) => lines.push(line) });
+    lines.push(sent.delivered ? `sent ${m.kind} message (${sent.via})` : `couldn't deliver ${m.kind} message`);
+    if (sent.delivered) delivered.push(m);
+  }
+  if (!dryRun) {
+    const next = nextState(state, { delivered, failedNow: r?.failed, now });
+    try {
+      if (JSON.stringify(next) !== JSON.stringify(state)) saveState(file, next);
+    } catch (err) {
+      lines.push(`couldn't save ${file}: ${err.message}`);
+    }
+  }
+
+  // A file that keeps failing or a folder that stays blocked is logged when its
+  // message goes out, not again on every run after that.
+  const happened = error || messages.length || r.ingested.length || r.duplicates.length || r.liveLog?.changed;
+  if (dryRun || happened) {
+    console.log(`── ${stamp(now)} pouch-ingest --notify${dryRun ? ' --dry-run' : ''}`);
+    for (const line of [...lines, ...(r ? summaryLines(r) : [])]) console.log(line);
+  }
+  if (error) return 1;
+  return r.blocked.length && r.readableDirs === 0 ? 2 : 0;
+}
+
 const invokedDirectly = process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url));
-if (invokedDirectly) process.exitCode = main();
+if (invokedDirectly) process.exitCode = await main();
