@@ -50,6 +50,23 @@ export function saveRoot(root, storage = localStorage) {
   storage.setItem(KEY_V2, JSON.stringify(root));
 }
 
+// "Start fresh" is the one path that ends with unreadable v2 data being written
+// over, so copy it aside first — it is the only thing standing between a
+// corrupt-storage bug and a lost history. Never touches v1 (the real rollback),
+// never overwrites an earlier rescue, and refuses to fail the recovery it
+// exists to protect: a full quota just means this copy doesn't happen.
+export function preserveCorruptV2(storage = localStorage, now = new Date().toISOString()) {
+  try {
+    const raw = storage.getItem(KEY_V2);
+    if (raw === null) return null;
+    const key = `${KEY_V2}-corrupt-${now.slice(0, 19).replace(/[:T]/g, '-')}`;
+    if (storage.getItem(key) === null) storage.setItem(key, raw);
+    return key;
+  } catch {
+    return null;
+  }
+}
+
 export const attemptById = (root, id) => root.attempts.find((a) => a.id === id) ?? null;
 
 export function updateAttempt(root, id, fn) {

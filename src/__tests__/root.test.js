@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { KEY_V1, KEY_V2, DEFAULT_SETTINGS, freshRoot, loadRoot, saveRoot, startAttempt, archiveActive, updateAttempt, attemptById, lastSettings } from '../root.js';
+import { KEY_V1, KEY_V2, DEFAULT_SETTINGS, freshRoot, loadRoot, saveRoot, startAttempt, archiveActive, updateAttempt, attemptById, lastSettings, preserveCorruptV2 } from '../root.js';
 
 const mem = (init = {}) => { const m = new Map(Object.entries(init)); return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, v), _m: m }; };
 const NOW = '2026-09-20T18:00:00.000Z';
@@ -113,5 +113,40 @@ describe('data-safety guards', () => {
     ] };
     const r1 = startAttempt(root, { plan, settings: DEFAULT_SETTINGS, now: NOW });
     expect(r1.attempts.map((a) => a.id)).toEqual(['a1', 'a3', 'a4']);
+  });
+});
+
+// "Start fresh" is the only path that ends with unreadable v2 data being
+// overwritten, so the rescue copy is the last line of defence before a
+// corrupt-storage bug turns into a lost history.
+describe('preserveCorruptV2', () => {
+  it('copies the unreadable v2 value aside and leaves v1 and v2 untouched', () => {
+    const s = mem({ [KEY_V1]: V1, [KEY_V2]: '{corrupt' });
+    const key = preserveCorruptV2(s, NOW);
+    expect(key).toBe('pouch-down-v2-corrupt-2026-09-20-18-00-00');
+    expect(s.getItem(key)).toBe('{corrupt');
+    expect(s.getItem(KEY_V2)).toBe('{corrupt');
+    expect(s.getItem(KEY_V1)).toBe(V1);
+  });
+
+  it('never overwrites an earlier rescue from the same second', () => {
+    const s = mem({ [KEY_V2]: 'second attempt' });
+    s.setItem('pouch-down-v2-corrupt-2026-09-20-18-00-00', 'first rescue');
+    preserveCorruptV2(s, NOW);
+    expect(s.getItem('pouch-down-v2-corrupt-2026-09-20-18-00-00')).toBe('first rescue');
+  });
+
+  it('nothing stored under v2 → nothing written', () => {
+    const calls = [];
+    const s = { getItem: () => null, setItem: (k) => calls.push(k) };
+    expect(preserveCorruptV2(s, NOW)).toBeNull();
+    expect(calls).toEqual([]);
+  });
+
+  it('a throwing storage (full quota) must not break the recovery it protects', () => {
+    // Only v2 has data, so the rescue key really is absent and setItem is reached.
+    const s = { getItem: (k) => (k === KEY_V2 ? 'data' : null), setItem: () => { throw new Error('QuotaExceededError'); } };
+    expect(() => preserveCorruptV2(s, NOW)).not.toThrow();
+    expect(preserveCorruptV2(s, NOW)).toBeNull();
   });
 });

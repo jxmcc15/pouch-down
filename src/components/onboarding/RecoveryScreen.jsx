@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, Download, ShieldAlert } from 'lucide-react';
 import { useApp } from '../../state.jsx';
-import { KEY_V1, KEY_V2 } from '../../root.js';
+import { KEY_V1, KEY_V2, preserveCorruptV2 } from '../../root.js';
 import { todayKey } from '../../store.js';
 
 const spring = { type: 'spring', damping: 24, stiffness: 180 };
@@ -153,7 +153,12 @@ export default function RecoveryScreen() {
                   className="btn"
                   style={{ flex: 1 }}
                   whileTap={{ scale: 0.96 }}
-                  onClick={() => api.startFresh()}
+                  onClick={() => {
+                    // Copy the unreadable value aside before the next save
+                    // writes over it. v1 is untouched either way.
+                    preserveCorruptV2();
+                    api.startFresh();
+                  }}
                 >
                   Yes, start fresh
                 </motion.button>

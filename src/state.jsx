@@ -14,9 +14,14 @@ const Ctx = createContext(null);
 // mutation guard call this on the same state object, so the UI and the guard
 // can never disagree — even for several api calls in one handler.
 function view({ root, viewingId }) {
-  const viewing = viewingId ? attemptById(root, viewingId) : null;
-  const state = viewing ?? attemptById(root, root.activeAttemptId);
-  return { state, readOnly: !!viewing || (!!state && state.status !== 'active') };
+  // A viewingId that doesn't resolve must NOT fall through to the active
+  // attempt: readOnly would silently drop to false and the next mutation would
+  // land on the wrong attempt. No UI path can produce a bad id today — this is
+  // what keeps that true. Unresolvable means no state, which boots the Front
+  // door rather than an editable screen wearing a viewer's context.
+  if (viewingId) return { state: attemptById(root, viewingId), readOnly: true };
+  const state = attemptById(root, root.activeAttemptId);
+  return { state, readOnly: !!state && state.status !== 'active' };
 }
 
 export function AppStateProvider({ children }) {
