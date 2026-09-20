@@ -245,3 +245,44 @@ rules only; no personal data sent.
   card can deep-link into Settings.
 - **Unverified by machine, worth James's eyes:** the AI price help has never
   made a live call. He is testing it himself.
+
+### Handoff — Session B → B2 (written 2026-09-20, ~11:00 AM)
+
+**State:** branch `feat/attempt-2`, working tree clean, HEAD `00904d3`. Five
+Session B commits, **nothing pushed** — `main` is still the v1 app on James's
+phone. Session B's exit gate passed; B2 may start immediately.
+
+**Done:** B1–B7 all complete and wired. Boot routing, Front door, Recovery
+screen, 8-screen setup + plan preview, AI price help, read-only viewer,
+backfill prompt, money card, Settings → Attempts.
+
+**Next (Session B2 — awards UI):** `StreakChip`, `TrophyCase`, `AwardUnlock`.
+Launch with the one-liner from the vault schedule note. The awards *logic*
+(`src/awards.js`) shipped in Session A and is fully tested — B2 is UI only.
+
+**Five things B2 must know:**
+
+1. **`TodayView` already renders a streak tile** (flame + count) in the footer
+   row, left of "resisted today". `StreakChip` replaces it — do not add a
+   second streak display.
+2. **Never play an unlock overlay while `readOnly`.** `newlyEarned` does not
+   check it and `markAwardCelebrated` no-ops on an archived attempt, so a
+   celebration would replay on every open of Attempt 1, forever. (Carried
+   forward from Session A; still true.)
+3. `TodayView` now returns early on `readOnly` before `postQuit` — put any new
+   Today surface *after* that guard or it will render over a past attempt.
+4. Reuse `scripts/e2e/seed-v1.mjs` and copy `scripts/e2e/walk-setup.mjs` for
+   the award-unlock flow (C1 flow 4). Synthetic data only. Kill servers by PID.
+5. Label streak-badge progress in **finished** days — today is not settled yet.
+
+**Then Session C (QA and ship).** Deploy freeze is today 6:00 PM CT. Nothing in
+Session B was cut; the full B scope shipped.
+
+**Open, deliberately not fixed:** `RecoveryTimeline` derives "Nicotine-free —
+N days" from elapsed time for an *active* post-quit attempt. Same class as the
+read-only bug fixed here, but unreachable until 2026-12-19 and already specced
+as the post-quit "still free" check-in (due 2026-12-12). C should confirm that
+deadline, not fix it now.
+
+**Unverified by machine:** the AI price help has never made a live API call —
+James tests it himself with his own key.
