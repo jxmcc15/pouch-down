@@ -107,3 +107,141 @@ Code and synthetic rules only; no personal data sent.
 - **Known edge:** a backfill above the old baseline lowers `kept` for a past stretch, which could move a `kept-N` badge back under its threshold. Rare; accepted.
 - **Deploy-day edge (C5):** if the old v1 app is still cached on the phone after the new one has migrated, anything logged in the old app goes to `pouch-down-v1` only. It isn't lost (v1 is never deleted), but v2 won't see it. Open the app twice after deploy and confirm the Front door shows before logging.
 - `gapStats` now returns `longestGapEnd` (the event) alongside `longestGapEndedAt`. `disciplineStats` has `backfilled`. `fmtTime` prefers an event.
+
+---
+
+## Session B — interface (Sun 2026-09-20, morning)
+
+Coordinator + six parallel agents (B1–B6), per `docs/superpowers/plans/session-B-prompt.md`.
+Ran Sunday morning, not Saturday afternoon — the schedule slipped a day, so B,
+B2 and C all land inside the same day as the 6 PM freeze.
+
+### Up-front answers from James
+
+1. **AI price help: he tests it for real**, with his own key, on his phone. So
+   B3 ships complete and no live API call was made from this session.
+2. **Contact sheet of every setup screen: yes.** Telegram's MCP server dropped
+   mid-session, so it went via Claude Code's file-send instead.
+3. **Take the two extras Session A left behind:** render `saveError` as a
+   toast, and stop the undo chip lying. Both done.
+4. **Setup is escapable, but the Back control must be small and
+   insignificant** — quiet ghost text, still a 44×44 tap target, hidden on
+   screen 1 on a true first run.
+5. **Sol review budget refreshed: up to 6 calls.** One was spent; it earned
+   its cost (below).
+6. **Build the walkthrough exactly as spec'd.**
+
+### Progress
+
+| Task | Status | Commit |
+|---|---|---|
+| B1 boot routing, Front door, Recovery screen, `saveError` toast | ✅ | `f2abc6b` |
+| B3 `priceHelp.js` + sheet (15 tests) | ✅ | `f2abc6b` |
+| B4 `ReadOnlyBanner` + `ReadOnlySummaryCard` | ✅ | `f2abc6b` |
+| B5 `BackfillPrompt` | ✅ | `f2abc6b` |
+| B7 Settings → Attempts; settings disabled while read-only | ✅ | `f2abc6b` |
+| B2 `SetupFlow` + `steps` + `PlanPreview` (8 screens) | ✅ | `77ad07b` |
+| B6 `MoneyCard`, wired into Today + Stats | ✅ | `77ad07b` |
+| Sol review fixes (read-only guard, corrupt-storage rescue) | ✅ | `b1f2153` |
+| Meal-time overflow on a 390px phone | ✅ | `5fe2f6e` |
+
+### Exit gate — PASSED
+
+- `npm test` → **162 passed, 1 skipped** (12 files; 158 + 4 added for the
+  corrupt-storage rescue). `npm run lint` → exactly the 2 baseline warnings.
+  `npm run build` → OK. Math harness → ALL MATH CHECKS PASSED.
+- Headless Chromium, iPhone viewport (390×844), synthetic v1 seed, `?static`:
+  Front door → Attempt 1 read-only → Exit → Start new → all 8 setup screens →
+  Begin → Today. **ALL CHECKS PASSED**, zero console errors.
+- Definition of done met exactly: 9/day · 9 mg · [6, 3] · 90 days ·
+  2026-09-21 → **8 stages, first cut Oct 6, quit day Sat Dec 19**; Begin
+  creates `a2`; **`pouch-down-v1` byte-identical** across the whole walk.
+
+### Three bugs the walk caught that tests did not
+
+All three were found by *looking*, not by an assertion — worth remembering when
+Session C decides how much to trust a green suite.
+
+1. **Attempt 1 showed "Nicotine-free — 15.5 days" in green.** `TodayView`'s
+   `postQuit` branch ran before the read-only one, so opening the attempt that
+   *didn't hold* rendered a clock that counts elapsed calendar time and asks
+   for no evidence at all. This is exactly the silence-as-success failure the
+   rebuild exists to kill, on the one screen James would open to look back.
+   Read-only now returns the honest summary first.
+2. **The undo chip lied.** `undoEvent` only removes the most recent event, but
+   the chip stayed visible after a newer event landed and still dismissed the
+   toast — so it looked like the pouch had been removed when nothing changed.
+   Undo is now hidden once the event is no longer last, alongside the tag chips.
+3. **Dinner was clipped off the right edge at 390px.** Three `<input
+   type="time">` in one non-wrapping flex row overflow an iPhone; the value was
+   cut mid-digit and the picker icon sat off-screen, in setup screen 6 *and* in
+   Settings. Both are 2-column grids now. Nothing throws when content overflows,
+   so no test would ever have caught this.
+
+### Outside review (GPT-5.6 Sol) — 1 call of 6
+
+Boot router, mutation guards and the read-only ordering. Code and synthetic
+rules only; no personal data sent.
+
+- ✅ Accepted: an unresolvable `viewingId` fell through to the **active**
+  attempt in `view()`, dropping `readOnly` to false — a mutation would have
+  landed on the wrong attempt while the UI wore a viewer's context. Not
+  reachable through any current UI path; the fix is what keeps that true.
+- ✅ Accepted: "Start fresh" clears `problem`, which is the only thing stopping
+  the save effect writing over unreadable v2 data. `preserveCorruptV2` copies
+  it aside first (never v1, never over an earlier rescue, and a full quota
+  skips the copy rather than failing the recovery). 4 tests.
+- ❌ Rejected for this session: `RecoveryTimeline` still derives "Nicotine-free
+  — N days" from elapsed time for an **active** post-quit attempt. Sol is right
+  that it is the same class as bug 1 above, but the fix is the post-quit "still
+  free" check-in, already specced and due before quit day. Attempt 2 cannot
+  reach that screen until 2026-12-19. **Session C should not try to fix this;
+  it should confirm the 2026-12-12 deadline is real.**
+- ✅ Verified rather than asserted: the only `setItem` in app code is
+  `root.js` with `KEY_V2` hard-coded, there is no `removeItem` or `clear`
+  anywhere in `src/`, and `KEY_V1` is only ever read. The rollback is
+  structurally safe, not safe by convention.
+
+### Decisions made without James
+
+- **Two interface stubs were written before dispatch** (`SetupFlow`,
+  `PriceHelpSheet`) so all six agents could run at once instead of in three
+  waves — B1 imports B2's file and B2 imports B3's. The stubs fixed the prop
+  contracts; the owning agent replaced each wholesale. This is what bought back
+  the lost day.
+- **Agents were told not to run `npm run build` or start a dev server** —
+  six concurrent builds race on `dist/` and dev servers collide on ports. The
+  coordinator ran every build and every browser check.
+- **`claude-haiku-4-5-20251001` kept** in `priceHelp.js`. The `claude-api`
+  skill says never to append date suffixes, but this exact id is what
+  `coach.js` has used in production since July. A comment records the one-line
+  fallback (`claude-haiku-4-5`) in case James's live test returns
+  model-not-found.
+- **MoneyCard replaced the flat "saved" tile on Today and in Stats.** A bare
+  figure cannot carry "counted on N logged days", which is the sentence that
+  makes the number honest. Stats keeps the forward projection as its own tile,
+  relabelled "if you follow the plan".
+- **MoneyCard is 2+1, not three columns** (B6's call, accepted): three
+  currency figures across 390px leaves ~95px each, and `$1,234.56` does not fit.
+- **The walk script drives screen 3 explicitly.** Its default is *every* chip
+  below the current strength, so the acceptance case [6, 3] means unticking
+  8, 4 and 2 — otherwise the plan is an 11-stage ladder with the first cut on
+  Oct 1. Both B2 and the coordinator hit this independently.
+- **`view()` is not unit-tested in isolation** — it is module-private in
+  `state.jsx`, and exporting it risks adding a third lint warning to a
+  2-warning baseline. It is covered by the headless walk.
+
+### For Session B2 and C
+
+- **`TodayView` already has a streak tile** (flame + count) in the footer row.
+  B2's `StreakChip` must replace it, not sit beside it.
+- `scripts/e2e/seed-v1.mjs` is a synthetic 60-day attempt (36 logged days, a
+  best streak of 10, `kept` $22.00, and a deliberate silent tail). Reuse it —
+  never the real backup. `scripts/e2e/walk-setup.mjs` is the pattern for C1's
+  remaining flows; it takes `--out`, `--port` and `--keep`.
+- The walk kills its preview server by PID, not `pkill -f vite` (Session A's
+  noted hazard).
+- `openSettings` is now plumbed from `App.jsx` into every tab view, so any
+  card can deep-link into Settings.
+- **Unverified by machine, worth James's eyes:** the AI price help has never
+  made a live call. He is testing it himself.

@@ -1071,8 +1071,8 @@ New "Attempts" section in `SettingsSheet`: **View past attempts** (list → `api
 
 ### Session B exit gate
 
-- [ ] Full checks pass; walk the flow by hand in `npm run dev` with a seeded v1 key (`scripts/e2e/seed-v1.mjs` fixture — synthetic data, never the real backup).
-- [ ] Build log updated.
+- [x] Full checks pass; walk the flow by hand in `npm run dev` with a seeded v1 key (`scripts/e2e/seed-v1.mjs` fixture — synthetic data, never the real backup). ✅ headless walk, ALL CHECKS PASSED
+- [x] Build log updated.
 
 ---
 
