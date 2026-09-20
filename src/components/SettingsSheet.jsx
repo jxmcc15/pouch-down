@@ -1,24 +1,43 @@
 import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Eye, EyeOff, ClipboardCopy, Check, Download } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Eye, EyeOff, ClipboardCopy, Check, Download, Sparkles, History } from 'lucide-react';
 import { useApp } from '../state.jsx';
-import { markdownSummary, fullBackup, todayKey } from '../store.js';
+import { markdownSummary, fullBackup, todayKey, isLogged, dateForDayNumber } from '../store.js';
 import { moneyStats } from '../money.js';
+import PriceHelpSheet from './onboarding/PriceHelpSheet.jsx';
 
 const SHORTCUT_URL = 'https://jxmcc15.github.io/pouch-down/?checkin=hours:[Duration]';
 
+const fmtShort = (dateStr) =>
+  new Date(`${dateStr}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+const loggedDaysIn = (attempt) => {
+  let n = 0;
+  for (let i = 1; i <= attempt.plan.totalDays; i++) {
+    if (isLogged(attempt, dateForDayNumber(attempt, i))) n++;
+  }
+  return n;
+};
+
 export default function SettingsSheet({ onClose }) {
-  const { state, root, device, api } = useApp();
+  const { state, root, device, api, readOnly } = useApp();
   const s = state.settings;
   const [showKey, setShowKey] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [backedUp, setBackedUp] = useState(null); // 'shared' | 'copied'
+  const [priceHelp, setPriceHelp] = useState(false);
+  const [confirmEnd, setConfirmEnd] = useState(false);
   // Numeric inputs hold a draft while typing so the field can sit empty
   // mid-edit; only valid numbers commit, and blur reverts to the last good one.
   const [drafts, setDrafts] = useState({});
 
+  const past = root.attempts.filter((a) => a.id !== state.id && a.status === 'archived');
+
+  // Every settings write goes to the active attempt, so while a past attempt is
+  // open the api no-ops. Disable rather than let a tap do nothing silently.
   const numberField = (key, min) => ({
+    disabled: readOnly,
     value: drafts[key] ?? s[key],
     onChange: (e) => {
       const raw = e.target.value;
@@ -114,6 +133,7 @@ export default function SettingsSheet({ onClose }) {
               <input
                 id={`meal-${meal}`}
                 type="time"
+                disabled={readOnly}
                 value={s.mealTimes[meal]}
                 onChange={(e) => setMeal(meal, e.target.value)}
               />
@@ -147,6 +167,16 @@ export default function SettingsSheet({ onClose }) {
             />
           </div>
         </div>
+        {!readOnly && (
+          <button
+            className="btn btn-ghost small"
+            style={{ width: '100%', marginTop: 8 }}
+            onClick={() => setPriceHelp(true)}
+          >
+            <Sparkles size={15} />
+            Not sure? Work it out
+          </button>
+        )}
 
         <label htmlFor="apikey">Claude API key (for the coach)</label>
         <div className="row" style={{ gap: 8 }}>
@@ -155,6 +185,7 @@ export default function SettingsSheet({ onClose }) {
             type={showKey ? 'text' : 'password'}
             autoComplete="off"
             placeholder="sk-ant-…"
+            disabled={readOnly}
             value={device.apiKey}
             onChange={(e) => api.updateDevice({ apiKey: e.target.value })}
             style={{ flex: 1 }}
@@ -216,6 +247,79 @@ export default function SettingsSheet({ onClose }) {
           runs a fake 7.4h import locally so you can see it land.
         </p>
 
+        <label>Attempts</label>
+        {past.length > 0 ? (
+          <>
+            <p className="small muted" style={{ margin: 0 }}>
+              Nothing is ever deleted. Open one to look back at it.
+            </p>
+            {past.map((a) => (
+              <motion.button
+                key={a.id}
+                className="btn"
+                style={{ width: '100%', marginTop: 8, justifyContent: 'flex-start', minHeight: 52 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => {
+                  api.viewAttempt(a.id);
+                  onClose();
+                }}
+              >
+                <History size={16} />
+                <span style={{ textAlign: 'left' }}>
+                  Attempt {a.id.slice(1)}
+                  <span className="small faint" style={{ display: 'block', fontWeight: 400 }}>
+                    {fmtShort(a.plan.startDate)} – {fmtShort(a.plan.quitDate)} ·{' '}
+                    {loggedDaysIn(a)} of {a.plan.totalDays} days logged
+                  </span>
+                </span>
+              </motion.button>
+            ))}
+          </>
+        ) : (
+          <p className="small muted" style={{ margin: 0 }}>
+            This is your first attempt. Past ones show up here once you start a new one.
+          </p>
+        )}
+
+        {!readOnly && (
+          confirmEnd ? (
+            <motion.div
+              className="card"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              style={{ marginTop: 12 }}
+            >
+              <p className="small" style={{ margin: 0 }}>
+                This archives your current attempt — nothing is deleted. You'll
+                set up a new plan.
+              </p>
+              <div className="row" style={{ gap: 8, marginTop: 12 }}>
+                <button
+                  className="btn"
+                  style={{ flex: 1 }}
+                  onClick={() => {
+                    api.archiveActive();
+                    onClose();
+                  }}
+                >
+                  End it
+                </button>
+                <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => setConfirmEnd(false)}>
+                  Keep going
+                </button>
+              </div>
+            </motion.div>
+          ) : (
+            <button
+              className="btn btn-ghost"
+              style={{ width: '100%', marginTop: 12 }}
+              onClick={() => setConfirmEnd(true)}
+            >
+              End this attempt and start over
+            </button>
+          )
+        )}
+
         <label>Export</label>
         <motion.button className="btn" style={{ width: '100%' }} whileTap={{ scale: 0.98 }} onClick={copyExport}>
           {copied ? <Check size={17} color="var(--green)" /> : <ClipboardCopy size={17} />}
@@ -239,6 +343,18 @@ export default function SettingsSheet({ onClose }) {
           Done
         </button>
       </motion.div>
+
+      <AnimatePresence>
+        {priceHelp && (
+          <PriceHelpSheet
+            key="price-help"
+            onClose={() => setPriceHelp(false)}
+            onUse={({ pricePerTin, pouchesPerTin }) =>
+              api.updateSettings({ costPerTin: pricePerTin, pouchesPerTin })
+            }
+          />
+        )}
+      </AnimatePresence>
     </>
   );
 }

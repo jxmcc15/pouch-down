@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
-import { Sparkles, Settings } from 'lucide-react';
+import { Sparkles, Settings, TriangleAlert } from 'lucide-react';
 import { AppStateProvider, useApp } from './state.jsx';
 import { dayKeyFor, todayKey } from './store.js';
 import Aurora from './components/Aurora.jsx';
@@ -11,6 +11,10 @@ import StatsView from './components/StatsView.jsx';
 import PlanView from './components/PlanView.jsx';
 import CoachSheet from './components/CoachSheet.jsx';
 import SettingsSheet from './components/SettingsSheet.jsx';
+import ReadOnlyBanner from './components/ReadOnlyBanner.jsx';
+import FrontDoor from './components/onboarding/FrontDoor.jsx';
+import RecoveryScreen from './components/onboarding/RecoveryScreen.jsx';
+import SetupFlow from './components/onboarding/SetupFlow.jsx';
 
 const VIEWS = { today: TodayView, calendar: CalendarView, stats: StatsView, plan: PlanView };
 
@@ -51,21 +55,81 @@ function CheckinDeepLink() {
   return null;
 }
 
-// Gated on the attempt: nothing below here may assume `state` until this
-// passes. Temporary until B1 replaces the "no active attempt" branch with
-// onboarding.
+// A failed localStorage write is otherwise completely silent. Deliberately not
+// dismissible and never auto-dismissed: it stands until a save succeeds, which
+// clears `saveError` on its own. Announced, not interactive — it takes no focus
+// and swallows no taps.
+function SaveErrorToast() {
+  const { saveError } = useApp();
+  return (
+    <AnimatePresence>
+      {saveError && (
+        <motion.div
+          key="save-error"
+          className="card"
+          role="status"
+          aria-live="polite"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 8 }}
+          transition={{ type: 'spring', damping: 24, stiffness: 180 }}
+          style={{
+            position: 'fixed',
+            left: 16,
+            right: 16,
+            bottom: 'calc(env(safe-area-inset-bottom) + 92px)',
+            zIndex: 45,
+            maxWidth: 448,
+            margin: '0 auto',
+            padding: '12px 14px',
+            pointerEvents: 'none',
+            background: 'rgba(10, 10, 12, 0.92)',
+            borderColor: 'rgba(251, 191, 36, 0.4)',
+          }}
+        >
+          <div className="row" style={{ gap: 10, alignItems: 'flex-start' }}>
+            <TriangleAlert
+              size={17}
+              aria-hidden="true"
+              style={{ color: 'var(--amber)', flexShrink: 0, marginTop: 1 }}
+            />
+            <p className="small" style={{ margin: 0, lineHeight: 1.45 }}>{saveError}</p>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+// The boot router. Nothing below the `state` guard may assume an attempt
+// exists: unreadable storage gets the recovery screen, a first run goes
+// straight into setup, and an empty-handed return visit gets the Front door.
 function AppContent() {
-  const { state, problem } = useApp();
+  const { root, state, readOnly, problem } = useApp();
   const [tab, setTab] = useState('today');
   const [sheet, setSheet] = useState(null); // null | 'coach' | 'settings'
+  const [setupOpen, setSetupOpen] = useState(false);
 
-  if (problem) return <p>Storage problem: {problem}</p>;
-  if (!state) return <p>No active attempt yet.</p>;
+  // Setup is a route, not a sheet. Leaving it open would skip the Front door
+  // the next time an attempt ends, so the attempt it created closes it.
+  const hasAttempt = !!state;
+  useEffect(() => {
+    if (hasAttempt) setSetupOpen(false);
+  }, [hasAttempt]);
+
+  if (problem) return <RecoveryScreen />;
+  if (!state) {
+    // No attempts at all means there is nowhere to go back to — setup directly.
+    const first = root.attempts.length === 0;
+    if (first || setupOpen) return <SetupFlow first={first} onExit={() => setSetupOpen(false)} />;
+    return <FrontDoor onStart={() => setSetupOpen(true)} />;
+  }
 
   const View = VIEWS[tab];
 
   return (
     <>
+      {readOnly && <ReadOnlyBanner />}
       <div className="app-shell">
         <header className="spread" style={{ marginBottom: 10 }}>
           <div className="row" style={{ gap: 8 }}>
@@ -149,6 +213,7 @@ export default function App() {
         <CheckinDeepLink />
         <Aurora />
         <AppContent />
+        <SaveErrorToast />
       </AppStateProvider>
     </MotionConfig>
   );

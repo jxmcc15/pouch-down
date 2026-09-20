@@ -16,6 +16,8 @@ import PacingCard from './PacingCard.jsx';
 import SOSOverlay from './SOSOverlay.jsx';
 import RecoveryTimeline from './RecoveryTimeline.jsx';
 import AnimatedNumber from './AnimatedNumber.jsx';
+import BackfillPrompt from './BackfillPrompt.jsx';
+import { ReadOnlySummaryCard } from './ReadOnlyBanner.jsx';
 import { celebrate } from '../confetti.js';
 
 // The toast doubles as the mood-tag window, so it outlives the old 6s.
@@ -37,7 +39,7 @@ function formatMonthDay(dateStr) {
 }
 
 export default function TodayView() {
-  const { state, api, tick } = useApp();
+  const { state, api, tick, readOnly } = useApp();
   const [sosOpen, setSosOpen] = useState(false);
   const [lastLog, setLastLog] = useState(null); // {id, until}
 
@@ -61,15 +63,17 @@ export default function TodayView() {
     : null;
 
   // Celebrate completed stages once (entering a new stage fires confetti).
+  // Never while viewing a past attempt: the api no-ops on an archived attempt,
+  // so the celebration would replay on every open without ever being recorded.
   useEffect(() => {
-    if (prePlan || postQuit || !stage) return;
+    if (readOnly || prePlan || postQuit || !stage) return;
     const completed = state.plan.stages.filter((s) => s.days[1] < dayNum && s.pouchesPerDay > 0);
     const uncelebrated = completed.find((s) => !state.celebratedStages.includes(s.id));
     if (uncelebrated) {
       api.markStageCelebrated(uncelebrated.id);
       setTimeout(celebrate, 600);
     }
-  }, [dayNum, prePlan, postQuit]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [dayNum, prePlan, postQuit, readOnly]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const logPouch = (trigger = null) => {
     const id = api.logPouch(trigger);
@@ -138,25 +142,35 @@ export default function TodayView() {
         </motion.p>
       )}
 
-      <AnimatePresence>
-        {!checkinForDay(state, dateStr) && state.checkinDismissedFor !== dateStr && (
-          <CheckinCard key="checkin" />
-        )}
-      </AnimatePresence>
+      {/* Viewing a past attempt: the api already no-ops every mutation, so this
+          is purely about not showing controls that would do nothing. */}
+      {readOnly ? (
+        <ReadOnlySummaryCard />
+      ) : (
+        <>
+          <AnimatePresence>
+            {!checkinForDay(state, dateStr) && state.checkinDismissedFor !== dateStr && (
+              <CheckinCard key="checkin" />
+            )}
+          </AnimatePresence>
 
-      <LogRing
-        used={used}
-        cap={cap}
-        mg={prePlan ? firstStage.mg : stage?.mg ?? 0}
-        onLog={() => logPouch(null)}
-        disabled={quitDay || (stage && stage.pouchesPerDay === 0)}
-      />
+          <BackfillPrompt />
 
-      <AnimatePresence>
-        {lastLog && (
-          <LogToast key={lastLog.id} eventId={lastLog.id} onUndo={() => setLastLog(null)} />
-        )}
-      </AnimatePresence>
+          <LogRing
+            used={used}
+            cap={cap}
+            mg={prePlan ? firstStage.mg : stage?.mg ?? 0}
+            onLog={() => logPouch(null)}
+            disabled={quitDay || (stage && stage.pouchesPerDay === 0)}
+          />
+
+          <AnimatePresence>
+            {lastLog && (
+              <LogToast key={lastLog.id} eventId={lastLog.id} onUndo={() => setLastLog(null)} />
+            )}
+          </AnimatePresence>
+        </>
+      )}
 
       {pacing.mode === 'plan' && <PacingCard pacing={{ ...pacing, tick }} />}
 
@@ -192,25 +206,27 @@ export default function TodayView() {
         </div>
       </motion.div>
 
-      <motion.button
-        className="btn"
-        style={{
-          width: '100%',
-          marginTop: 14,
-          minHeight: 56,
-          fontSize: 17,
-          background: 'rgba(248,113,113,0.10)',
-          border: '1px solid rgba(248,113,113,0.35)',
-          color: 'var(--red)',
-        }}
-        whileTap={{ scale: 0.98 }}
-        onClick={() => setSosOpen(true)}
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ ...spring, delay: 0.15 }}
-      >
-        Craving? SOS — ride it out
-      </motion.button>
+      {!readOnly && (
+        <motion.button
+          className="btn"
+          style={{
+            width: '100%',
+            marginTop: 14,
+            minHeight: 56,
+            fontSize: 17,
+            background: 'rgba(248,113,113,0.10)',
+            border: '1px solid rgba(248,113,113,0.35)',
+            color: 'var(--red)',
+          }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => setSosOpen(true)}
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ ...spring, delay: 0.15 }}
+        >
+          Craving? SOS — ride it out
+        </motion.button>
+      )}
 
       {!prePlan && dayNum >= 1 && (
         <motion.p
