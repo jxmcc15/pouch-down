@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Flame, PiggyBank, ShieldCheck } from 'lucide-react';
+import { Flame, ShieldCheck } from 'lucide-react';
 import { useApp } from '../state.jsx';
 import {
   pacingForNow, todayKey, dayNumberFor, dateForDayNumber, pouchesForDay, resistedForDay,
   currentStreak, checkinForDay,
 } from '../store.js';
 import { stageForDay, capForDay, WITHDRAWAL_NOTES } from '../plan.js';
-import { moneyStats } from '../money.js';
 import LogRing from './LogRing.jsx';
 import LogToast from './LogToast.jsx';
 import TodayLog from './TodayLog.jsx';
@@ -17,6 +16,7 @@ import SOSOverlay from './SOSOverlay.jsx';
 import RecoveryTimeline from './RecoveryTimeline.jsx';
 import AnimatedNumber from './AnimatedNumber.jsx';
 import BackfillPrompt from './BackfillPrompt.jsx';
+import MoneyCard from './MoneyCard.jsx';
 import { ReadOnlySummaryCard } from './ReadOnlyBanner.jsx';
 import { celebrate } from '../confetti.js';
 
@@ -38,7 +38,7 @@ function formatMonthDay(dateStr) {
   });
 }
 
-export default function TodayView() {
+export default function TodayView({ openSettings }) {
   const { state, api, tick, readOnly } = useApp();
   const [sosOpen, setSosOpen] = useState(false);
   const [lastLog, setLastLog] = useState(null); // {id, until}
@@ -50,7 +50,6 @@ export default function TodayView() {
   const cap = capForDay(state.plan, dayNum);
   const resisted = resistedForDay(state, dateStr);
   const streak = currentStreak(state);
-  const saved = moneyStats(state).kept;
   const pacing = pacingForNow(state);
   const postQuit = dayNum > state.plan.totalDays;
   const prePlan = dayNum < 1;
@@ -86,6 +85,12 @@ export default function TodayView() {
     return () => clearTimeout(id);
   }, [lastLog]);
 
+  // Order matters: a past attempt whose quit day has come and gone would
+  // otherwise render the "Nicotine-free — N days" clock, which counts elapsed
+  // calendar time and asks for no evidence at all. Attempt 1 ended in silence,
+  // so that clock would be the app telling a comfortable lie about a plan that
+  // did not hold. Silence is never success — show the record instead.
+  if (readOnly) return <ReadOnlySummaryCard />;
   if (postQuit) {
     return <RecoveryTimeline />;
   }
@@ -142,35 +147,27 @@ export default function TodayView() {
         </motion.p>
       )}
 
-      {/* Viewing a past attempt: the api already no-ops every mutation, so this
-          is purely about not showing controls that would do nothing. */}
-      {readOnly ? (
-        <ReadOnlySummaryCard />
-      ) : (
-        <>
-          <AnimatePresence>
-            {!checkinForDay(state, dateStr) && state.checkinDismissedFor !== dateStr && (
-              <CheckinCard key="checkin" />
-            )}
-          </AnimatePresence>
+      <AnimatePresence>
+        {!checkinForDay(state, dateStr) && state.checkinDismissedFor !== dateStr && (
+          <CheckinCard key="checkin" />
+        )}
+      </AnimatePresence>
 
-          <BackfillPrompt />
+      <BackfillPrompt />
 
-          <LogRing
-            used={used}
-            cap={cap}
-            mg={prePlan ? firstStage.mg : stage?.mg ?? 0}
-            onLog={() => logPouch(null)}
-            disabled={quitDay || (stage && stage.pouchesPerDay === 0)}
-          />
+      <LogRing
+        used={used}
+        cap={cap}
+        mg={prePlan ? firstStage.mg : stage?.mg ?? 0}
+        onLog={() => logPouch(null)}
+        disabled={quitDay || (stage && stage.pouchesPerDay === 0)}
+      />
 
-          <AnimatePresence>
-            {lastLog && (
-              <LogToast key={lastLog.id} eventId={lastLog.id} onUndo={() => setLastLog(null)} />
-            )}
-          </AnimatePresence>
-        </>
-      )}
+      <AnimatePresence>
+        {lastLog && (
+          <LogToast key={lastLog.id} eventId={lastLog.id} onUndo={() => setLastLog(null)} />
+        )}
+      </AnimatePresence>
 
       {pacing.mode === 'plan' && <PacingCard pacing={{ ...pacing, tick }} />}
 
@@ -191,13 +188,6 @@ export default function TodayView() {
           <div className="tiny faint">day streak</div>
         </div>
         <div className="card" style={{ flex: 1, textAlign: 'center' }}>
-          <PiggyBank size={18} color="var(--green)" style={{ marginBottom: 4 }} />
-          <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--green)' }} className="num">
-            <AnimatedNumber value={saved} format={(v) => `$${v.toFixed(2)}`} />
-          </div>
-          <div className="tiny faint">saved vs old habit</div>
-        </div>
-        <div className="card" style={{ flex: 1, textAlign: 'center' }}>
           <ShieldCheck size={18} color="var(--accent-bright)" style={{ marginBottom: 4 }} />
           <div style={{ fontSize: 24, fontWeight: 800 }} className="num">
             <AnimatedNumber value={resisted} />
@@ -205,6 +195,13 @@ export default function TodayView() {
           <div className="tiny faint">resisted today</div>
         </div>
       </motion.div>
+
+      {/* The old flat "saved" tile couldn't carry the caveat that makes the
+          number honest, so the money lives in one card that states what it
+          counted. */}
+      <div style={{ marginTop: 14 }}>
+        <MoneyCard onOpenSettings={openSettings} />
+      </div>
 
       {!readOnly && (
         <motion.button

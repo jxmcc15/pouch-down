@@ -60,10 +60,12 @@ export default function LogToast({ eventId, onUndo }) {
         : '';
   const { text, color } = verdictLine(bucket, deltaMin, time, slotTime);
 
-  // tagEvent only mutates the most recent event (domain rule), so once any
-  // newer event lands (check-in, SOS log) the chips would silently no-op —
-  // hide them instead of lying about what a tap will do. Undo stays.
-  const canTag = state.events[state.events.length - 1]?.id === eventId;
+  // Both tagEvent and undoEvent only touch the most recent event (domain rule),
+  // so once any newer event lands (check-in, SOS log) they silently no-op.
+  // Hide the controls instead of lying about what a tap will do — undo included:
+  // it used to stay visible and still dismiss the toast, which looked like it
+  // had removed the pouch when nothing had changed.
+  const isLast = state.events[state.events.length - 1]?.id === eventId;
 
   const chipStyle = { minHeight: 36, padding: '6px 13px', fontSize: 13 };
 
@@ -81,21 +83,25 @@ export default function LogToast({ eventId, onUndo }) {
       </p>
 
       <div className="spread" style={{ marginTop: 10 }}>
-        <motion.button
-          className="chip"
-          style={chipStyle}
-          whileTap={{ scale: 0.94 }}
-          onClick={() => {
-            api.undoEvent(eventId);
-            onUndo();
-          }}
-        >
-          <Undo2 size={14} /> undo
-        </motion.button>
-        {canTag && <span className="tiny faint">tag it · optional</span>}
+        {isLast ? (
+          <motion.button
+            className="chip"
+            style={chipStyle}
+            whileTap={{ scale: 0.94 }}
+            onClick={() => {
+              api.undoEvent(eventId);
+              onUndo();
+            }}
+          >
+            <Undo2 size={14} /> undo
+          </motion.button>
+        ) : (
+          <span className="tiny faint">logged</span>
+        )}
+        {isLast && <span className="tiny faint">tag it · optional</span>}
       </div>
 
-      {canTag && (
+      {isLast && (
         <div className="row" style={{ marginTop: 8, flexWrap: 'wrap', gap: 6 }}>
           {TRIGGERS.map((t) => (
             <motion.button

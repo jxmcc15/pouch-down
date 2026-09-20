@@ -182,7 +182,7 @@ function AppContent() {
               exit={{ opacity: 0, y: -8 }}
               transition={{ type: 'spring', damping: 26, stiffness: 240 }}
             >
-              <View />
+              <View openSettings={() => setSheet('settings')} />
             </motion.div>
           </AnimatePresence>
         </main>

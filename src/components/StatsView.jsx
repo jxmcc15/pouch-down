@@ -13,6 +13,7 @@ import RhythmChart from './RhythmChart.jsx';
 import GapsCard from './GapsCard.jsx';
 import CorrelationCard from './CorrelationCard.jsx';
 import HistoryTimeline from './HistoryTimeline.jsx';
+import MoneyCard from './MoneyCard.jsx';
 
 const W = 440;
 const H = 180;
@@ -157,7 +158,7 @@ function TriggerBars({ state }) {
   );
 }
 
-export default function StatsView() {
+export default function StatsView({ openSettings }) {
   const { state } = useApp();
   const { totalDays, baseline, quitDate } = state.plan;
   const money = moneyStats(state);
@@ -189,6 +190,10 @@ export default function StatsView() {
         <MgChart state={state} />
       </motion.div>
 
+      <div style={{ marginTop: 14 }}>
+        <MoneyCard onOpenSettings={openSettings} />
+      </div>
+
       <motion.div
         className="row"
         style={{ marginTop: 14, gap: 14 }}
@@ -197,12 +202,12 @@ export default function StatsView() {
         transition={{ ...spring, delay: 0.08 }}
       >
         <div className="card" style={{ flex: 1, textAlign: 'center' }}>
-          <div style={{ fontSize: 26, fontWeight: 800, color: 'var(--green)' }} className="num">
-            <AnimatedNumber value={saved} format={(v) => `$${v.toFixed(2)}`} />
+          <div style={{ fontSize: 26, fontWeight: 800 }} className="num">
+            ${projected.toFixed(0)}
           </div>
-          <div className="tiny faint">saved so far</div>
-          <div className="small muted num" style={{ marginTop: 4 }}>
-            ≈ ${projected.toFixed(0)} by {fmtShort(quitDate)}
+          <div className="tiny faint">by {fmtShort(quitDate)}</div>
+          <div className="small muted" style={{ marginTop: 4 }}>
+            if you follow the plan
           </div>
         </div>
         <div className="card" style={{ flex: 1, textAlign: 'center' }}>

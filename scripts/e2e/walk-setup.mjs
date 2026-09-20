@@ -125,23 +125,77 @@ async function main() {
 
   log(`\n── setup walkthrough ──`);
   await snap(page, 'before-setup');
+
+  // The acceptance inputs from the spec: 9/day · 9 mg · [6,3] · 90 days ·
+  // 2026-09-21 must produce 8 stages, first cut Oct 6, quit day Dec 19.
+  const chip = async (rx) => {
+    const loc = page.locator('button').filter({ hasText: rx });
+    const nth = await loc.count();
+    for (let i = 0; i < nth; i++) {
+      const txt = (await loc.nth(i).innerText()).trim();
+      if (rx.test(txt) && txt.length <= 8) { await loc.nth(i).click(); return true; }
+    }
+    return false;
+  };
+
+  // Answers the screen in front of us, keyed on its heading.
+  async function answer(t) {
+    if (/how many pouches/i.test(t)) {
+      const num = page.locator('input[type="number"], input[inputmode="numeric"]').first();
+      if (await num.count()) { await num.fill('9'); await num.blur().catch(() => {}); return '9/day'; }
+      for (let i = 0; i < 9; i++) await clickText(page, /^\+$/, { timeout: 800 });
+      return '9/day (stepper)';
+    }
+    if (/what strength/i.test(t)) return (await chip(/^9\s*mg$|^9$/)) ? '9 mg' : 'strength FAILED';
+    if (/lower strength|can you buy/i.test(t)) {
+      // Screen 3 defaults to EVERY chip below the current strength (spec §5),
+      // so the acceptance case [6, 3] means toggling 8, 4 and 2 back off.
+      const off = [];
+      for (const mg of [8, 4, 2]) {
+        if (await chip(new RegExp(`^${mg}\\s*mg$|^${mg}$`))) off.push(mg);
+      }
+      return `deselected ${off.join(',')} → [6,3]`;
+    }
+    if (/how long/i.test(t)) return (await chip(/^90$|^90\s*days$/)) ? '90 days' : '90 FAILED';
+    if (/day 1/i.test(t)) {
+      const d = page.locator('input[type="date"]').first();
+      if (await d.count()) { await d.fill('2026-09-21'); return '2026-09-21'; }
+      return 'date input not found';
+    }
+    if (/rhythm/i.test(t)) return 'meal defaults';
+    if (/pay/i.test(t)) return 'price defaults';
+    return 'no input needed';
+  }
+
   if (!(await clickText(page, /start a new attempt/i))) {
     check('Enter setup', false, 'Start a new attempt not clickable');
   } else {
     await page.waitForTimeout(400);
-    for (let screen = 1; screen <= 9; screen++) {
-      const t = await bodyText(page);
-      await snap(page, `setup-${String(screen).padStart(2, '0')}`);
-      log(`  screen ${screen}: ${t.split('\n').find((l) => l.trim()) ?? '(blank)'}`);
+    for (let screen = 1; screen <= 10; screen++) {
+      let t = await bodyText(page);
+      const heading = t.split('\n').find((l) => l.trim() && !/^step|^set up/i.test(l)) ?? '(blank)';
       if (/^\s*$/.test(t)) { check(`Setup screen ${screen} not blank`, false); break; }
-      if (/begin/i.test(t)) {
+
+      // Detect the preview by a real Begin BUTTON — screen 4's helper copy
+      // ("the quit date is fixed once you begin") matches a body-text test.
+      const beginBtn = page.locator('button').filter({ hasText: /^begin$/i });
+      if (await beginBtn.count()) {
+        await snap(page, `setup-${String(screen).padStart(2, '0')}-preview`);
         check('Reached plan preview', true);
-        check('Quit date shown (Dec 19)', /dec\s*19/i.test(t), t.match(/.{0,40}dec.{0,20}/i)?.[0] ?? 'not found');
-        check('First cut shown (Oct 6)', /oct\s*6/i.test(t));
+        check('Quit date shown (Dec 19)', /dec\w*\s*19/i.test(t), t.match(/.{0,30}dec.{0,25}/i)?.[0]?.replace(/\n/g, ' ') ?? 'not found');
+        check('First cut shown (Oct 6)', /oct\w*\s*6\b/i.test(t));
+        check('Eight stages listed', (t.match(/\d+\s*\/day/gi) ?? []).length >= 7,
+          `${(t.match(/\d+\s*\/day/gi) ?? []).length} "/day" lines`);
         break;
       }
+
+      const did = await answer(t);
+      await page.waitForTimeout(200);
+      await snap(page, `setup-${String(screen).padStart(2, '0')}`);
+      log(`  screen ${screen}: ${heading.slice(0, 52)} → ${did}`);
+
       if (!(await clickText(page, /^(next|continue)$/i))) {
-        check(`Advance past screen ${screen}`, false, 'Next not clickable/enabled — inputs may need values');
+        check(`Advance past screen ${screen}`, false, `"${heading.slice(0, 40)}" — Next still disabled`);
         break;
       }
     }
