@@ -338,9 +338,12 @@ export function RhythmStep({ draft, set, error, onTouch }) {
         sub="Pouch slots hang off your meals. The plan protects those and cuts the floaters first."
       />
 
-      <div className="row" style={{ gap: 10, alignItems: 'flex-start' }}>
+      {/* Two columns, not three: a time input's intrinsic width (08:00 AM plus
+          the picker icon) is wider than a third of a 390px phone, so a 3-up row
+          pushed dinner off the right edge. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, alignItems: 'flex-start' }}>
         {['breakfast', 'lunch', 'dinner'].map((meal) => (
-          <div key={meal} style={{ flex: 1 }}>
+          <div key={meal} style={{ minWidth: 0 }}>
             <label htmlFor={`setup-${meal}`}>{meal}</label>
             <input
               id={`setup-${meal}`}

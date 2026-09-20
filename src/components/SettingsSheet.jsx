@@ -126,9 +126,11 @@ export default function SettingsSheet({ onClose }) {
           Everything stays on this device.
         </p>
 
-        <div className="row" style={{ gap: 10 }}>
+        {/* Two columns for the same reason as setup: three time inputs don't
+            fit a 390px phone, and dinner was clipped at the right edge. */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
           {['breakfast', 'lunch', 'dinner'].map((meal) => (
-            <div key={meal} style={{ flex: 1 }}>
+            <div key={meal} style={{ minWidth: 0 }}>
               <label htmlFor={`meal-${meal}`}>{meal}</label>
               <input
                 id={`meal-${meal}`}
