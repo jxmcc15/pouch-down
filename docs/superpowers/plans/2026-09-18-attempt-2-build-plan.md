@@ -1087,6 +1087,19 @@ Load `ui-ux-pro-max`. Reuse `confetti.js`, `AnimatedNumber`, Framer springs. Eve
 
 ---
 
+### Session B2 exit gate
+
+- [x] `StreakChip` — Today header, springs on change, zero state reads "Start a streak today", opens the case.
+- [x] `TrophyCase` — grouped by tier with per-tier counts, everything visible; earned date; locked keeps its hue + progress groove; detail sheet fabricates no counts.
+- [x] `AwardUnlock` — snapshotted queue, capped at 3 with overflow marked silently, every dismissal marks, never while `readOnly`, re-arms off a handled-id set.
+- [x] `Badge` — circular seal in SVG, bronze/silver/gold/aurora, no image assets, legible at 44px.
+- [x] Tier-scaled confetti (`tierBurst`); `?static` and reduced motion get a plain fade and no confetti.
+- [x] 162 tests / 1 skipped, lint at exactly 2 warnings, build clean, math harness passed.
+- [x] `scripts/e2e/walk-awards.mjs` — 66 checks green across 5 contexts at 390×844; unlock plays, drains, and does **not** replay across two reloads; no overlay ever in read-only; `pouch-down-v1` byte-identical everywhere.
+- [x] Build log updated.
+
+---
+
 # SESSION C — QA and ship (Sun midday → 6 PM freeze)
 
 ### Task C1: E2E scripts — `scripts/e2e/*.mjs`

@@ -286,3 +286,117 @@ deadline, not fix it now.
 
 **Unverified by machine:** the AI price help has never made a live API call —
 James tests it himself with his own key.
+
+---
+
+## Session B2 — awards UI (Sun 2026-09-20, 11:03 AM → 11:50 AM CT)
+
+**Shipped: the whole B2 scope. Nothing cut.** `StreakChip`, `TrophyCase`
+(+ sheet + Today tile), `AwardUnlock`, and the circular-seal `Badge` every one
+of them renders. The awards *logic* was untouched — `src/awards.js` shipped in
+Session A and still has not changed a line. This session was interface only.
+
+**Gate:** 162 tests / 1 skipped (12 files), lint at exactly the 2 pre-existing
+warnings, build clean, math harness ALL CHECKS PASSED. New end-to-end walk
+`scripts/e2e/walk-awards.mjs`: **66 checks, all green**, 5 browser contexts at
+390×844@2x, zero console/page errors, `pouch-down-v1` byte-identical in every
+context.
+
+### How it ran
+
+Four agents in parallel, one file each, against two interface contracts written
+before dispatch (`src/motion.js`, a `Badge.jsx` stub) — the same trick that
+bought Session B a day. No agent ever waited on another. A fifth agent wrote and
+ran the e2e walk afterwards. Coordinator did all wiring (`App.jsx`,
+`TodayView.jsx`, `StatsView.jsx`, `index.css`) and every build, browser check
+and commit.
+
+### Decisions made without James
+
+- **`src/components/awards/` subdirectory** rather than five more files flat in
+  `components/`. Follows the existing `onboarding/` precedent. Reversible.
+- **`src/motion.js`** — one `plainMotion()` predicate answering "should this
+  moment be plain?" for both `prefers-reduced-motion` and `?static`. It replaced
+  a local check in `confetti.js` that only knew about the former.
+- **`tiers.js` split out of `Badge.jsx`.** Found by running the linter, not by
+  reading: a file exporting a component *and* constants trips
+  `react(only-export-components)`, and the stub alone added 5 warnings against a
+  baseline of 2. Three agents were messaged mid-flight to re-point their imports.
+- **The trophy sheet is mounted in `App.jsx`, not inside `TodayView`**, reached
+  by an `openTrophies` prop beside the existing `openSettings`. `.sheet` is
+  `position: fixed`, and a fixed element inside the tab wrapper anchors to
+  Framer's transform on that wrapper rather than to the viewport.
+- **`TrophyTile` took the streak tile's old slot** in Today's footer row, so the
+  row stays two-up and the case has a second door.
+- **Which 3 celebrate when more are pending:** rarest tier first (a backlogged
+  aurora is the one it would hurt to swallow silently), then replayed in
+  ascending order so a batch builds toward its rarest badge.
+- **`line-height: inherit` added to the global `button` reset.** Wider blast
+  radius than a targeted fix, but it completes a trio the reset already had
+  (`font-family`, `font-size`) and prevents the same bug recurring. Verified by
+  re-running the full walk: no layout shifted anywhere else.
+
+### Two pre-existing bugs fixed on the way past
+
+1. **`?static` still fired confetti.** `confetti.js` checked only
+   `prefers-reduced-motion`, so every headless screenshot run came back speckled
+   with paper. Now behind `plainMotion()`.
+2. **Today's two tiles were 5.8px out of line — and had been.** First guess
+   (`.card + .card` margin leaking across a `.row`) was real but was *not* the
+   cause; the walk measured computed margin at 0 after that fix and the offset
+   survived. Actual cause: the UA's `line-height: normal` does not inherit, so a
+   `.card` that is a `<button>` set its text tighter than a `.card` that is a
+   `<div>` — 36→29px number, 118.5→107px tile. Both fixes kept.
+
+### Surprises worth carrying forward
+
+- **`Waves` no longer exists in lucide v1.23** (it is `WavesHorizontal`). Every
+  icon name in `Badge.jsx` was checked against the `.d.ts` before import — a
+  wrong name is a build break, not a lint warning.
+- **React 19's `useId()` returns punctuation** (`«r0»`), which is not valid
+  inside `url(#…)`. `Badge.jsx` strips non-alphanumerics. The unique-id rule is
+  load-bearing: a scratch harness that rendered each badge in its own React tree
+  restarted `useId` and every badge inherited badge #1's gradient — all 24 went
+  bronze.
+- **Badge bugs are invisible to unit tests.** The rim gradient vector ended
+  outside the disc, so aurora's third stop never painted and it silently lost
+  its amber. Caught only by rasterizing the SVG and looking at it.
+- **The e2e harness lied once.** Playwright's `addInitScript` re-runs on *every*
+  navigation, so it re-seeded storage on reload, wiped `celebratedAwards`, and
+  faked a replay failure. Gated on a sentinel. Worth remembering for Session C —
+  a reload assertion is only as honest as its seeding.
+
+### Outside review
+
+GPT-5.6 Sol reviewed the celebration-queue design before the code existed
+(synthetic excerpt of the state API only — no vault data, no personal numbers)
+and returned 12 ranked failure modes. **Accepted and verified in the
+implementation:** snapshot the batch by id rather than deriving it live;
+never persist from mount/setup/cleanup; guard `readOnly` inside every effect,
+not just the render path; keep an in-memory handled-set because
+`markAwardCelebrated` silently no-ops; re-arm off a set of ids, not a boolean;
+`e.target === e.currentTarget` on the backdrop so a Nice click cannot bubble and
+steal the next award. **Rejected, with reason:** its warning that a `forEach` of
+overflow marks would overwrite each other — `setRoot` in `state.jsx` is a
+functional updater, so the writes compose. Verified in the code before
+dismissing it.
+
+One coordinator finding was **wrong and withdrawn**: a mid-edit read of
+`confetti.js` showed `tierBurst` calling an undefined `quiet()`. The agent had
+already fixed it; re-grepping the file confirmed `plainMotion()`. Worth the
+30 seconds it cost to check rather than "fix" working code.
+
+### For Session C
+
+- `scripts/e2e/walk-awards.mjs` takes `--out`, `--port`, `--keep` and `--dry`
+  (prints the fixture without launching a browser). It builds its v2 fixture
+  from `planGenerator.js` and computes the expected unlock batch from
+  `awards.js` using the same comparators as `AwardUnlock.jsx`, so it asserts the
+  UI against the domain rather than against a hardcoded guess. Add it to the C1
+  suite.
+- **The trophy case is a long card.** Silver holds 12 of 24 awards — three grid
+  rows — and the whole case runs ~7 rows in Stats. That is James's explicit
+  "grouped by tier, everything visible" call, not an oversight. If it feels long
+  on the real phone, the fix is a per-tier collapse, not a redesign.
+- Nothing in B2 is deferred. Awards are derived from the log, so had this been
+  cut, nothing would have been lost — but it was not cut.
