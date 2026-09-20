@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Flame, ShieldCheck } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 import { useApp } from '../state.jsx';
 import {
   pacingForNow, todayKey, dayNumberFor, dateForDayNumber, pouchesForDay, resistedForDay,
-  currentStreak, checkinForDay,
+  checkinForDay,
 } from '../store.js';
 import { stageForDay, capForDay, WITHDRAWAL_NOTES } from '../plan.js';
 import LogRing from './LogRing.jsx';
@@ -17,6 +17,8 @@ import RecoveryTimeline from './RecoveryTimeline.jsx';
 import AnimatedNumber from './AnimatedNumber.jsx';
 import BackfillPrompt from './BackfillPrompt.jsx';
 import MoneyCard from './MoneyCard.jsx';
+import StreakChip from './awards/StreakChip.jsx';
+import { TrophyTile } from './awards/TrophyCase.jsx';
 import { ReadOnlySummaryCard } from './ReadOnlyBanner.jsx';
 import { celebrate } from '../confetti.js';
 
@@ -38,7 +40,12 @@ function formatMonthDay(dateStr) {
   });
 }
 
-export default function TodayView({ openSettings }) {
+// `openTrophies` opens the trophy case from App.jsx rather than from here on
+// purpose: `.sheet` is position:fixed, and a fixed element inside the tab
+// wrapper would anchor to Framer's transform on that wrapper instead of to the
+// viewport. Every other sheet in the app is mounted at the top level for the
+// same reason, next to openSettings.
+export default function TodayView({ openSettings, openTrophies }) {
   const { state, api, tick, readOnly } = useApp();
   const [sosOpen, setSosOpen] = useState(false);
   const [lastLog, setLastLog] = useState(null); // {id, until}
@@ -49,7 +56,6 @@ export default function TodayView({ openSettings }) {
   const used = pouchesForDay(state, dateStr);
   const cap = capForDay(state.plan, dayNum);
   const resisted = resistedForDay(state, dateStr);
-  const streak = currentStreak(state);
   const pacing = pacingForNow(state);
   const postQuit = dayNum > state.plan.totalDays;
   const prePlan = dayNum < 1;
@@ -125,6 +131,7 @@ export default function TodayView({ openSettings }) {
               Day {dayNum} of {state.plan.totalDays} · Stage {stage.id === 8 ? '— quit' : stage.id}
             </div>
             <h2 style={{ fontSize: 20 }}>{stage.name}</h2>
+            <StreakChip onOpenTrophies={openTrophies} />
           </div>
           <div className="card num" style={{ padding: '8px 14px', textAlign: 'center' }}>
             <div style={{ fontSize: 20, fontWeight: 800 }}>
@@ -180,13 +187,10 @@ export default function TodayView({ openSettings }) {
         animate={{ opacity: 1, y: 0 }}
         transition={{ ...spring, delay: 0.1 }}
       >
-        <div className="card" style={{ flex: 1, textAlign: 'center' }}>
-          <Flame size={18} color={streak > 0 ? 'var(--amber)' : 'var(--fg-faint)'} style={{ marginBottom: 4 }} />
-          <div style={{ fontSize: 24, fontWeight: 800 }} className="num">
-            <AnimatedNumber value={streak} />
-          </div>
-          <div className="tiny faint">day streak</div>
-        </div>
+        {/* The streak moved up into the header as a chip (StreakChip) — it is
+            the first thing worth seeing, and one streak display is enough. Its
+            old slot here goes to the trophy count, which doubles as the second
+            door into the case. */}
         <div className="card" style={{ flex: 1, textAlign: 'center' }}>
           <ShieldCheck size={18} color="var(--accent-bright)" style={{ marginBottom: 4 }} />
           <div style={{ fontSize: 24, fontWeight: 800 }} className="num">
@@ -194,6 +198,7 @@ export default function TodayView({ openSettings }) {
           </div>
           <div className="tiny faint">resisted today</div>
         </div>
+        <TrophyTile onOpen={openTrophies} />
       </motion.div>
 
       {/* The old flat "saved" tile couldn't carry the caveat that makes the

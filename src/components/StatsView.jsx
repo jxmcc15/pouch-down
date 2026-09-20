@@ -14,6 +14,7 @@ import GapsCard from './GapsCard.jsx';
 import CorrelationCard from './CorrelationCard.jsx';
 import HistoryTimeline from './HistoryTimeline.jsx';
 import MoneyCard from './MoneyCard.jsx';
+import TrophyCase from './awards/TrophyCase.jsx';
 
 const W = 440;
 const H = 180;
@@ -220,6 +221,8 @@ export default function StatsView({ openSettings }) {
           </div>
         </div>
       </motion.div>
+
+      <TrophyCase />
 
       <DisciplineCard />
       <FirstPouchChart />

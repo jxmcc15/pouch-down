@@ -11,6 +11,8 @@ import StatsView from './components/StatsView.jsx';
 import PlanView from './components/PlanView.jsx';
 import CoachSheet from './components/CoachSheet.jsx';
 import SettingsSheet from './components/SettingsSheet.jsx';
+import { TrophyCaseSheet } from './components/awards/TrophyCase.jsx';
+import AwardUnlock from './components/awards/AwardUnlock.jsx';
 import ReadOnlyBanner from './components/ReadOnlyBanner.jsx';
 import FrontDoor from './components/onboarding/FrontDoor.jsx';
 import RecoveryScreen from './components/onboarding/RecoveryScreen.jsx';
@@ -107,7 +109,7 @@ function SaveErrorToast() {
 function AppContent() {
   const { root, state, readOnly, problem } = useApp();
   const [tab, setTab] = useState('today');
-  const [sheet, setSheet] = useState(null); // null | 'coach' | 'settings'
+  const [sheet, setSheet] = useState(null); // null | 'coach' | 'settings' | 'trophies'
   const [setupOpen, setSetupOpen] = useState(false);
 
   // Setup is a route, not a sheet. Leaving it open would skip the Front door
@@ -182,7 +184,10 @@ function AppContent() {
               exit={{ opacity: 0, y: -8 }}
               transition={{ type: 'spring', damping: 26, stiffness: 240 }}
             >
-              <View openSettings={() => setSheet('settings')} />
+              <View
+                openSettings={() => setSheet('settings')}
+                openTrophies={() => setSheet('trophies')}
+              />
             </motion.div>
           </AnimatePresence>
         </main>
@@ -201,6 +206,9 @@ function AppContent() {
         {sheet === 'settings' && (
           <SettingsSheet key="settings" onClose={() => setSheet(null)} />
         )}
+        {sheet === 'trophies' && (
+          <TrophyCaseSheet key="trophies" onClose={() => setSheet(null)} />
+        )}
       </AnimatePresence>
     </>
   );
@@ -213,6 +221,12 @@ export default function App() {
         <CheckinDeepLink />
         <Aurora />
         <AppContent />
+        {/* Top level, beside the save toast, rather than inside a tab: an
+            unlock is owed to you wherever you happen to be standing when it
+            lands. It bails on its own when there is no attempt, when storage is
+            unreadable, and — the one that matters — whenever a past attempt is
+            being viewed read-only. */}
+        <AwardUnlock />
         <SaveErrorToast />
       </AppStateProvider>
     </MotionConfig>

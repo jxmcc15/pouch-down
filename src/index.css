@@ -92,6 +92,13 @@ body {
 
 .card + .card { margin-top: 14px; }
 
+/* A card sitting inside a .row is a column, not a stacked card. Without this,
+   the sibling margin that separates stacked cards also applies across the row,
+   and `align-items: center` turns that 14px into a ~7px vertical offset on
+   every tile after the first — which is why Today's and Stats' two-up tiles
+   have never quite lined up. */
+.row > .card + .card { margin-top: 0; }
+
 /* ---- type ---- */
 h1, h2, h3 { margin: 0; font-weight: 700; letter-spacing: -0.02em; }
 .num { font-variant-numeric: tabular-nums; }
@@ -108,6 +115,11 @@ button {
   color: var(--fg);
   cursor: pointer;
   font-size: 16px;
+  /* The browser's own `line-height: normal` does not inherit, so a .card that
+     is a <button> set its text tighter than an identical .card that is a <div>
+     — enough to leave the two tiles in Today's footer row 5.8px out of line.
+     font-family and font-size were already reset here; this completes the set. */
+  line-height: inherit;
   padding: 0;
 }
 button:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 3px; border-radius: 8px; }
