@@ -5,7 +5,10 @@ import { VitePWA } from 'vite-plugin-pwa'
 // Served from https://<user>.github.io/pouch-down/
 export default defineConfig({
   base: '/pouch-down/',
-  test: { environment: 'node', include: ['src/**/*.test.js'] },
+  // Fixtures are written in Central time (James's zone: noon CT, 4am-cutoff
+  // days), so the suite pins it rather than inheriting the machine's zone.
+  // Zone independence is tested on purpose, in zones.test.js.
+  test: { environment: 'node', include: ['src/**/*.test.js'], env: { TZ: 'America/Chicago' } },
   plugins: [
     react(),
     VitePWA({

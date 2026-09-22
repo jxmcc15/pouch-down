@@ -23,7 +23,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { parseBackup, renderLiveLog, liveAttempt, backupAgeDays, isStale } from '../src/ingest.js';
+import { parseBackup, renderLiveLog, liveAttempt, backupAgeDays, isStale, atExport } from '../src/ingest.js';
 import { streaks } from '../src/store.js';
 import { planMessages, nextState, isDue, errorText, statePath, loadState, saveState, notify } from './notify-telegram.mjs';
 
@@ -237,7 +237,8 @@ export function ingest(opts = {}) {
       stale: isStale(newest.exportedAt, now),
       attemptId: attempt?.id ?? null,
       attemptStatus: attempt?.status ?? null,
-      streak: attempt ? streaks(attempt) : null,
+      // As of the export, like the Live Log — this is the streak the Telegram ping reports.
+      streak: attempt ? atExport(newest.exportedAt, () => streaks(attempt)) : null,
     };
     const md = renderLiveLog(newest.root, { exportedAt: newest.exportedAt, now });
     const target = path.join(backupDir, 'Live Log.md');

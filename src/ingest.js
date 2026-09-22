@@ -1,8 +1,10 @@
 // Pure half of `pouch-ingest`: turn a backup file's text into a v2 root, and a
 // root into the vault's Live Log note. No fs here — scripts/ingest-backup.mjs
 // does the I/O, and a future Firebase pull can reuse the renderer as is.
-// Day math comes from store.js, which reads the real clock; `now` is used only
-// to say how old the backup is.
+// Day math comes from store.js, which scores an active attempt "as of today" by
+// reading the clock — so every score here runs inside atExport(). `now` is the
+// Mac's real clock: it only says how old the backup is and how far to show the
+// days since the export (as "not in backup").
 
 import { LEGACY_PLAN } from './legacyPlan.js';
 import { migrateV1 } from './migrate.js';
@@ -49,6 +51,31 @@ export const liveAttempt = (root) => root.attempts.find((a) => a.id === root.act
 export const backupAgeDays = (exportedAt, now = new Date()) => Math.floor((now.getTime() - Date.parse(exportedAt)) / DAY_MS);
 export const isStale = (exportedAt, now = new Date()) => now.getTime() - Date.parse(exportedAt) > STALE_DAYS * DAY_MS;
 
+// Runs fn with the clock pinned to the moment the phone exported the backup.
+// That moment is "today" for everything the backup says: scored by the Mac's
+// clock instead, each day since the export reads unlogged — a 1.5-day-old
+// backup zeroes a real 8-day streak. store.js takes no clock argument, so the
+// pin is a Date subclass swapped in for the call: synchronous and restored in
+// `finally`, so nothing outside fn ever sees it. The day is the Mac's local
+// app day of that instant, same as dayKeyFor(exportedAt).
+export function atExport(exportedAt, fn) {
+  const RealDate = globalThis.Date;
+  const ms = RealDate.parse(exportedAt);
+  class ExportDate extends RealDate {
+    constructor(...args) {
+      if (args.length) super(...args);
+      else super(ms);
+    }
+    static now() { return ms; }
+  }
+  globalThis.Date = ExportDate;
+  try {
+    return fn();
+  } finally {
+    globalThis.Date = RealDate;
+  }
+}
+
 // Local wall clock of this machine (the Mac sits in the phone's zone).
 const hm = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 const isoLocal = (d) => `${localDateStr(d)}T${hm(d)}:${String(d.getSeconds()).padStart(2, '0')}`;
@@ -89,7 +116,10 @@ function dayRow(state, n, { today, exportDay }) {
   return `| ${n} | ${d} | ${cap} | ${used} | ${early} | ${over} | ${first ? fmtTime(first) : '—'} | ${resistedForDay(state, d)} | ${sleepCell(checkinForDay(state, d))} | ${status} |`;
 }
 
-function attemptSection(state, exportDay) {
+// Scored as of the export (call it inside atExport). The table alone runs on
+// to `shownThrough`, so the days since the export show up as "not in backup"
+// instead of vanishing.
+function attemptSection(state, { exportDay, shownThrough }) {
   const { plan } = state;
   const archived = state.status === 'archived';
   const asOf = asOfDay(state);
@@ -113,7 +143,9 @@ function attemptSection(state, exportDay) {
   lines.push(`- **Money (logged days only):** old pace ${money(m.oldPace)} · spent ${money(m.spent)} · kept ${money(m.kept)} over ${m.loggedDays} logged day${m.loggedDays === 1 ? '' : 's'}`);
 
   const earned = awardsFor(state).filter((a) => a.earned);
-  lines.push(`- **Awards earned:** ${earned.length ? earned.map((a) => `${a.title} (${a.earnedOn})`).join(', ') : 'none yet'}`);
+  // A celebrated award never un-earns; when the log no longer supports it, it
+  // stays earned with no date (earnedOn null), so it's listed without one.
+  lines.push(`- **Awards earned:** ${earned.length ? earned.map((a) => (a.earnedOn ? `${a.title} (${a.earnedOn})` : a.title)).join(', ') : 'none yet'}`);
 
   const disc = disciplineStats(state);
   lines.push(
@@ -127,14 +159,15 @@ function attemptSection(state, exportDay) {
   const top = Object.entries(triggers).sort((a, b) => b[1] - a[1]).slice(0, 5);
   lines.push(`- **Top triggers:** ${top.length ? top.map(([t, c]) => `${t} (${c})`).join(', ') : 'none tagged'}`);
 
-  const last = Math.min(n, plan.totalDays);
+  const through = !archived && shownThrough > asOf ? shownThrough : asOf; // never short of the export day
+  const last = Math.min(dayNumberFor(state, through), plan.totalDays);
   lines.push('', `### Last ${TABLE_DAYS} days`, '');
   if (last < 1) {
     lines.push(`Day 1 is ${plan.startDate} — nothing to score yet.`);
     return lines;
   }
   lines.push('| Day | Date | Cap | Used | Early | Over | First | Resisted | Sleep | Status |', '|---|---|---|---|---|---|---|---|---|---|');
-  const ctx = { today: todayKey(), exportDay };
+  const ctx = { today: asOf, exportDay }; // an active attempt's "today" is the export day
   for (let i = Math.max(1, last - TABLE_DAYS + 1); i <= last; i++) lines.push(dayRow(state, i, ctx));
   return lines;
 }
@@ -179,6 +212,6 @@ export function renderLiveLog(root, { exportedAt, now = new Date() }) {
 
   const state = liveAttempt(root);
   if (!state) lines.push('No attempt set up yet — start one in the app.');
-  else lines.push(...attemptSection(state, exportDay));
+  else lines.push(...atExport(exportedAt, () => attemptSection(state, { exportDay, shownThrough: todayKey(now) })));
   return `${lines.join('\n')}\n`;
 }
