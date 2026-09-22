@@ -500,3 +500,134 @@ lenses did find:
 
 Full accepted / rejected / deferred list with reasons: **Decisions made
 without James** and **Outside review**, below.
+
+### Exit gate (C1–C4) — PASSED, Mon 2026-09-21 late evening
+
+- `npm test`: 277 passed / 1 skipped. With `POUCH_BACKUP_DIR`: 278/278 (the
+  real-backup migration test runs and passes). The suite is pinned to
+  America/Chicago, and `zones.test.js` sweeps four zones.
+- `npm run lint`: exactly the 2 baseline warnings. `npm run build`: clean.
+  Math harness: ALL MATH CHECKS PASSED. `npm audit`: 0 vulnerabilities.
+- **`npm run e2e`: 5/5 walks, 1,002 checks, 0 failures, 0 console errors.**
+  migration 180 · setup 157 · backfill 192 · awards 92 · recovery 381. Each
+  walk was proven able to fail (planted bugs or pre-fix snapshots).
+- **C2 real-data dry run: 28/28** (real v1 backup, Chicago zone, both pinned
+  and at real now). Front door; Attempt 1 listed Jul 8 – Sep 5; every event
+  migrated; weekly totals equal the golden file; no live streak or clock;
+  spot-check time shown in Eastern as logged; v1 byte-identical. Before the
+  fixes it was 26/28, and the 2 failures were exactly the bugs the review
+  predicted. The script is local-only and never committed.
+- Deferred Actions bump: branch `chore/actions-node24` @ `baa90da` (based on
+  `main`). Merge it only after the release is confirmed on the phone.
+
+### Handoff — Session C, part 1 → part 2 (written Mon 2026-09-21, late)
+
+**Why a handoff:** James hit his usage limit. Everything up to the merge
+question is done and committed; only paperwork and the ship remain.
+
+**State:** branch `feat/attempt-2`, working tree clean, **nothing pushed**.
+`main` is still the v1 app on the phone. Scratch snapshot worktrees removed.
+
+**Next session does, in order:**
+1. Tick the plan: add a "Session C exit gate" block under Task C5 in
+   `docs/superpowers/plans/2026-09-18-attempt-2-build-plan.md`, with C1–C4
+   ticked (numbers above). Add the "Decisions made without James" / "Outside
+   review" / "Deferred" sections to this log, from the raw coordinator notes
+   below. Commit.
+2. Vault: tick Session C in `/Users/jxm/jxm-vault/Pouch Down/Attempt 2 —
+   Build Schedule.md` and add a 3-line status under it. Update frontmatter
+   `day_one` → 2026-09-22 and `quit_day` → 2026-12-20. Commit ONLY that file
+   in the vault repo with a `claude:` message; never `git add -A`, never push.
+3. Push notification + `afplay /System/Library/Sounds/Glass.aiff`, then
+   **ask James before merging** (his standing instruction for Session C).
+4. On his yes: `git checkout main && git merge --no-ff feat/attempt-2`.
+   **Never push.** Give him the phone checklist from `session-C-prompt.md`,
+   with these corrections:
+   - (step 1) Don't log anything until the Front door appears.
+   - (step 3) The Front door shows a **"Past attempts" list**; there is no
+     "View a past attempt" button. Tap **Attempt 1** there.
+   - (step 4) The backup files as `Pouch Down/Backup <real date> (v2).json`.
+   - (step 5) Day 1 = **Tue Sep 22** (the default); preview shows first cut
+     Wed Oct 7, quit day Sun Dec 20.
+   After he pushes: `gh run watch`, verify his v2 backup (attempt a1 with
+   every event, no key), file it, then write the release section and the
+   one-paragraph kickoff for the next spec (below). Merge
+   `chore/actions-node24` only after the phone checks out.
+5. Final summary for James (beginner-friendly), the diff stat, and the chime.
+
+**Tell James (things only he can decide or should know):**
+- Clearing the key in Settings leaves it in the old v1 slot forever. The
+  only real kill switch is revoking it at console.anthropic.com.
+- An over-cap today drops the streak to 0 at once (the spec's literal reading
+  would keep yesterday's run until midnight). This is reversible.
+- The first stage is 8/day on a 9/day baseline, the same as attempt 1's
+  hand-written plan (the generator's 8/9 step).
+- A "Break it here" day still shows green on the calendar, because the day
+  itself was within cap; the streak chip carries the choice.
+- The backfill copy ("Keep my streak / Break it here") was kept as he wrote
+  it in the spec. The tone review suggested "Count it / Don't count it" as an
+  optional tweak.
+- The morning check-in card shows all day, including evenings (v1 behaviour).
+
+**Next-spec kickoff inputs:**
+- Firebase sync + push reminders, live by Sun 9/27. It must solve two
+  writers (last-writer-wins today) and should give store.js a `now`
+  parameter (ingest pins Date as a workaround).
+- Off-track detection incl. "too good to be true" counts, live by Sun 10/4,
+  before the first cut on **Wed 10/7**.
+- Post-quit "still free" check-in before quit day (**Sun 12/20**). It must
+  make quit day loggable as zero, keep slips and backfill working after quit
+  day, make `day-zero` earnable, and base "since quit day" on logs.
+- Small follow-ups: one `isLive(state)` helper (7+ spellings, all agree
+  today); de-duplicate share→clipboard→file (Settings lacks the file
+  fallback); the recovery dump can't tell blocked storage from absent.
+
+**Gotchas:**
+- Walks must never build into `dist/` (lib's `buildApp` refuses).
+- `seedV1()` gives new ids per call, so call it once.
+- Playwright's `clock.install` stalls Framer after reloads; lib pins `Date`
+  only.
+- The C2 script lives in the old session's scratchpad
+  (`/private/tmp/claude-501/-Users-jxm-Projects-pouch-down/c5f78fc1-93c2-4509-98a7-1eec9d06ab5a/scratchpad/c2-realdata.mjs`).
+  If /tmp was cleared, rewrite it from the Task C2 text. Never commit it.
+
+#### Raw coordinator notes (Session C, part 1)
+
+
+- C4 Actions: branch chore/actions-node24 @ baa90da (base main 0cd6db2), checkout v4→v5, setup-node v4→v5, configure-pages v5→v6, upload-pages-artifact v3→v5 (hidden files excluded; dist has none), deploy-pages v4→v5. node-version 22 kept (24 advisable later; 22 supported to Apr 2027). Watch first run: no Node20 warnings, npm cache miss once, artifact includes index.html/sw.js/manifest/workbox.
+- C4 manifest description updated in vite.config.js (uncommitted, rides next commit).
+## C3 findings
+- L5 API key — F1 Important CONFIRMED (re-ran proof myself: `recovery download contains key: true`, also migration-failed path): RecoveryScreen.jsx rawStored dumps raw v1+v2 incl. v1 settings.apiKey (v1 never written, so key persists forever). Fix: redact apiKey values + sk-ant- tokens in raw strings before building the file; note "redacted" in the file header; test. F2 Minor: clearing key in Settings leaves it in v1 key forever → tell James: revoke at console.anthropic.com is the only kill switch (final summary). HELD: fullBackup blanks (new objects), migration strips apiKey from attempt settings, ingest refuses sk-ant-/non-empty apiKey before copying, key only in x-api-key header, no console.* in src, git history only placeholders, dist placeholders only, input type=password.
+- L4 read-only — re-ran proof, all CONFIRMED: F1 coach (coach.js:12-24, button App.jsx:159 visible in viewer) tells model "day 76 of 60, POST-QUIT you are nicotine-free" for archived a1. F2 GapsCard/store.js:368 currentGapMs = now − last pouch ticks in viewer ("29 days since last pouch"). F3 StatsView:38,168-181 / PlanView:31 / HistoryTimeline:130 use todayKey() not asOfDay(state): PlanView marks all 8 stages "done" (36/60 logged); "pouches not used" 304 of which 216 from silent days (ALSO ON MAIN — avoided counts unlogged days); mg chart plots unlogged days as 0mg; early-archived attempt credited post-archive days, chart/history run to today. F4 Minor: Settings "Simulate import" (?checkin= fake check-in) visible in viewer → permanent fake check-in on ACTIVE attempt, overrides real sleep; App.jsx:29 returns before stripping ?checkin when no active attempt [SUSPECTED]. F5 Minor: Settings attempts copy "This is your first attempt" while viewing a1.
+  HELD: setRoot checks view(cur).readOnly on same state; no writes to viewed or active while viewing; startAttempt from viewer ok; backfill ignored for archived; LogToast unmounts; celebrations blocked; ?checkin only first load; viewing mode not persisted; awards/money/streaks/calendar use asOfDay.
+- L2 append-only — no Critical/Important. Re-ran proofs. ACCEPT F1 Minor: undoEvent (state.jsx:104-109) has no age bound (undo works 1.5h later via api; UI relies on 12s setTimeout which iOS suspends on lock) → add age bound in api + hide toast on tick past `until`. Keep resisted undo allowed (rule = "just-logged event", not pouch-only). ACCEPT F2 Minor: tag window no lower bound (clock set back) → reject age < −5s. REJECT F3 (tagEvent overwrites SOS-set trigger within 15 s): a correction inside the 15-s window is "completing the log", the rule says "set", no history rewritten after the window. DEFER F4 (last-writer-wins across two tabs; same as v1; iPhone PWA is one context) → Firebase sync spec must solve concurrent writers. REJECT F5 (migration stamps all v1 events New York): attempt 1 was verified entirely Eastern during the 9/18 rescue ("true Eastern time" archive); move came after Sep 5.
+  HELD: undo by id only last; double-tap safe; reload wipes toast; tag only trigger/last/pouch/20s blocked; 2nd backfill same day no-op; checkins append; functional updaters (6 calls one tick all land); archive byte-identical; migration no filter/sort; no in-place mutation; ingest never deletes; Start fresh confirms + copies corrupt aside.
+- L7 scoring (verified p2-unearn, p4-quit): ACCEPT S1 Important kept-25/100 un-earn via price edit or over-cap backfill; celebratedAwards then blocks re-celebration → latch: earned = derived || celebrated. DEFER S2 Important-but-Dec: post-quit Today renders only RecoveryTimeline (no backfill, clean quit day unloggable except SOS, day-zero unearnable, Nicotine-free clock time-based) → post-quit "still free" spec (due before quit day, now Sun 2026-12-20) MUST cover: quit day loggable as zero, slips loggable, backfill mounted post-quit, day-zero earnable, log-based clock. Taking now only: LogRing on quit day + "Since quit day" header. ACCEPT S3 cents drift (one integer-cents kept function shared by money+awards). DECIDE S4 (over-cap today → current streak 0 immediately; spec literal gives yesterday's run): keep 0 — an over-cap day breaks the streak, showing a number the user knows is already broken is a fake number; pin with a test; tell James. ACCEPT S5 event awards celebrate before undo window closes → AwardUnlock waits until last event ≥ undo window old. ACCEPT S6 backfill guard dayNum ≤ totalDays. DEFER S7 (stepper max 40 = MAX_PER_DAY; mistaken over-cap backfill can't be undone) → public-launch. SOL (L7): 3 claims all REJECTED with verified reasons (logBackfill requires keep/break; unused id return; two backfills need invalid first).
+  HELD: day1==today, pre mode, checkin-only nolog, resisted-only green, >7d never prompts, backfill today/future/pre-start rejected, double-tap no dup, no double count, keep/break/over-cap per spec, count 0 green, stage-boundary caps, streak-3 not on today, negative kept amber, backfilled bucket, money excludes nolog.
+- L3 tz (verified p1 NY vs CHI: History 7:20 vs 8:20, verdict early −55; p3 ingest current 0): ACCEPT T1 HistoryTimeline fmtTime(ev.ts)→fmtTime(ev); T2 deriveCtx/slotTimeToday rebuild ctx-less (Jul 7–9 v1) slots in reader zone → use event tzOffsetMin; T3 ingest scores streaks at Mac's now not exportedAt (Live Log/Telegram said current 0 for an 8-day streak); T4 slot "24:15" → RangeError crash in logPouch (dinner ≥23:45); T5 App.jsx:40 dayKeyFor(e.ts)→stamped day; T6 archive day in reader zone → stamp archivedDay; T8 tests not zone-pinned (Auckland 13 fails) → pin TZ + triage. REJECT T7 (= L2 F5). SOL (L3): 9 claims; 6 accepted (mapped to findings), 1 partly (pre-4am slots on DST day: mechanism real, unreachable with sane meals), 1 rejected (1:30 AM repeated hour: no reachable slot), "migration correct" accepted.
+  HELD: stampNow/dayKeyAt 7:30 PM CDT → 9/21 not UTC; cutoff 3:59/4:00; DST Nov 1; offsetMinInZone at NY DST edges; SetupFlow uses todayKey (no UTC bug); plan dates identical in 6 zones; T12:00 parsing; backfill/missedDays todayKey; earnedOn/money/checkin stamped; backup names; ingest buckets by stamped day.
+- L1 migration (verified §1 one bad ts → migration-failed, 0 attempts; §2 start fresh orphans v1): ACCEPT M1 Important after migration-failed "Start fresh" saves empty root → v1 never read again (copy falsely says it writes over a copy) → truthful copy + v1 re-importable marker; ACCEPT M2 Important all-or-nothing migration (one bad event fails all) → tolerant: preserve unreadable events verbatim aside, migrate the rest; M3 SUSPECTED stale SW v1 page logging after migration → checklist: don't log until Front door; ACCEPT M4 quota: Start fresh silently skips rescue copy → require download when copy fails; DEFER M5 (= L2 F4) Firebase; ACCEPT M6 dangling/archived activeAttemptId + malformed v2 white screen, no ErrorBoundary → validate on load + top-level ErrorBoundary with a way out; REJECT M7 (= L2 F5). SOL (L1): 12 claims, 6 accepted (#3,#5,#6,#2,#7,#4), 5 rejected (app killed pre-save: React 19 saves synchronously after tap, v1 same; in-memory on failure is spec; concurrent first boot = M5; overwrite-day: v1 had no day; recovery stuck: reload), checkinDismissedFor dropped accepted harmless.
+- L6 tone: ACCEPT all Important except #9 (BackfillPrompt "Keep my streak / Break it here" + "Your call…" is spec-approved copy James wrote; buttons name the decision) → REJECT, offer as optional tweak. #12 Simulate import → gate behind ?dev (reversible, keeps Shortcut testing). #5 header only; post-quit logging deferred (S2). Minors all ACCEPT (PriceHelp: keep spec's "explain where to add a key", but make it true during setup).
+## Wave 2 agents (dispatched ~8:40 PM)
+Snapshot: scratchpad/snap (worktree detached e6c3d97), snap-dist. REMOVE worktree at end.
+TODO after wave: wire shared undo constant (C1→C2/E TODOs), FrontDoor/ReadOnlyBanner unreadableEvents hook (FX-A), flows 1 (migration) + 5 (recovery) on final app, C2 real data, TZ triage follow-ups, npm audit, CLAUDE.md, full suite, final reviewer.
+- C2 baseline on snapshot e6c3d97 (real v1 backup, Chicago, now 9/21 21:00): 26 pass / 2 fail — both the predicted pre-fix bugs (viewer live "since last pouch"; History spot-check time 1 h early from Chicago). All events migrated, weekly totals = golden (9 weeks), Jul 8 – Sep 5 in list + banner, no live streak, no nicotine-free, no key in attempts, v1 byte-identical.
+- CHECKLIST WORDING: Front door has a "Past attempts" LIST (no "View a past attempt" button) → step 3 says "Under Past attempts, tap Attempt 1".
+- FX-B1 committed 70917c0 (74 tests in its 3 files; harness pass). Follow-ups: ingest.js latched "(null)" → sent to FX-D; `timeSinceLastPouch` (TodayLog) same live-clock class — check reachability in viewer at final review. Latch only protects celebrated awards (un-celebrated can honestly re-lock) — acceptable.
+- Review plan (subagent-driven-development two-stage): after all fixers land, one spec-compliance reviewer over the whole fix diff vs accepted-findings list, then one code-quality reviewer; loop until clean. Batch-level instead of per-agent to fit the coordinator budget.
+- Committed: 5430e1b FX-D (ingest atExport = Date-subclass swap inside one sync call; clean fix = `now` param on store fns → Firebase spec), 115b72c FX-A, 767ab28 FX-C1 (+ my startFresh(root) wiring), a743f38 FX-E (+ my ReadOnlyBanner unreadable note). Full suite at that point: 276 pass / 1 skip; lint 2.
+- FX-A Sol: ACCEPTED false vs null distinction, readers `?? []`, don't catch zone errors, numeric ts unreadable. REJECTED strict ISO-only check (contract = exactly as today), storing raw v1 inside v2 (doubles quota + carries the key; follow-up idea), cross-tab/double-tap (idempotent).
+- FX-C1 surprise: coach model id is dated `claude-haiku-4-5-20251001` (spec §7 names it; left). App.jsx exports CheckinDeepLink/AppContent for tests (no lint warning).
+- FX-E: planGenerator taglines changed ("floaters" → plain) — golden compares days/count/mg/name only; LEGACY_PLAN untouched.
+- Still running: FX-B2 (read side + PlanView floaters), FX-C2 round 2 (pre-mode ring, overlap, dup quit label, wire UNDO_WINDOW_MS), flows 2/3/4.
+- e4de43e FX-B2 committed. snap2 worktree @ e4de43e (+ snap2-dist). REMOVE both worktrees at end.
+- C2 real data on snap2: 28/28 PASS (both pre-fix failures gone).
+- flow 2 walk-setup committed: 157 checks (15 node + 142 browser), mutation-tested (15 injected faults all caught). Lib requests: v1Unchanged label; clickText textContent concatenation (document/role); snap full-page option. Notes: pre-Day-1 ring "0/10" (= baseline+1 pre cap asserted in plan.test) → FX-C2 round 2 fixing display; morning check-in card shows at 02:30 (still Monday's app day; v1 behaviour, left); Baseline hold 8/day on 9 baseline = attempt-1 design (legacy stage 1 = 8/day; generator 8/9 ratio) → tell James.
+- bb8a515 FX-C2 committed; 0300713 CLAUDE.md. Real-backup suite (POUCH_BACKUP_DIR): 277/277.
+- flow 3 walk-backfill: 169 checks, 3 contexts (keep extends 1→3; break at cap holds 3 where keep would give 5; skip re-prompts; checkin-only day prompts; 8-day-old never; over-cap no keep/break + amber; 5 missed → 3 per open). Mutation-tested. DECISIONS: (1) 4th prompt after answering 3 in one open → FIX to spec ("on open, up to 3"): snapshot list at open (resumed flow-3 agent owns BackfillPrompt.jsx for this). (2) break-day green on calendar → KEEP: day status = day's truth (within cap); streak chip carries the choice.
+- npm audit: 7 (6 high, 1 moderate) all build-time (postcss, nanoid, sharp…), all fixable without --force → apply after flows stop using node_modules.
+- flow 4 walk-awards: 70 → 92 checks (old "66" excluded 4 fixture checks), 16 named FLOW 4 checks, passes with --now across Nov 1 DST. FOUND harness bug: Playwright clock.install fakes performance.now across reloads → Framer exit animations ~20 s late after reload. Fixed lib (c10bf8c): Date-only pin via init-script offset. Re-verified setup 157, awards 92, backfill 178 on new lib.
+- Commits: c10bf8c lib, 6d16123 walk-awards, 1d3969f walk-backfill + BackfillPrompt per-open snapshot (tab switch remounts Today = new open, same as Skip already behaved).
+- a2f94a4 walk-migration 180 checks (failed exactly the 2 Settings leaks ×2 zones on pre-fix snap2 → proves it can fail). Minor found: DisciplineCard "· 0 today" in past attempt → FX-F.
+- 2991d2c FX-F (recovery copy truthful after failed rescue; pause once; discipline today hidden archived). Spec compliance now ✅.
+- walk-recovery committed: 381 checks, 7 contexts, mutation-tested vs 5 planted bugs; found on snap2: Q2 first Yes wrote over while claiming "set aside" (fixed in 2991d2c). seedV1() ids counter differs per call (walks call once).
