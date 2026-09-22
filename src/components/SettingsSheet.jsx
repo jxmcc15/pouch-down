@@ -8,6 +8,10 @@ import PriceHelpSheet from './onboarding/PriceHelpSheet.jsx';
 
 const SHORTCUT_URL = 'https://jxmcc15.github.io/pouch-down/?checkin=hours:[Duration]';
 
+// "Simulate import" writes a real, permanent check-in into the active attempt
+// (history is append-only), so it's a developer tool: shown only with ?dev.
+const DEV = new URLSearchParams(window.location.search).has('dev');
+
 const fmtShort = (dateStr) =>
   new Date(`${dateStr}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
@@ -33,6 +37,17 @@ export default function SettingsSheet({ onClose }) {
   const [drafts, setDrafts] = useState({});
 
   const past = root.attempts.filter((a) => a.id !== state.id && a.status === 'archived');
+  // Attempts copy has to be true in every state: viewing a past attempt (with
+  // or without an active one to go back to), or on the active attempt with or
+  // without earlier ones.
+  const exitTo = root.activeAttemptId ? 'get back to your current attempt' : 'start a new one';
+  const attemptsNote = readOnly
+    ? past.length > 0
+      ? `You're viewing a past attempt, read-only. Open another below, or exit at the top to ${exitTo}.`
+      : `You're viewing a past attempt, read-only. Exit at the top to ${exitTo}.`
+    : past.length > 0
+      ? 'Nothing is ever deleted. Open one to look back at it.'
+      : 'This is your first attempt. Past ones show up here once you start a new one.';
 
   // Every settings write goes to the active attempt, so while a past attempt is
   // open the api no-ops. Disable rather than let a tap do nothing silently.
@@ -123,7 +138,7 @@ export default function SettingsSheet({ onClose }) {
         <div className="sheet-handle" />
         <h3 style={{ fontSize: 16, marginBottom: 4 }}>Settings</h3>
         <p className="small faint" style={{ margin: 0 }}>
-          Everything stays on this device.
+          Your log stays on this phone unless you ask the coach.
         </p>
 
         {/* Two columns for the same reason as setup: three time inputs don't
@@ -236,52 +251,46 @@ export default function SettingsSheet({ onClose }) {
             {copiedUrl ? <Check size={15} color="var(--green)" /> : <ClipboardCopy size={15} />}
             {copiedUrl ? 'Copied' : 'Copy URL template'}
           </button>
-          <a
-            className="btn btn-ghost small"
-            style={{ flex: 1, textDecoration: 'none' }}
-            href="?checkin=hours:7.4,workout:1,quality:4"
-          >
-            Simulate import
-          </a>
+          {DEV && (
+            <a
+              className="btn btn-ghost small"
+              style={{ flex: 1, textDecoration: 'none' }}
+              href="?dev&checkin=hours:7.4,workout:1,quality:4"
+            >
+              Simulate import
+            </a>
+          )}
         </div>
         <p className="small faint" style={{ margin: '6px 0 0' }}>
-          Replace [Duration] with the Shortcut's duration variable. Simulate
-          runs a fake 7.4h import locally so you can see it land.
+          Replace [Duration] with the Shortcut's duration variable.
+          {DEV && ' Simulate writes a real 7.4h check-in into your current attempt — dev only.'}
         </p>
 
         <label>Attempts</label>
-        {past.length > 0 ? (
-          <>
-            <p className="small muted" style={{ margin: 0 }}>
-              Nothing is ever deleted. Open one to look back at it.
-            </p>
-            {past.map((a) => (
-              <motion.button
-                key={a.id}
-                className="btn"
-                style={{ width: '100%', marginTop: 8, justifyContent: 'flex-start', minHeight: 52 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => {
-                  api.viewAttempt(a.id);
-                  onClose();
-                }}
-              >
-                <History size={16} />
-                <span style={{ textAlign: 'left' }}>
-                  Attempt {a.id.slice(1)}
-                  <span className="small faint" style={{ display: 'block', fontWeight: 400 }}>
-                    {fmtShort(a.plan.startDate)} – {fmtShort(a.plan.quitDate)} ·{' '}
-                    {loggedDaysIn(a)} of {a.plan.totalDays} days logged
-                  </span>
-                </span>
-              </motion.button>
-            ))}
-          </>
-        ) : (
-          <p className="small muted" style={{ margin: 0 }}>
-            This is your first attempt. Past ones show up here once you start a new one.
-          </p>
-        )}
+        <p className="small muted" style={{ margin: 0 }}>
+          {attemptsNote}
+        </p>
+        {past.map((a) => (
+          <motion.button
+            key={a.id}
+            className="btn"
+            style={{ width: '100%', marginTop: 8, justifyContent: 'flex-start', minHeight: 52 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => {
+              api.viewAttempt(a.id);
+              onClose();
+            }}
+          >
+            <History size={16} />
+            <span style={{ textAlign: 'left' }}>
+              Attempt {a.id.slice(1)}
+              <span className="small faint" style={{ display: 'block', fontWeight: 400 }}>
+                {fmtShort(a.plan.startDate)} – {fmtShort(a.plan.quitDate)} ·{' '}
+                {loggedDaysIn(a)} of {a.plan.totalDays} days logged
+              </span>
+            </span>
+          </motion.button>
+        ))}
 
         {!readOnly && (
           confirmEnd ? (
@@ -292,8 +301,8 @@ export default function SettingsSheet({ onClose }) {
               style={{ marginTop: 12 }}
             >
               <p className="small" style={{ margin: 0 }}>
-                This archives your current attempt — nothing is deleted. You'll
-                set up a new plan.
+                Your history stays, read-only. You can't reopen this attempt.
+                Next, you'll set up a new plan.
               </p>
               <div className="row" style={{ gap: 8, marginTop: 12 }}>
                 <button
@@ -304,7 +313,7 @@ export default function SettingsSheet({ onClose }) {
                     onClose();
                   }}
                 >
-                  End it
+                  End attempt
                 </button>
                 <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => setConfirmEnd(false)}>
                   Keep going
@@ -328,7 +337,7 @@ export default function SettingsSheet({ onClose }) {
           {copied ? 'Copied — paste anywhere' : 'Copy full log as Markdown'}
         </motion.button>
         <p className="small faint" style={{ margin: '6px 0 0' }}>
-          Formatted for Obsidian — paste into your vault or a Claude chat for a
+          Plain Markdown — paste it into your notes app or a Claude chat for a
           weekly review.
         </p>
 
@@ -337,8 +346,8 @@ export default function SettingsSheet({ onClose }) {
           {backedUp === 'shared' ? 'Backup sent' : backedUp === 'copied' ? 'Copied — paste into a file' : 'Download full backup'}
         </motion.button>
         <p className="small faint" style={{ margin: '6px 0 0' }}>
-          Every log, trigger, and check-in as one JSON file — AirDrop it to your
-          Mac or save it to Files. Your API key is left out.
+          Every log, trigger, and check-in as one JSON file. Save it somewhere
+          safe — Files, AirDrop, or email. Your API key is left out.
         </p>
 
         <button className="btn btn-ghost" style={{ width: '100%', marginTop: 20 }} onClick={onClose}>

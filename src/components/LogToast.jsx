@@ -39,9 +39,10 @@ function verdictLine(bucket, deltaMin, time, slotTime) {
 }
 
 // Post-log toast: states the fact warmly, offers undo, and lets the just-made
-// log be completed with a mood tag. Parent (TodayView) owns the 12s window and
-// mounts/unmounts this inside <AnimatePresence>.
-export default function LogToast({ eventId, onUndo }) {
+// log be completed with a mood tag. Parent (TodayView) owns the 12s window
+// (`until`, epoch ms) and mounts/unmounts this inside <AnimatePresence>;
+// `onDone` tells it to take the toast down.
+export default function LogToast({ eventId, until, onDone }) {
   const { state, api } = useApp();
 
   // Event may have been undone mid-toast — render nothing rather than crash.
@@ -89,8 +90,11 @@ export default function LogToast({ eventId, onUndo }) {
             style={chipStyle}
             whileTap={{ scale: 0.94 }}
             onClick={() => {
-              api.undoEvent(eventId);
-              onUndo();
+              // The parent hides the toast once the window passes, but after an
+              // unlock the old frame can still be on screen for up to a tick.
+              // A late tap must not delete a pouch logged long ago.
+              if (Date.now() < until) api.undoEvent(eventId);
+              onDone();
             }}
           >
             <Undo2 size={14} /> undo

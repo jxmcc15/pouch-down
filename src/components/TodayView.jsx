@@ -3,10 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ShieldCheck } from 'lucide-react';
 import { useApp } from '../state.jsx';
 import {
-  pacingForNow, todayKey, dayNumberFor, dateForDayNumber, pouchesForDay, resistedForDay,
+  pacingForNow, todayKey, dayNumberFor, pouchesForDay, resistedForDay,
   checkinForDay,
 } from '../store.js';
 import { stageForDay, capForDay, WITHDRAWAL_NOTES } from '../plan.js';
+import { UNDO_WINDOW_MS } from '../justLogged.js';
 import LogRing from './LogRing.jsx';
 import LogToast from './LogToast.jsx';
 import TodayLog from './TodayLog.jsx';
@@ -22,8 +23,8 @@ import { TrophyTile } from './awards/TrophyCase.jsx';
 import { ReadOnlySummaryCard } from './ReadOnlyBanner.jsx';
 import { celebrate } from '../confetti.js';
 
-// The toast doubles as the mood-tag window, so it outlives the old 6s.
-const TOAST_MS = 12000;
+// The toast must close inside the api's undo window, or its Undo would do nothing.
+const TOAST_MS = Math.min(12000, UNDO_WINDOW_MS);
 
 const spring = { type: 'spring', damping: 24, stiffness: 180 };
 
@@ -39,6 +40,11 @@ function formatMonthDay(dateStr) {
     month: 'long', day: 'numeric',
   });
 }
+
+// Quit day is marked by kind in generated plans; attempt 1's hand-written plan
+// predates `kind`, and there the quit stage is the only one with no pouches.
+// Never the stage number — that differs from plan to plan.
+const isQuitStage = (stage) => stage.kind === 'quit' || stage.pouchesPerDay === 0;
 
 // `openTrophies` opens the trophy case from App.jsx rather than from here on
 // purpose: `.sheet` is position:fixed, and a fixed element inside the tab
@@ -60,12 +66,11 @@ export default function TodayView({ openSettings, openTrophies }) {
   const postQuit = dayNum > state.plan.totalDays;
   const prePlan = dayNum < 1;
   const quitDay = dayNum === state.plan.totalDays;
-  // Pre-plan card facts: the first real (non-quit) stage's strength, and the
-  // first later stage that steps it down, if the plan ever does.
+  // Pre-plan card facts: the first stage's strength (what the ring shows), and
+  // the plan's first shopping stop — the stage that steps the strength down —
+  // if the plan ever does.
   const firstStage = state.plan.stages[0];
-  const nextMgStage = prePlan
-    ? state.plan.stages.find((s) => s.pouchesPerDay > 0 && s.mg < firstStage.mg)
-    : null;
+  const firstShop = prePlan ? state.plan.stages.find((s) => s.shopBefore) : null;
 
   // Celebrate completed stages once (entering a new stage fires confetti).
   // Never while viewing a past attempt: the api no-ops on an archived attempt,
@@ -90,6 +95,11 @@ export default function TodayView({ openSettings, openTrophies }) {
     const id = setTimeout(() => setLastLog(null), lastLog.until - Date.now());
     return () => clearTimeout(id);
   }, [lastLog]);
+  // The timer alone isn't enough: iOS suspends timers while the phone is
+  // locked, so on unlock it may not have fired yet. This re-checks on every
+  // render, and the 1s tick from state.jsx re-renders this view, so a pouch
+  // logged hours ago never comes back with an Undo on it.
+  const toastLive = lastLog != null && Date.now() < lastLog.until;
 
   // Order matters: a past attempt whose quit day has come and gone would
   // otherwise render the "Nicotine-free — N days" clock, which counts elapsed
@@ -106,14 +116,14 @@ export default function TodayView({ openSettings, openTrophies }) {
       {prePlan && (
         <motion.div className="card" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={spring}>
           <div style={{ fontWeight: 600 }}>
-            Day 1 is {formatWeekdayMonthDay(state.plan.startDate)}.
+            {dayNum === 0
+              ? `Day 1 is tomorrow — ${formatWeekdayMonthDay(state.plan.startDate)}.`
+              : `Day 1 is ${formatWeekdayMonthDay(state.plan.startDate)}.`}
           </div>
           <div className="small muted" style={{ marginTop: 4 }}>
-            Logging now builds your honest baseline — no caps judged yet. Stock
-            check: you have {firstStage.mg}mg on hand
-            {nextMgStage
-              ? `; ${nextMgStage.mg}mg isn't needed until ${formatMonthDay(dateForDayNumber(state, nextMgStage.days[0]))}.`
-              : '.'}
+            Log anything you use — there's no cap yet.
+            {firstShop &&
+              ` You won't need ${firstShop.mg}mg until ${formatMonthDay(firstShop.shopBefore.date)}.`}
           </div>
         </motion.div>
       )}
@@ -128,7 +138,9 @@ export default function TodayView({ openSettings, openTrophies }) {
         >
           <div>
             <div className="tiny muted">
-              Day {dayNum} of {state.plan.totalDays} · Stage {stage.id === 8 ? '— quit' : stage.id}
+              {/* Quit day's heading below already says "Quit day"; say it once. */}
+              Day {dayNum} of {state.plan.totalDays}
+              {isQuitStage(stage) ? '' : ` · Stage ${stage.id}`}
             </div>
             <h2 style={{ fontSize: 20 }}>{stage.name}</h2>
             <StreakChip onOpenTrophies={openTrophies} />
@@ -167,12 +179,18 @@ export default function TodayView({ openSettings, openTrophies }) {
         cap={cap}
         mg={prePlan ? firstStage.mg : stage?.mg ?? 0}
         onLog={() => logPouch(null)}
-        disabled={quitDay || (stage && stage.pouchesPerDay === 0)}
+        quitDay={quitDay}
+        prePlan={prePlan}
       />
 
       <AnimatePresence>
-        {lastLog && (
-          <LogToast key={lastLog.id} eventId={lastLog.id} onUndo={() => setLastLog(null)} />
+        {toastLive && (
+          <LogToast
+            key={lastLog.id}
+            eventId={lastLog.id}
+            until={lastLog.until}
+            onDone={() => setLastLog(null)}
+          />
         )}
       </AnimatePresence>
 
@@ -242,7 +260,7 @@ export default function TodayView({ openSettings, openTrophies }) {
             ? `Quit day. ${WITHDRAWAL_NOTES.postQuit}`
             : stage && dayNum === stage.days[0] && stage.id > 1
               ? WITHDRAWAL_NOTES.stageFlip
-              : `Quit date: ${state.plan.quitDate} · slips never move it.`}
+              : `Quit date: ${formatWeekdayMonthDay(state.plan.quitDate)} · slips never move it.`}
         </motion.p>
       )}
 

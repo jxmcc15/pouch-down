@@ -100,7 +100,7 @@ export default function TodayLog() {
       </div>
 
       {events.length === 0 ? (
-        <div className="small muted">Nothing logged yet — today starts clean.</div>
+        <div className="small muted">Nothing logged yet today.</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {events.map((ev) => (
