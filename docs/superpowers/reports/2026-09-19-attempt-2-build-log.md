@@ -400,3 +400,52 @@ already fixed it; re-grepping the file confirmed `plainMotion()`. Worth the
   on the real phone, the fix is a per-tier collapse, not a redesign.
 - Nothing in B2 is deferred. Awards are derived from the log, so had this been
   cut, nothing would have been lost — but it was not cut.
+
+---
+
+## Session C — QA and ship (Mon 2026-09-21, 7:30 PM CT → )
+
+**Ran a day late.** Session C was scheduled for Sun midday before the 6:00 PM
+freeze. It started Monday evening, which was meant to be Day 1.
+
+### Up-front answers from James
+
+1. **Day 1 moves to Tue 2026-09-22.** Setup refuses past dates by design
+   (backdating leaves unlogged days), and Monday was half over. The
+   `tomorrow` default already lands there. That puts quit day on Sun
+   2026-12-20 and the first cut on Wed 2026-10-07. Stage 1 holds at baseline,
+   so the lost day costs nothing. The 9/27 (Firebase) and 10/4 (off-track)
+   deadlines stay, and 10/4 is still before the first cut.
+2. **No cuts. Keep building until it is excellent.** The 3 PM checkpoint and
+   its cut order are retired for this session. The quality bar is the gate,
+   not the clock. The token ceilings still apply: past ~300k the coordinator
+   writes a handoff rather than cutting scope.
+3. **Deploy-workflow Actions bump is deferred.** It is prepared on its own
+   branch (`chore/actions-node24`, based on `main`) and merged only after the
+   release is confirmed on the phone, so a first-push failure can only be the
+   app and never the pipeline.
+4. **No logs since Friday's backup**, so the vault backup is current for the
+   C2 dry run.
+5. **Merge gate:** the coordinator stops and asks before merging (James's
+   standing instruction for this session), with a push notification and the
+   chime. Never pushes.
+
+### Decisions made without James
+
+- **All E2E flows pin the browser clock.** `walk-setup.mjs` typed
+  `2026-09-21` as Day 1 against the real clock. After 4 AM Tue 9/22 that date
+  counts as passed, and the walk would fail for a reason unrelated to the app.
+- **E2E flows run in `America/Chicago`**, the phone's real zone since the
+  move. The migration stamps v1 events in New York, so viewing them in
+  Chicago is the realistic case. `walk-setup.mjs` ran in New York.
+- **A shared `scripts/e2e/lib.mjs` is written first** (contract-first, the
+  trick from B and B2), so the five flows share one server/seeding/clock
+  harness instead of five copies. Seeding is sentinel-gated: B2 found that an
+  ungated `addInitScript` re-seeds on every reload, which makes reload
+  assertions lie.
+- **A seventh review lens was added:** honest scoring / backfill / streak /
+  money. It is load-bearing, and the backfill UI was built after Sol last
+  reviewed scoring.
+- **Subagent effort:** the Agent tool has no per-agent effort switch and
+  there are no custom agent definitions, so every agent inherits this
+  session's setting.
