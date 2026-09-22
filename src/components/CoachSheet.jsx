@@ -7,13 +7,13 @@ import { askCoach } from '../coach.js';
 const QUICK = ['I want one right now', 'How am I doing?', 'Remind me why'];
 
 export default function CoachSheet({ onClose, openSettings }) {
-  const { state } = useApp();
+  const { state, device } = useApp();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const scrollRef = useRef(null);
-  const hasKey = Boolean(state.settings.apiKey?.trim());
+  const hasKey = Boolean(device.apiKey?.trim());
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 99999, behavior: 'smooth' });
@@ -27,7 +27,7 @@ export default function CoachSheet({ onClose, openSettings }) {
     setInput('');
     setBusy(true);
     try {
-      const reply = await askCoach(state, next);
+      const reply = await askCoach(state, next, device.apiKey);
       setMessages((m) => [...m, { role: 'assistant', text: reply }]);
     } catch (e) {
       if (e.message === 'bad-key') setError('That API key was rejected — double-check it in Settings.');

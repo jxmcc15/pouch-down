@@ -1,35 +1,69 @@
 // AI coach — direct browser calls to the Claude API. The key lives only in
 // this device's localStorage (settings). Never ships in the repo.
 
-import { markdownSummary, todayKey, dayNumberFor, pouchesForDay, resistedForDay, currentStreak } from './store.js';
-import { stageForDay, capForDay, TOTAL_DAYS, QUIT_DATE, START_DATE } from './plan.js';
+import { markdownSummary, asOfDay, dayNumberFor, isLogged, pouchesForDay, resistedForDay, currentStreak } from './store.js';
+import { stageForDay, capForDay } from './plan.js';
+import { moneyStats } from './money.js';
 
 const MODEL = 'claude-haiku-4-5-20251001';
 
-function systemPrompt(state) {
-  const today = todayKey();
-  const n = dayNumberFor(today);
-  const stage = stageForDay(Math.min(Math.max(n, 1), TOTAL_DAYS));
-  return `You are the in-app coach for "Pouch Down", James's ${TOTAL_DAYS}-day nicotine pouch taper (${START_DATE} to ${QUIT_DATE}, quit date ${QUIT_DATE}).
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
-Method: hybrid taper — count first, then strength. Slots are meal-anchored (his habit: always after meals). Slip policy: "absorb and continue" — an over day breaks the streak but NEVER changes tomorrow's cap or moves the quit date. The 10-minute rule: wait 10 minutes before deciding on a craving.
+// Every fact here is read "as of" the attempt's scoring day (asOfDay) and from
+// its log. The calendar can say a quit day has passed; only the log can say
+// how it went, so nothing is ever claimed from elapsed time alone.
+function liveData(state) {
+  const plan = state.plan;
+  const past = state.status === 'archived';
+  const day = asOfDay(state); // today while active; the last scored day of a past attempt
+  const n = dayNumberFor(state, day);
+  const inPlan = n >= 1 && n <= plan.totalDays;
 
-Live data:
-- Today is ${today}, day ${n} of ${TOTAL_DAYS}${n < 1 ? ' (pre-plan)' : n > TOTAL_DAYS ? ' (POST-QUIT — he is nicotine-free, coach maintenance now)' : ''}
-- Current stage: ${stage ? `${stage.name} — ${stage.pouchesPerDay}/day @ ${stage.mg}mg` : 'n/a'}
-- Today: ${pouchesForDay(state, today)}/${capForDay(n)} pouches used, ${resistedForDay(state, today)} cravings resisted
-- Streak: ${currentStreak(state)} on-plan days
+  const where = n < 1
+    ? `before day 1 (the plan starts ${plan.startDate})`
+    : n > plan.totalDays
+      ? `${plural(n - plan.totalDays, 'day', 'days')} past quit day (${plan.quitDate}). Past quit day — check the log; the date alone says nothing about whether the user still uses pouches`
+      : `day ${n} of ${plan.totalDays}${n === plan.totalDays ? ' (quit day)' : ''}`;
+  const stage = inPlan ? stageForDay(plan, n) : null;
+  const logged = isLogged(state, day);
+  const used = pouchesForDay(state, day);
+  const counts = logged
+    ? `${plural(used, 'pouch', 'pouches')} used${inPlan ? ` (cap ${capForDay(plan, n)})` : ''}, ${plural(resistedForDay(state, day), 'craving', 'cravings')} resisted`
+    : past ? 'no log — unknown, not zero' : 'nothing logged yet — unknown, not zero';
 
-Recent log:
-${markdownSummary(state, 7)}
-
-In the log, "early" means before the pacing slot unlocked and "over" means beyond the day's cap — these buckets are honest data, so reference them without shame.
-
-Coaching style: direct, warm, zero shame, zero toxic positivity. Cravings are waves; delay beats willpower. Reference his actual numbers when relevant. If he went over, normalize it fast and refocus on the next slot, not the miss. 2-4 sentences per reply — this is a phone chat, not an essay. Never give medical advice; suggest a doctor for anything clinical.`;
+  return [
+    past
+      ? `- This is a past attempt that has ended; the user is looking back at it. Its record runs through ${day}, ${where}. Treat it as history, not as today.`
+      : `- Today is ${day}, ${where}.`,
+    `- ${past ? 'Stage on that day' : 'Current stage'}: ${stage ? `${stage.name} — ${stage.pouchesPerDay}/day @ ${stage.mg}mg` : 'n/a'}`,
+    `- ${past ? 'That day' : 'Today'}: ${counts}`,
+    `- Streak: ${plural(currentStreak(state), 'on-plan day', 'on-plan days')}`,
+  ].join('\n');
 }
 
-export async function askCoach(state, messages) {
-  const key = state.settings.apiKey?.trim();
+// "You" is the coach; the person is always "the user". Nothing here names
+// anyone — the plan, dates, and numbers all come from the attempt.
+function systemPrompt(state) {
+  const plan = state.plan;
+  const kept = moneyStats(state).kept;
+  return `You are the in-app coach for "Pouch Down", a nicotine pouch taper app. The user ${state.status === 'archived' ? 'was' : 'is'} on a ${plan.totalDays}-day taper, ${plan.startDate} to quit day ${plan.quitDate}.
+
+Method: hybrid taper — count first, then strength. Pouches are paced by slots anchored to the user's meal times. Slip policy: "absorb and continue" — an over day breaks the streak but NEVER changes the next day's cap or moves the quit date. The 10-minute rule: wait 10 minutes before deciding on a craving.
+
+Live data:
+${liveData(state)}
+- Kept so far: $${kept.toFixed(2)}
+
+Recent log:
+${markdownSummary(state, 7, kept)}
+
+In the log, "early" means before the pacing slot unlocked and "over" means beyond the day's cap — these buckets are honest data, so reference them without shame. A day marked "no log" means the day is UNKNOWN, not a success — never treat it as a good day or count it toward a streak. Only the log says how a day went; never infer it from the date.
+
+Coaching style: direct, warm, zero shame, zero toxic positivity. Cravings are waves; delay beats willpower. Reference the user's actual numbers when relevant. If the user went over, normalize it fast and refocus on the next slot, not the miss. 2-4 sentences per reply — this is a phone chat, not an essay. Never give medical advice; suggest a doctor for anything clinical.`;
+}
+
+export async function askCoach(state, messages, apiKey) {
+  const key = apiKey?.trim();
   if (!key) throw new Error('no-key');
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {

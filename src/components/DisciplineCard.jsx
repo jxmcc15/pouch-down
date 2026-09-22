@@ -8,6 +8,7 @@ const spring = { type: 'spring', damping: 24, stiffness: 180 };
 // One discipline bucket: big all-time count on the left, label + today's slice
 // + optional sub-line on the right. On-time leads (largest, green); early and
 // over-cap are the same plain amber — a fact to see, never an alarm.
+// `today` is null for a past attempt: it has no today, so no slice.
 function Stat({ value, today, label, color, size, weight = 700, sub = null }) {
   return (
     <div style={{ display: 'flex', alignItems: 'baseline', gap: 14 }}>
@@ -16,7 +17,7 @@ function Stat({ value, today, label, color, size, weight = 700, sub = null }) {
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 600 }}>{label}</div>
-        <div className="small muted num" style={{ marginTop: 1 }}>· {today} today</div>
+        {today != null && <div className="small muted num" style={{ marginTop: 1 }}>· {today} today</div>}
         {sub}
       </div>
     </div>
@@ -26,6 +27,8 @@ function Stat({ value, today, label, color, size, weight = 700, sub = null }) {
 export default function DisciplineCard() {
   const { state } = useApp();
   const d = disciplineStats(state);
+  // A past attempt has no "today" (same test as GapsCard): all-time counts only.
+  const live = state.status !== 'archived';
   const total = d.onTime + d.early + d.overCap;
   const showAvgs = d.avgMinHeld != null || d.avgMinEarly != null;
 
@@ -48,7 +51,7 @@ export default function DisciplineCard() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <Stat
               value={d.onTime}
-              today={d.today.onTime}
+              today={live ? d.today.onTime : null}
               label="on time"
               color="var(--green)"
               size={32}
@@ -56,7 +59,7 @@ export default function DisciplineCard() {
             />
             <Stat
               value={d.early}
-              today={d.today.early}
+              today={live ? d.today.early : null}
               label="early"
               color="var(--amber)"
               size={24}
@@ -70,12 +73,18 @@ export default function DisciplineCard() {
             />
             <Stat
               value={d.overCap}
-              today={d.today.overCap}
+              today={live ? d.today.overCap : null}
               label="over cap"
               color="var(--amber)"
               size={24}
             />
           </div>
+
+          {d.backfilled > 0 && (
+            <div className="small faint" style={{ marginTop: 10 }}>
+              {d.backfilled} entered after the fact (no timing)
+            </div>
+          )}
 
           {showAvgs && (
             <div

@@ -5,6 +5,10 @@ import { VitePWA } from 'vite-plugin-pwa'
 // Served from https://<user>.github.io/pouch-down/
 export default defineConfig({
   base: '/pouch-down/',
+  // Fixtures are written in Central time (James's zone: noon CT, 4am-cutoff
+  // days), so the suite pins it rather than inheriting the machine's zone.
+  // Zone independence is tested on purpose, in zones.test.js.
+  test: { environment: 'node', include: ['src/**/*.test.js'], env: { TZ: 'America/Chicago' } },
   plugins: [
     react(),
     VitePWA({
@@ -13,7 +17,7 @@ export default defineConfig({
       manifest: {
         name: 'Pouch Down',
         short_name: 'Pouch Down',
-        description: '60-day nicotine pouch taper — July 8 to September 5',
+        description: 'Taper off nicotine pouches on a plan built from your own starting point',
         theme_color: '#020203',
         background_color: '#020203',
         display: 'standalone',

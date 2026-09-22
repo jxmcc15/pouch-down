@@ -17,11 +17,22 @@ globalThis.Date = class extends RealDate {
 };
 
 const store = await import('/Users/jxm/Projects/pouch-down/src/store.js');
+const { DEFAULT_SETTINGS } = await import('/Users/jxm/Projects/pouch-down/src/root.js');
+const { LEGACY_PLAN } = await import('/Users/jxm/Projects/pouch-down/src/legacyPlan.js');
 const {
-  DEFAULT_SETTINGS, classifyPouch, disciplineStats, firstPouchTimes, gapStats,
+  classifyPouch, disciplineStats, firstPouchTimes, gapStats,
   hourHistogram, checkinForDay, correlationStats, timeSinceLastPouch,
   markdownSummary, dayKeyFor, todayKey, fmtDuration,
 } = store;
+
+// v2 attempt fixture wrapper — store.js derivations now take the attempt as
+// `state` and read `state.plan`. status: 'active' so asOfDay() uses the fake
+// "today" clock above, matching the original v1-era harness behavior.
+const asAttempt = (fields) => ({
+  id: 'a1', status: 'active', archivedAt: null, plan: LEGACY_PLAN,
+  celebratedStages: [], celebratedAwards: [], checkinDismissedFor: null,
+  ...fields,
+});
 
 let failures = 0;
 function eq(label, got, want) {
@@ -84,7 +95,7 @@ const events = [
   checkin('2026-07-19T09:15:00', { sleepQuality: 4, workout: false }), // good · 8
 ];
 
-const state = { version: 1, settings: { ...DEFAULT_SETTINGS }, events, celebratedStages: [], checkinDismissedFor: null };
+const state = asAttempt({ settings: { ...DEFAULT_SETTINGS }, events });
 
 eq('todayKey (fake clock)', todayKey(), '2026-07-20');
 
@@ -169,12 +180,12 @@ match('md checkin footer', md, /Check-ins \(7d\): 6 · avg sleep quality 3\.5\/5
 // Three morning taps → 2 early (both pre-first-slot) + 1 over-cap (pre-first-
 // slot flag true on classify, but NOT counted in disciplineStats — the stat
 // renders as a subset of "early" and must never exceed it).
-const s6state = {
-  version: 1, settings: { ...DEFAULT_SETTINGS }, celebratedStages: [], checkinDismissedFor: null,
+const s6state = asAttempt({
+  settings: { ...DEFAULT_SETTINGS },
   events: [
     pouch('2026-08-28T08:00:00'), pouch('2026-08-28T08:30:00'), pouch('2026-08-28T09:00:00'),
   ],
-};
+});
 const s6 = disciplineStats(s6state);
 eq('s6 early', s6.early, 2);
 eq('s6 overCap', s6.overCap, 1);

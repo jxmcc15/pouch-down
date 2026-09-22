@@ -34,7 +34,7 @@ function LogRow({ state, ev }) {
       <div className="row small">
         <span style={lead}><ShieldCheck size={15} color="var(--green)" /></span>
         <div>
-          <span className="num">{fmtTime(ev.ts)}</span>
+          <span className="num">{fmtTime(ev)}</span>
           <span style={{ color: 'var(--green)' }}> · resisted</span>
           {ev.trigger && <span className="faint"> · {ev.trigger}</span>}
         </div>
@@ -47,7 +47,7 @@ function LogRow({ state, ev }) {
       <div className="row small">
         <span style={lead}><Moon size={15} color="var(--accent-bright)" /></span>
         <div>
-          <span className="num">{fmtTime(ev.ts)}</span>
+          <span className="num">{fmtTime(ev)}</span>
           <span className="muted"> · morning check-in</span>
         </div>
       </div>
@@ -64,7 +64,7 @@ function LogRow({ state, ev }) {
         <span style={{ width: 8, height: 8, borderRadius: '50%', background: verdict.color }} />
       </span>
       <div>
-        <span className="num">{fmtTime(ev.ts)}</span>
+        <span className="num">{fmtTime(ev)}</span>
         {slotLabel && <span className="muted"> · {slotLabel}</span>}
         <span style={{ color: verdict.color }}> · {verdict.text}</span>
         {ev.trigger && <span className="faint"> · {ev.trigger}</span>}
@@ -100,7 +100,7 @@ export default function TodayLog() {
       </div>
 
       {events.length === 0 ? (
-        <div className="small muted">Nothing logged yet — today starts clean.</div>
+        <div className="small muted">Nothing logged yet today.</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {events.map((ev) => (

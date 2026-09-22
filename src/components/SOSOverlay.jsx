@@ -187,7 +187,7 @@ export default function SOSOverlay({ onClose, onResisted, onUsed }) {
               {secondsLeft === 0 ? 'Ten minutes. You made it.' : 'Your call.'}
             </h2>
             <p className="muted" style={{ margin: '10px 0 24px' }}>
-              Either answer is honest data. The streak only lies if you do.
+              Either answer is honest data. The streak is only as true as your log.
             </p>
             <motion.button
               className="btn btn-green"

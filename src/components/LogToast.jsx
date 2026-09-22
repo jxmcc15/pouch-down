@@ -39,9 +39,10 @@ function verdictLine(bucket, deltaMin, time, slotTime) {
 }
 
 // Post-log toast: states the fact warmly, offers undo, and lets the just-made
-// log be completed with a mood tag. Parent (TodayView) owns the 12s window and
-// mounts/unmounts this inside <AnimatePresence>.
-export default function LogToast({ eventId, onUndo }) {
+// log be completed with a mood tag. Parent (TodayView) owns the 12s window
+// (`until`, epoch ms) and mounts/unmounts this inside <AnimatePresence>;
+// `onDone` tells it to take the toast down.
+export default function LogToast({ eventId, until, onDone }) {
   const { state, api } = useApp();
 
   // Event may have been undone mid-toast — render nothing rather than crash.
@@ -49,7 +50,7 @@ export default function LogToast({ eventId, onUndo }) {
   if (!ev || ev.type !== 'pouch') return null;
 
   const { bucket, deltaMin } = classifyPouch(state, ev);
-  const time = fmtTime(ev.ts);
+  const time = fmtTime(ev);
   // Prefer the stamped slot time; fall back to reconstructing it from the
   // signed delta so old ctx-less events (or any surprise) never blank out.
   const slotTime =
@@ -60,10 +61,12 @@ export default function LogToast({ eventId, onUndo }) {
         : '';
   const { text, color } = verdictLine(bucket, deltaMin, time, slotTime);
 
-  // tagEvent only mutates the most recent event (domain rule), so once any
-  // newer event lands (check-in, SOS log) the chips would silently no-op —
-  // hide them instead of lying about what a tap will do. Undo stays.
-  const canTag = state.events[state.events.length - 1]?.id === eventId;
+  // Both tagEvent and undoEvent only touch the most recent event (domain rule),
+  // so once any newer event lands (check-in, SOS log) they silently no-op.
+  // Hide the controls instead of lying about what a tap will do — undo included:
+  // it used to stay visible and still dismiss the toast, which looked like it
+  // had removed the pouch when nothing had changed.
+  const isLast = state.events[state.events.length - 1]?.id === eventId;
 
   const chipStyle = { minHeight: 36, padding: '6px 13px', fontSize: 13 };
 
@@ -81,21 +84,28 @@ export default function LogToast({ eventId, onUndo }) {
       </p>
 
       <div className="spread" style={{ marginTop: 10 }}>
-        <motion.button
-          className="chip"
-          style={chipStyle}
-          whileTap={{ scale: 0.94 }}
-          onClick={() => {
-            api.undoEvent(eventId);
-            onUndo();
-          }}
-        >
-          <Undo2 size={14} /> undo
-        </motion.button>
-        {canTag && <span className="tiny faint">tag it · optional</span>}
+        {isLast ? (
+          <motion.button
+            className="chip"
+            style={chipStyle}
+            whileTap={{ scale: 0.94 }}
+            onClick={() => {
+              // The parent hides the toast once the window passes, but after an
+              // unlock the old frame can still be on screen for up to a tick.
+              // A late tap must not delete a pouch logged long ago.
+              if (Date.now() < until) api.undoEvent(eventId);
+              onDone();
+            }}
+          >
+            <Undo2 size={14} /> undo
+          </motion.button>
+        ) : (
+          <span className="tiny faint">logged</span>
+        )}
+        {isLast && <span className="tiny faint">tag it · optional</span>}
       </div>
 
-      {canTag && (
+      {isLast && (
         <div className="row" style={{ marginTop: 8, flexWrap: 'wrap', gap: 6 }}>
           {TRIGGERS.map((t) => (
             <motion.button

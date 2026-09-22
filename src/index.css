@@ -17,6 +17,7 @@
   --green-glow: rgba(52, 211, 153, 0.18);
   --amber: #fbbf24;
   --amber-glow: rgba(251, 191, 36, 0.16);
+  --nolog: rgba(255, 255, 255, 0.18);
   --red: #f87171;
   --border: rgba(255, 255, 255, 0.08);
   --border-strong: rgba(255, 255, 255, 0.14);
@@ -91,6 +92,13 @@ body {
 
 .card + .card { margin-top: 14px; }
 
+/* A card sitting inside a .row is a column, not a stacked card. Without this,
+   the sibling margin that separates stacked cards also applies across the row,
+   and `align-items: center` turns that 14px into a ~7px vertical offset on
+   every tile after the first — which is why Today's and Stats' two-up tiles
+   have never quite lined up. */
+.row > .card + .card { margin-top: 0; }
+
 /* ---- type ---- */
 h1, h2, h3 { margin: 0; font-weight: 700; letter-spacing: -0.02em; }
 .num { font-variant-numeric: tabular-nums; }
@@ -107,6 +115,11 @@ button {
   color: var(--fg);
   cursor: pointer;
   font-size: 16px;
+  /* The browser's own `line-height: normal` does not inherit, so a .card that
+     is a <button> set its text tighter than an identical .card that is a <div>
+     — enough to leave the two tiles in Today's footer row 5.8px out of line.
+     font-family and font-size were already reset here; this completes the set. */
+  line-height: inherit;
   padding: 0;
 }
 button:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 3px; border-radius: 8px; }
@@ -260,6 +273,7 @@ label { display: block; font-size: 13px; color: var(--fg-muted); margin: 16px 0 
 .cal-cell .cap { font-size: 9px; color: var(--fg-faint); font-weight: 500; }
 .cal-green { background: var(--green-glow); border-color: rgba(52, 211, 153, 0.4); color: var(--green); }
 .cal-yellow { background: var(--amber-glow); border-color: rgba(251, 191, 36, 0.4); color: var(--amber); }
+.cal-nolog { background: var(--surface); border-color: var(--nolog); color: var(--fg-faint); }
 .cal-today { border-color: var(--accent-bright); box-shadow: 0 0 16px var(--accent-glow); }
 .cal-future { opacity: 0.45; }
 

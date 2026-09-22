@@ -1,14 +1,17 @@
 import { motion } from 'framer-motion';
 import { HeartPulse, Check } from 'lucide-react';
-import { RECOVERY_MILESTONES, QUIT_DATE } from '../plan.js';
+import { RECOVERY_MILESTONES } from '../plan.js';
 import { useApp } from '../state.jsx';
 import AnimatedNumber from './AnimatedNumber.jsx';
 
 // Post-quit mode: the app counts UP. Milestones are approximations from
 // standard cessation guidance, not medical advice.
+//
+// The count is calendar time since quit day, not logged evidence — there is no
+// post-quit logging yet — so the copy says exactly that and claims no more.
 export default function RecoveryTimeline() {
-  useApp(); // subscribe to the 1s tick so counters stay live
-  const quitAt = new Date(`${QUIT_DATE}T00:00:00`);
+  const { state } = useApp(); // subscribe to the 1s tick so counters stay live
+  const quitAt = new Date(`${state.plan.quitDate}T00:00:00`);
   const now = new Date();
   const hoursSince = Math.max(0, (now - quitAt) / 3600000);
   const daysSince = hoursSince / 24;
@@ -22,14 +25,14 @@ export default function RecoveryTimeline() {
         style={{ textAlign: 'center', padding: '18px 0 22px' }}
       >
         <HeartPulse size={28} color="var(--green)" />
-        <h2 style={{ fontSize: 26, marginTop: 8 }}>Nicotine-free</h2>
+        <h2 style={{ fontSize: 26, marginTop: 8 }}>Since quit day</h2>
         <div style={{ fontSize: 46, fontWeight: 800, color: 'var(--green)' }} className="num">
           <AnimatedNumber value={daysSince} format={(v) => v.toFixed(1)} />
           <span style={{ fontSize: 20, color: 'var(--fg-muted)', fontWeight: 600 }}> days</span>
         </div>
         <p className="small muted" style={{ margin: '6px auto 0', maxWidth: 300 }}>
-          The plan is over. This clock only goes up — and your body is doing
-          the work below right now.
+          The plan is over. This counts the time since quit day — below is
+          roughly what recovery looks like as it adds up.
         </p>
       </motion.div>
 
@@ -80,7 +83,7 @@ export default function RecoveryTimeline() {
 
       <p className="small faint" style={{ textAlign: 'center', margin: '16px 0' }}>
         Timelines are approximations, not medical advice. A slip after quit day
-        is data, not defeat — log it and keep the clock honest.
+        is data, not defeat.
       </p>
     </div>
   );
