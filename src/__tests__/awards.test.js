@@ -155,3 +155,50 @@ describe('other awards', () => {
     }
   });
 });
+
+describe('an award you were shown stays earned', () => {
+  // 29 days × 4 kept × $0.25 = $29 — kept-25 earned and already celebrated
+  const earnedAttempt = (events, over = {}) => attempt(events, { celebratedAwards: ['kept-25'], ...over });
+  const logged = () => days('2026-09-21', 29).flatMap((d) => pouches(d, 5));
+  beforeEach(() => vi.setSystemTime(new Date('2026-10-20T17:00:00Z')));
+
+  it('lowering the tin price in Settings does not take kept-25 back', () => {
+    const s = earnedAttempt(logged(), { settings: { ...settings, costPerTin: 4 } }); // now $23.20
+    expect(moneyStats(s).kept).toBeCloseTo(23.2);
+    expect(get(s, 'kept-25')).toMatchObject({ earned: true, earnedOn: null, progress: 1 });
+    expect(newlyEarned(s).map((a) => a.id)).not.toContain('kept-25');
+    // never celebrated → nothing to latch; it honestly reads as locked
+    expect(get({ ...s, celebratedAwards: [] }, 'kept-25')).toMatchObject({ earned: false, earnedOn: null });
+  });
+  it('honestly backfilling an over-cap day does not take kept-25 back', () => {
+    // day 23 missed: $25 is first reached on day 26, $28 by now
+    const events = logged().filter((e) => e.day !== '2026-10-13');
+    expect(get(earnedAttempt(events), 'kept-25')).toMatchObject({ earned: true, earnedOn: '2026-10-16' });
+    // then you tell the truth about day 23 — 25 pouches, −$4 — and $25 is never reached
+    const s = earnedAttempt([...events, ev('backfill', '2026-10-13', { count: 25, streak: 'break' })]);
+    expect(moneyStats(s).kept).toBeCloseTo(24);
+    expect(get(s, 'kept-25')).toMatchObject({ earned: true, earnedOn: null, progress: 1 });
+    expect(newlyEarned(s).map((a) => a.id)).not.toContain('kept-25');
+  });
+  it('a latched award that is also derived keeps its real date', () => {
+    const s = earnedAttempt(logged());
+    expect(get(s, 'kept-25')).toMatchObject({ earned: true, earnedOn: '2026-10-15', progress: 1 });
+  });
+});
+
+describe('kept-25 and the Money card read the same cents', () => {
+  it('$6.25 / 15-tin, 4 a day for 12 days: exactly $25.00, and the badge is earned', () => {
+    vi.setSystemTime(new Date('2026-10-03T17:00:00Z')); // day 13, days 1-12 over
+    const s = attempt(days('2026-09-21', 12).flatMap((d) => pouches(d, 4)), { settings: { ...settings, costPerTin: 6.25, pouchesPerTin: 15 } });
+    expect(moneyStats(s).kept).toBe(25);
+    expect(get(s, 'kept-25')).toMatchObject({ earned: true, earnedOn: '2026-10-02' });
+  });
+  it('$6.41 / 20-tin: raw 24.999 shows as $25.00, so the badge is earned too', () => {
+    vi.setSystemTime(new Date('2026-10-04T17:00:00Z')); // day 14, days 1-13 over
+    const s = attempt(days('2026-09-21', 13).flatMap((d) => pouches(d, 3)), { settings: { ...settings, costPerTin: 6.41, pouchesPerTin: 20 } });
+    const m = moneyStats(s);
+    expect(m.kept).toBe(25);
+    expect(m.oldPace - m.spent).toBe(m.kept); // the card's three figures add up
+    expect(get(s, 'kept-25')).toMatchObject({ earned: true, earnedOn: '2026-10-03' });
+  });
+});

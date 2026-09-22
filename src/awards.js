@@ -4,24 +4,27 @@
 // showing up and telling the truth; slips are never punished, and a badge,
 // once earned, never un-earns: earnings are first-reach over history, and
 // anything a later tap on the same day could reverse (a streak, a clean day,
-// money kept) only counts once that day is over.
+// money kept) only counts once that day is over. Some things still rewrite the
+// past on purpose (a price fixed in Settings, an honest backfill of a bad day),
+// so a badge whose celebration already played stays earned regardless.
 
 import { asOfDay, dayNumberFor, dateForDayNumber, eventsForDay, isLogged, pouchesForDay, dayCountsForStreak, classifyPouch } from './store.js';
 import { capForDay } from './plan.js';
 import { dayKeyOf } from './time.js';
+import { moneyCents } from './money.js';
 
 const STREAKS = [[3, 'bronze'], [7, 'bronze'], [14, 'silver'], [30, 'gold'], [60, 'gold'], [90, 'aurora']];
 
 // One row per plan day up to the as-of day. `settled` = the day is over (or the
 // attempt is), so nothing logged later that day can change its verdict.
-// `kept` is a running total with the same formula as money.js (logged days only).
+// `keptCents` is the running total from money.js's own computation (logged
+// days only), so it always matches the Money card to the cent.
 function dayFacts(state) {
   const asOf = asOfDay(state);
   const archived = state.status === 'archived';
-  const perPouch = state.settings.pouchesPerTin > 0 ? state.settings.costPerTin / state.settings.pouchesPerTin : 0;
   const endN = Math.min(dayNumberFor(state, asOf), state.plan.totalDays);
   const facts = [];
-  let kept = 0;
+  let loggedDays = 0, usedOnLogged = 0;
   for (let n = 1; n <= endN; n++) {
     const day = dateForDayNumber(state, n);
     const evs = eventsForDay(state, day);
@@ -29,9 +32,10 @@ function dayFacts(state) {
     const logged = isLogged(state, day);
     const used = pouchesForDay(state, day);
     const settled = archived || day < asOf;
-    if (logged) kept += (state.plan.baseline.pouchesPerDay - used) * perPouch;
+    if (logged) { loggedDays++; usedOnLogged += used; }
+    const { keptCents } = moneyCents(state, loggedDays, usedOnLogged);
     facts.push({
-      n, day, logged, kept, settled,
+      n, day, logged, keptCents, settled,
       live: taps.length > 0 || evs.some((e) => e.type === 'resisted'), // logged on the day itself, not backfilled later
       green: dayCountsForStreak(state, day),
       over: logged && used > capForDay(state.plan, n),
@@ -58,13 +62,17 @@ const settledGreen = (f) => f.settled && f.green;
 export function awardsFor(state) {
   const asOf = asOfDay(state);
   const facts = dayFacts(state);
+  const celebrated = state.celebratedAwards ?? [];
   const out = [];
   // Unearned progress is clamped below 1 so a badge never LOOKS earned before it
   // is (a stage share or money-kept fraction can otherwise round up to exactly
   // 1 while still unearned); NaN (e.g. a 0-length divisor) becomes 0.
+  // Latched: already celebrated but no longer derivable (see the top). It
+  // stays earned; `earnedOn` is null because the history no longer says when.
   const add = (id, tier, title, body, earnedOn, progress = 0) => {
     const clamped = Number.isFinite(progress) ? Math.max(0, Math.min(0.99, progress)) : 0;
-    out.push({ id, tier, title, body, earned: earnedOn != null, earnedOn: earnedOn ?? null, progress: earnedOn != null ? 1 : clamped });
+    const earned = earnedOn != null || celebrated.includes(id);
+    out.push({ id, tier, title, body, earned, earnedOn: earnedOn ?? null, progress: earned ? 1 : clamped });
   };
 
   // "First log of the attempt" — a log before Day 1 counts too.
@@ -118,9 +126,9 @@ export function awardsFor(state) {
     add(`stage-${s.id}`, 'silver', `${s.name} — cleared`, `You logged your way through ${s.name}.`, finished && share >= 0.7 ? span.at(-1).day : null, share / 0.7);
   }
 
-  const keptNow = facts.at(-1)?.kept ?? 0; // equals moneyStats(state).kept
+  const keptNow = facts.at(-1)?.keptCents ?? 0; // equals moneyStats(state).keptCents
   for (const [amt, tier] of [[25, 'silver'], [100, 'gold']]) {
-    add(`kept-${amt}`, tier, `$${amt} kept`, `$${amt} that stayed in your pocket, counted on logged days only.`, firstDay(facts, (f) => f.settled && f.kept >= amt), keptNow / amt);
+    add(`kept-${amt}`, tier, `$${amt} kept`, `$${amt} that stayed in your pocket, counted on logged days only.`, firstDay(facts, (f) => f.settled && f.keptCents >= amt * 100), keptNow / (amt * 100));
   }
 
   const quit = stages.at(-1);
@@ -131,5 +139,6 @@ export function awardsFor(state) {
 }
 
 // Earned but not yet celebrated. Pure: callers decide whether to celebrate
-// (a read-only past attempt never should).
+// (a read-only past attempt never should). Latched awards are celebrated by
+// definition, so they never come back through here.
 export const newlyEarned = (state) => awardsFor(state).filter((a) => a.earned && !(state.celebratedAwards ?? []).includes(a.id));

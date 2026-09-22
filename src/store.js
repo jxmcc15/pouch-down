@@ -68,9 +68,12 @@ function backfillCount(e) {
 
 // The day an attempt is scored "as of": today while active; for an archived
 // attempt, the earlier of the day it was archived and its quit date.
+// `archivedDay` is the app day stamped at archive time, in the zone you were in
+// then; re-deriving it from `archivedAt` would use wherever the phone is now,
+// so only attempts archived before the stamp existed fall back to that.
 export function asOfDay(state) {
   if (state.status !== 'archived') return todayKey();
-  const archived = dayKeyFor(state.archivedAt);
+  const archived = state.archivedDay || dayKeyFor(state.archivedAt);
   return archived < state.plan.quitDate ? archived : state.plan.quitDate;
 }
 
@@ -124,6 +127,8 @@ export function dayCountsForStreak(state, dateStr) {
 
 // Consecutive green days ending yesterday, plus today once it's logged and
 // under cap. nolog, over-cap, and "break it here" backfills all break it.
+// Deliberate: a today already over cap zeroes `current` at once, not tomorrow;
+// showing a streak you know is already broken would be a fake number.
 export function streaks(state) {
   const asOf = asOfDay(state);
   const endN = Math.min(dayNumberFor(state, asOf), state.plan.totalDays);
@@ -170,17 +175,26 @@ export function plannedMgForDay(state, n) {
 
 // ---- slots / pacing ----------------------------------------------------------
 
-function slotTimeToday(slotDef, settings, dateStr) {
-  let hm;
-  if (slotDef.anchor === 'fixed') {
-    hm = slotDef.time;
-  } else {
-    const meal = settings.mealTimes[slotDef.anchor] || '12:00';
-    const [h, m] = meal.split(':').map(Number);
-    const total = h * 60 + m + (slotDef.offsetMin || 0);
-    hm = `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
-  }
-  return new Date(`${dateStr}T${hm}:00`);
+// Minutes after midnight on the day's calendar date. Can run past 24:00 (the
+// slot after a 23:45 dinner, or a floater like "24:15" after a late one):
+// that's still the same 4am→4am day, so it's counted on, never wrapped.
+function slotMinutes(slotDef, settings) {
+  const hm = slotDef.anchor === 'fixed' ? slotDef.time : settings.mealTimes[slotDef.anchor] || '12:00';
+  const [h, m] = String(hm).split(':').map(Number);
+  const total = h * 60 + m + (slotDef.anchor === 'fixed' ? 0 : slotDef.offsetMin || 0);
+  return Number.isFinite(total) ? total : 12 * 60; // a garbled time must never crash a log
+}
+
+// The instant a slot unlocks on app day `dateStr`. Given `tzOffsetMin` it's
+// built in that zone — an old pouch's own — so its verdict doesn't depend on
+// where the phone is when you read it; without, in the device's zone (live
+// pacing). Date's own overflow carries minutes ≥ 1440 into the next date.
+function slotTimeToday(slotDef, settings, dateStr, tzOffsetMin = null) {
+  const [y, mo, d] = dateStr.split('-').map(Number);
+  const min = slotMinutes(slotDef, settings);
+  return tzOffsetMin == null
+    ? new Date(y, mo - 1, d, 0, min)
+    : new Date(Date.UTC(y, mo - 1, d, 0, min) - tzOffsetMin * 60000);
 }
 
 // Returns today's slots with times, how many pouches are logged, and which
@@ -238,7 +252,8 @@ export function pouchCtxForNow(state) {
 }
 
 // Events logged before ctx stamping existed get their ctx reconstructed from
-// the stage plus *current* settings — a small, accepted drift. Never written back.
+// the stage plus *current* settings — a small, accepted drift — with slot times
+// in the zone the pouch was logged in. Never written back.
 function deriveCtx(state, ev, dateStr, n) {
   const stage = stageForDay(state.plan, Math.min(n, state.plan.totalDays));
   const cap = capForDay(state.plan, n);
@@ -247,7 +262,7 @@ function deriveCtx(state, ev, dateStr, n) {
     .sort((a, b) => new Date(a.ts) - new Date(b.ts));
   const nth = dayPouches.findIndex((e) => e.id === ev.id) + 1 || 1;
   const slotDefs = stage?.slots ?? [];
-  const slots = slotDefs.map((s) => slotTimeToday(s, state.settings, dateStr));
+  const slots = slotDefs.map((s) => slotTimeToday(s, state.settings, dateStr, ev.tzOffsetMin ?? null));
   return {
     nth,
     cap,
@@ -339,6 +354,9 @@ export function firstPouchTimes(state) {
 
 // Taps only: backfills carry no timing. `longestGapEnd` is the pouch event that
 // ended the longest gap, for display in the zone it was logged in.
+// `currentGapMs` is a live clock, so it's null unless the attempt is live: a
+// past attempt ended, and "29 days since your last pouch" would be built from
+// silence after it.
 export function gapStats(state) {
   const pouches = state.events
     .filter((e) => e.type === 'pouch')
@@ -365,7 +383,7 @@ export function gapStats(state) {
     longestGapMs: longest,
     longestGapEndedAt: longestEnd ? new Date(longestEnd.ts).toISOString() : null,
     longestGapEnd: longestEnd ? longestEnd.ev : null,
-    currentGapMs: last ? Date.now() - last.ts : null,
+    currentGapMs: last && state.status !== 'archived' && asOfDay(state) >= today ? Date.now() - last.ts : null,
   };
 }
 

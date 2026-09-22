@@ -150,3 +150,95 @@ describe('invalid backfill counts are ignored, not trusted (fix 3)', () => {
     expect(S.dayCountsForStreak(s, '2026-09-22')).toBe(true);
   });
 });
+
+// Run `fn` with the device in another time zone, then put the zone back.
+function inZone(tz, fn) {
+  const prev = process.env.TZ;
+  process.env.TZ = tz;
+  try { return fn(); } finally { if (prev === undefined) delete process.env.TZ; else process.env.TZ = prev; }
+}
+
+describe('a verdict is read in the zone the pouch was logged in', () => {
+  // Logged at 8:20 AM Eastern with no ctx (like the earliest v1 pouches), so
+  // its slot times get rebuilt at read time. After-breakfast is 08:15.
+  const e = { id: 'nx1', ts: '2026-09-22T12:20:00.000Z', tzOffsetMin: -240, day: '2026-09-22', type: 'pouch', trigger: null };
+  it('is on time +5m whether you read it from New York or Chicago', () => {
+    const s = attempt([e]);
+    const ny = inZone('America/New_York', () => S.classifyPouch(s, e));
+    const chi = inZone('America/Chicago', () => S.classifyPouch(s, e));
+    expect(ny).toEqual({ bucket: 'on-time', deltaMin: 5, preFirstSlot: false });
+    expect(chi).toEqual(ny);
+  });
+  it('so discipline stats do not change after a move either', () => {
+    const s = attempt([e]);
+    const chi = inZone('America/Chicago', () => S.disciplineStats(s));
+    expect(chi).toMatchObject({ onTime: 1, early: 0, preFirstSlot: 0, avgMinHeld: 5 });
+    expect(inZone('America/New_York', () => S.disciplineStats(s))).toEqual(chi);
+  });
+});
+
+describe('late meal times never crash logging', () => {
+  const lateAttempt = (perDay, dinner, events) => {
+    const late = { ...settings, mealTimes: { ...settings.mealTimes, dinner } };
+    const p = generatePlan({ pouchesPerDay: perDay, mg: 6, strengths: [], lengthDays: 30, startDate: '2026-09-21', ...late });
+    return attempt(events, { settings: late, plan: p });
+  };
+  it('a 23:45 dinner unlocks at midnight, on the same 4am→4am day', () => inZone('America/Chicago', () => {
+    vi.setSystemTime(new Date('2026-09-22T05:10:00.000Z')); // 12:10 AM Tue — still Monday, day 1
+    const s = lateAttempt(4, '23:45', pouches('2026-09-21', 2));
+    // after dinner at 24:00, then the evening floater at 24:30 (12:30 AM Tue)
+    expect(S.pacingForNow(s).slots.map((x) => x.at.toISOString()).slice(2)).toEqual(['2026-09-22T05:00:00.000Z', '2026-09-22T05:30:00.000Z']);
+    const ctx = S.pouchCtxForNow(s);
+    expect(ctx).toMatchObject({ nth: 3, cap: 4, slotId: 'after-dinner', slotAt: '2026-09-22T05:00:00.000Z' });
+    const onTime = { ...S.makeEvent('pouch'), ctx };
+    expect(onTime.day).toBe('2026-09-21');
+    expect(S.classifyPouch(s, onTime)).toEqual({ bucket: 'on-time', deltaMin: 10, preFirstSlot: false });
+    const early = { ...onTime, id: 'early', ts: '2026-09-22T04:50:00.000Z' }; // 11:50 PM
+    expect(S.classifyPouch(s, early)).toMatchObject({ bucket: 'early', deltaMin: -10 });
+  }));
+  it('a floater past midnight (23:30 dinner, 4/day → 24:15) resolves too', () => inZone('America/Chicago', () => {
+    vi.setSystemTime(new Date('2026-09-22T04:00:00.000Z')); // 11 PM Monday
+    const s = lateAttempt(4, '23:30', pouches('2026-09-21', 3));
+    const pacing = S.pacingForNow(s);
+    expect(pacing.slots.every((x) => Number.isFinite(x.at.getTime()))).toBe(true);
+    expect(pacing.nextSlot.at.toISOString()).toBe('2026-09-22T05:15:00.000Z'); // 12:15 AM Tue
+    expect(pacing.unlocked).toBe(false);
+    expect(() => S.pouchCtxForNow(s)).not.toThrow();
+    // an old pouch with no ctx rebuilds the same slot in its own zone
+    const bare = { id: 'bare', ts: '2026-09-22T05:20:00.000Z', tzOffsetMin: -300, day: '2026-09-21', type: 'pouch', trigger: null };
+    expect(S.classifyPouch({ ...s, events: [...s.events, bare] }, bare)).toMatchObject({ bucket: 'on-time', deltaMin: 5 });
+  }));
+});
+
+describe('asOfDay for an archived attempt', () => {
+  // Archived at 4:30 AM Eastern on the 23rd: the 23rd where you were, but still
+  // the 22nd if the phone is now in Chicago and re-reads archivedAt.
+  const archived = attempt(pouches('2026-09-21', 8), { status: 'archived', archivedAt: '2026-09-23T08:30:00.000Z', archivedDay: '2026-09-23' });
+  it('uses the archivedDay stamped at archive time', () => {
+    expect(inZone('America/Chicago', () => S.asOfDay(archived))).toBe('2026-09-23');
+  });
+  it('falls back to archivedAt for attempts archived before archivedDay existed', () => {
+    const { archivedDay: _, ...older } = archived;
+    expect(inZone('America/New_York', () => S.asOfDay(older))).toBe('2026-09-23');
+  });
+  it('is still capped at the quit date', () => {
+    expect(S.asOfDay({ ...archived, archivedDay: '2027-01-15' })).toBe(plan.quitDate);
+  });
+});
+
+describe('the "since last pouch" clock only runs on a live attempt', () => {
+  it('is null for an archived attempt, live otherwise', () => {
+    const events = pouches('2026-09-22', 2);
+    const past = attempt(events, { status: 'archived', archivedAt: '2026-09-23T18:00:00.000Z', archivedDay: '2026-09-23' });
+    expect(S.gapStats(past).currentGapMs).toBeNull();
+    expect(S.gapStats(attempt(events)).currentGapMs).toBe(3 * 86400000);
+  });
+});
+
+describe('an over-cap today breaks the streak the moment it happens', () => {
+  it('current is 0 immediately, best keeps the run', () => {
+    const s = attempt([...['2026-09-21', '2026-09-22', '2026-09-23', '2026-09-24'].flatMap((d) => pouches(d, 8)), ...pouches('2026-09-25', 9)]);
+    expect(S.statusForDay(s, '2026-09-25')).toBe('today-over');
+    expect(S.streaks(s)).toEqual({ current: 0, best: 4 });
+  });
+});

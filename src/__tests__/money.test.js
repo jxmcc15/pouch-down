@@ -55,3 +55,21 @@ describe('markdownSummary Kept line', () => {
     expect(out).not.toContain('Kept');
   });
 });
+
+describe('money is counted in whole cents', () => {
+  it('keptCents is an integer and kept is exactly keptCents / 100', () => {
+    const s = attempt([...pouches('2026-09-21', 4), ...pouches('2026-09-22', 4)], { settings: { ...settings, costPerTin: 6.25, pouchesPerTin: 15 } });
+    const m = moneyStats(s);
+    expect(Number.isInteger(m.keptCents)).toBe(true);
+    expect(m.keptCents).toBe(417); // old pace 750¢ − spent 333¢
+    expect(m.kept).toBe(4.17);
+    expect(m.oldPace).toBe(7.5);
+    expect(m.spent).toBe(3.33);
+  });
+  it('the $6.41 / 20-tin case lands on the cent the card shows', () => {
+    vi.setSystemTime(new Date('2026-10-04T17:00:00Z'));
+    const days = Array.from({ length: 13 }, (_, i) => new Date(Date.UTC(2026, 8, 21 + i)).toISOString().slice(0, 10)); // days 1-13
+    const m = moneyStats(attempt(days.flatMap((d) => pouches(d, 3)), { settings: { ...settings, costPerTin: 6.41, pouchesPerTin: 20 } }));
+    expect(m).toMatchObject({ oldPace: 37.5, spent: 12.5, kept: 25, keptCents: 2500 });
+  });
+});
