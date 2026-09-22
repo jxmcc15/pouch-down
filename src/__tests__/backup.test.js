@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { fullBackup } from '../store.js';
+import { KEY_V1, KEY_V2, loadRoot, freshStartRoot, rawStorageDump, redactSecrets } from '../root.js';
 
 describe('fullBackup', () => {
   it('exports the whole root without the API key, without mutating it', () => {
@@ -26,5 +27,76 @@ describe('fullBackup', () => {
     expect(() => fullBackup(root)).not.toThrow();
     const parsed = JSON.parse(fullBackup(root));
     expect(parsed.root.device).toEqual({ apiKey: '' });
+  });
+});
+
+const mem = (init = {}) => { const m = new Map(Object.entries(init)); return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, v) }; };
+const NOW = '2026-09-21T02:00:00.000Z';
+const FAKE = 'sk-ant-api03-FAKE_test-KEY-0123456789';
+
+describe('fullBackup carries what migration and Start fresh keep aside', () => {
+  it('unreadable v1 entries ride along verbatim', () => {
+    const bad = [null, { id: 'no-ts', type: 'pouch' }, { id: 'num', ts: 1720000000000 }];
+    const v1 = { version: 1, settings: { apiKey: FAKE }, events: [{ id: 'e1', ts: '2026-07-08T11:33:12.569Z', type: 'pouch', trigger: null }, ...bad] };
+    const { root } = loadRoot(mem({ [KEY_V1]: JSON.stringify(v1) }), NOW);
+    const out = fullBackup(root);
+    expect(JSON.parse(out).root.attempts[0].unreadableEvents).toEqual(bad);
+    expect(out).not.toContain(FAKE);
+  });
+  it('the marker that attempt 1 is still sitting unread in v1 rides along', () => {
+    expect(JSON.parse(fullBackup(freshStartRoot(mem({ [KEY_V1]: '{nope' }), NOW))).root.legacyV1).toBe('unread');
+  });
+});
+
+// The recovery screen's "Download what's stored" hands over the raw storage
+// text. v1 is never rewritten and kept the key in settings.apiKey, so without
+// this every recovery download would carry the key into an AirDropped file.
+describe('rawStorageDump', () => {
+  const v1 = JSON.stringify({ version: 1, settings: { costPerTin: 5, apiKey: FAKE }, events: [{ id: 'e1', ts: '2026-07-08T11:33:12.569Z', type: 'pouch', trigger: null }] });
+  const v2 = JSON.stringify({ version: 2, device: { apiKey: FAKE }, activeAttemptId: null, attempts: [] });
+  const dumpOf = (init) => JSON.parse(rawStorageDump(mem(init), NOW));
+  const cases = {
+    'parseable v1 + v2': { [KEY_V1]: v1, [KEY_V2]: v2 },
+    'corrupt v2, parseable v1': { [KEY_V1]: v1, [KEY_V2]: `{garbage ${v2}` },
+    'v2 truncated mid-key': { [KEY_V1]: v1, [KEY_V2]: v2.slice(0, v2.indexOf(FAKE) + 14) },
+    'v1 truncated mid-key, no v2': { [KEY_V1]: v1.slice(0, v1.indexOf(FAKE) + 20) },
+    'v1 truncated inside the prefix': { [KEY_V1]: v1.slice(0, v1.indexOf(FAKE) + 5) },
+    'key pretty-printed with spaces': { [KEY_V1]: JSON.stringify(JSON.parse(v1), null, 2) },
+    'a key pasted somewhere else entirely': { [KEY_V2]: `{"note":"${FAKE}"` },
+    'a key that is not an Anthropic one': { [KEY_V1]: v1.replace(FAKE, 'my-own-secret-123') },
+  };
+  for (const [label, init] of Object.entries(cases)) {
+    it(`${label}: no key in the output`, () => {
+      const out = rawStorageDump(mem(init), NOW);
+      expect(out).not.toContain('FAKE');
+      expect(out).not.toContain('my-own-secret');
+      expect(out).not.toContain(FAKE.slice(0, 12));
+    });
+  }
+
+  it('blanks the value and changes nothing else, byte for byte', () => {
+    const d = dumpOf({ [KEY_V1]: v1, [KEY_V2]: v2 });
+    expect(d.keys[KEY_V1]).toBe(v1.replace(FAKE, ''));
+    expect(d.keys[KEY_V2]).toBe(v2.replace(FAKE, ''));
+  });
+
+  it('a blob with no key in it passes through untouched, corrupt or not', () => {
+    const raw = '{"version":2,"attempts":[{"id":"a1","events":[{"id":"e\\"1"';
+    expect(dumpOf({ [KEY_V2]: raw }).keys[KEY_V2]).toBe(raw);
+  });
+
+  it('says in the header what was taken out', () => {
+    expect(dumpOf({})).toEqual({ app: 'pouch-down', format: 'raw-storage', exportedAt: NOW, redacted: ['apiKey'], keys: { [KEY_V2]: null, [KEY_V1]: null } });
+  });
+
+  it('only reads: never writes, and blocked storage gives nulls instead of a crash', () => {
+    const calls = [];
+    expect(() => rawStorageDump({ getItem: (k) => { calls.push(k); return null; }, setItem: () => { throw new Error('must not write'); } }, NOW)).not.toThrow();
+    expect(JSON.parse(rawStorageDump({ getItem: () => { throw new Error('SecurityError'); } }, NOW)).keys).toEqual({ [KEY_V2]: null, [KEY_V1]: null });
+  });
+
+  it('redactSecrets leaves non-strings alone and an escaped quote inside the key cannot end it early', () => {
+    expect(redactSecrets(null)).toBeNull();
+    expect(redactSecrets('{"apiKey":"abc\\"def","x":1}')).toBe('{"apiKey":"","x":1}');
   });
 });

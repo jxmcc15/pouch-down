@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { migrateV1, LEGACY_TZ } from '../migrate.js';
 import { LEGACY_PLAN } from '../legacyPlan.js';
 import { dayKeyOf, localHM } from '../time.js';
+import { todayKey } from '../store.js';
 
 const v1 = () => ({
   version: 1,
@@ -58,6 +59,80 @@ describe('migrateV1', () => {
     const root = migrateV1({ version: 1 }, opts);
     expect(root.attempts[0].events).toEqual([]);
     expect(root.device.apiKey).toBe('');
+  });
+
+  it('stamps the archive day in the zone the phone is in when it archives', () => {
+    expect(migrateV1(v1(), opts).attempts[0].archivedDay).toBe(todayKey(new Date(opts.now)));
+  });
+
+  it('an unreadable archive time leaves archivedDay null rather than throwing', () => {
+    expect(migrateV1(v1(), { ...opts, now: 'garbage' }).attempts[0].archivedDay).toBeNull();
+  });
+});
+
+// One bad entry used to throw inside offsetMinInZone and drop the WHOLE
+// history into migration-failed. Now the readable events migrate exactly as
+// before and the unreadable ones ride along verbatim, outside `events`.
+describe('migrateV1 with entries it cannot read', () => {
+  const BAD = [
+    null,
+    { id: 'no-ts', type: 'pouch' },
+    { id: 'num-ts', ts: 1720000000000, type: 'pouch' },
+    { id: 'garbage-ts', ts: 'not-a-date', type: 'pouch' },
+    'a string',
+    7,
+    [1, 2],
+  ];
+  const withBad = () => {
+    const s = v1();
+    // interleave, so position can't be what makes an event readable
+    s.events = [BAD[0], s.events[0], BAD[1], BAD[2], s.events[1], BAD[3], BAD[4], BAD[5], s.events[2], BAD[6]];
+    return s;
+  };
+
+  it('migrates every readable event exactly as a clean history would', () => {
+    const clean = migrateV1(v1(), opts).attempts[0];
+    const messy = migrateV1(withBad(), opts).attempts[0];
+    expect(messy.events).toEqual(clean.events);
+    expect(messy.createdAt).toBe(clean.createdAt); // first READABLE event
+  });
+
+  it('keeps each unreadable entry verbatim, in order, outside events', () => {
+    const a1 = migrateV1(withBad(), opts).attempts[0];
+    expect(a1.unreadableEvents).toEqual(BAD);
+    expect(a1.events.some((e) => BAD.includes(e))).toBe(false);
+  });
+
+  for (const [label, bad] of BAD.map((b) => [JSON.stringify(b), b])) {
+    it(`one ${label} among good events does not throw`, () => {
+      const s = v1();
+      s.events.push(bad);
+      const a1 = migrateV1(s, opts).attempts[0];
+      expect(a1.events).toHaveLength(3);
+      expect(a1.unreadableEvents).toEqual([bad]);
+    });
+  }
+
+  it('a clean history gets no unreadableEvents field at all (byte-identical to before)', () => {
+    expect(migrateV1(v1(), opts).attempts[0]).not.toHaveProperty('unreadableEvents');
+  });
+
+  it('does not mutate its input', () => {
+    const input = withBad();
+    const before = JSON.stringify(input);
+    migrateV1(input, opts);
+    expect(JSON.stringify(input)).toBe(before);
+  });
+
+  it('a history with nothing readable still migrates, with every entry kept', () => {
+    const a1 = migrateV1({ version: 1, events: [null, { id: 'x' }] }, opts).attempts[0];
+    expect(a1.events).toEqual([]);
+    expect(a1.unreadableEvents).toEqual([null, { id: 'x' }]);
+    expect(a1.createdAt).toBe(opts.now);
+  });
+
+  it('celebratedStages that is not a list becomes an empty one', () => {
+    expect(migrateV1({ ...v1(), celebratedStages: 'oops' }, opts).attempts[0].celebratedStages).toEqual([]);
   });
 });
 
