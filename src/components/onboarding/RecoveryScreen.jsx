@@ -8,11 +8,23 @@ import { todayKey } from '../../store.js';
 const spring = { type: 'spring', damping: 24, stiffness: 180 };
 
 // What "Start fresh" will actually do, said plainly for each way we got here.
-// `next` is the root it would begin from (see freshStartRoot).
-function confirmCopy(problem, next) {
+// `next` is the root it would begin from (see freshStartRoot). `rescueFailed`:
+// the copy aside didn't land, so nothing is set aside — Start fresh writes over
+// it, and the amber note under this says what to do about that.
+function confirmCopy(problem, next, rescueFailed) {
   const keep = 'Download it first so you have a copy you can keep.';
   if (problem === 'migration-failed') {
     return `Your old history stays on this phone, untouched, but this version can't read it. ${keep}`;
+  }
+  if (rescueFailed) {
+    const gone = 'gets written over when you start fresh.';
+    if (next?.attempts.length) {
+      return `Your first attempt comes back as a past attempt. Anything logged after it is in the part the app couldn't read — that ${gone}`;
+    }
+    if (next?.legacyV1 === 'unread') {
+      return `What the app couldn't read ${gone} Your older history stays here, untouched.`;
+    }
+    return `What the app couldn't read ${gone}`;
   }
   const setAside = "is set aside on this phone, not deleted, but the app won't show it.";
   if (next?.attempts.length) {
@@ -58,8 +70,10 @@ export default function RecoveryScreen() {
 
   const startFresh = () => {
     // Copy the unreadable value aside before the next save writes over it.
-    // v1 is untouched either way. false = the copy didn't land.
-    if (preserveCorruptV2() === false && !sent) {
+    // v1 is untouched either way. false = the copy didn't land: stop, so the
+    // confirm can stop saying it's set aside. Go on only once the user has
+    // downloaded AND seen that their download is now the only copy.
+    if (preserveCorruptV2() === false && !(rescueFailed && sent)) {
       setRescueFailed(true);
       return;
     }
@@ -77,6 +91,13 @@ export default function RecoveryScreen() {
     shared: 'Sent',
     copied: 'Copied — paste it into a file',
     downloaded: 'Saved to your files',
+  }[sent];
+
+  // No copy on the phone: say where the only one now is.
+  const onlyCopy = {
+    shared: 'the file you just sent is the only one.',
+    copied: 'the text you just copied is the only one — paste it somewhere safe first.',
+    downloaded: 'the file you just saved is the only one.',
   }[sent];
 
   return (
@@ -110,9 +131,9 @@ export default function RecoveryScreen() {
         </motion.button>
         <p className="small faint" style={{ margin: '8px 0 0', lineHeight: 1.5 }}>
           Everything saved on this phone, as raw text — enough to rebuild your
-          history. Your API key is left out. AirDrop it to your Mac or save it
-          to Files. If your browser won't share a file it lands on your
-          clipboard instead.
+          history. Your API key is left out. Save it somewhere safe — Files,
+          AirDrop, or email. If your browser won't share a file it lands on
+          your clipboard instead.
         </p>
 
         <AnimatePresence mode="wait">
@@ -141,12 +162,13 @@ export default function RecoveryScreen() {
             >
               <p style={{ margin: 0, fontSize: 15, lineHeight: 1.55 }}>Start a fresh attempt?</p>
               <p className="small muted" style={{ margin: '8px 0 0', lineHeight: 1.5 }}>
-                {confirmCopy(problem, next)}
+                {confirmCopy(problem, next, rescueFailed)}
               </p>
-              {rescueFailed && !sent && (
+              {rescueFailed && (
                 <p className="small" role="alert" style={{ margin: '10px 0 0', lineHeight: 1.5, color: 'var(--amber)' }}>
-                  Couldn't keep a copy on this phone. Download it first, then you
-                  can start fresh.
+                  {onlyCopy
+                    ? `This phone didn't have room to keep a copy, so ${onlyCopy} Start fresh anyway?`
+                    : "This phone didn't have room to keep a copy. Download it first, then you can start fresh."}
                 </p>
               )}
               <div className="row" style={{ gap: 10, marginTop: 14 }}>
