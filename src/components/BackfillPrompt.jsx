@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Minus, Plus } from 'lucide-react';
 import { useApp } from '../state.jsx';
-import { missedDays } from '../store.js';
+import { missedDays, todayKey } from '../store.js';
 
 const spring = { type: 'spring', damping: 26, stiffness: 240 };
 const MAX_COUNT = 40;
@@ -24,22 +24,33 @@ const clamp = (n) => Math.min(MAX_COUNT, Math.max(0, Math.round(n)));
 // then gets out of the way. It never judges the answer.
 export default function BackfillPrompt() {
   const { state, readOnly, api } = useApp();
-  const [opened, setOpened] = useState(null); // this open's days (≤3, newest first), fixed once
+  const [opened, setOpened] = useState(null); // { on: app day, days: ≤3 newest first }, fixed per day
   const [skipped, setSkipped] = useState([]); // hidden for this session only; still nolog
   const [asked, setAsked] = useState(null); // which day the stepper below belongs to
   const [count, setCount] = useState(0);
   const [fork, setFork] = useState(false); // showing the keep/break choice
 
-  // "On open, up to the 3 most recent" — so the list is taken once, when the
-  // prompt opens, and never topped up: answering or skipping one never pulls a
-  // 4th day in behind it. The next open (a fresh mount) takes a fresh list.
-  // Done during render, like the reset below, so the first paint already has it.
+  // "On open, up to the 3 most recent" — so the list is taken when the prompt
+  // opens and never topped up: answering or skipping one never pulls a 4th day
+  // in behind it. But an open is also bounded by the app day. iOS resumes an
+  // installed PWA from memory without remounting anything, so a list taken on
+  // Tuesday would otherwise still be the list on Thursday — and Wednesday would
+  // never be asked about. That silence is how attempt 1 faded. So a new app
+  // day is a new open: the 1s tick re-renders this, the day key no longer
+  // matches, and a fresh list is taken (skips reset with it, since they only
+  // ever hid a day "for now"). Done during render, like the reset below, so
+  // the first paint already has it.
   const live = state && !readOnly;
-  if (live && opened === null) setOpened(missedDays(state).map((d) => d.day));
+  const today = todayKey();
+  if (live && (opened === null || opened.on !== today)) {
+    setOpened({ on: today, days: missedDays(state).map((d) => d.day) });
+    if (opened !== null) setSkipped([]);
+  }
 
   // Each listed day is asked only while it is still eligible right now —
   // answered days are logged, and a day can age out of the window mid-open.
-  const days = live && opened ? missedDays(state, { max: Infinity }).filter((d) => opened.includes(d.day)) : [];
+  const listed = live && opened?.on === today ? opened.days : [];
+  const days = listed.length ? missedDays(state, { max: Infinity }).filter((d) => listed.includes(d.day)) : [];
   const target = days.find((d) => !skipped.includes(d.day)) || null;
 
   // Each day starts fresh at its own cap, on the question step. Done during

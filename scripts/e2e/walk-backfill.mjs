@@ -22,6 +22,14 @@
 //                            into read-only Attempt 1 prompts for nothing.
 //   B  over cap              one over the cap never asks Keep/Break; the day
 //                            goes amber and the streak stays cut.
+//
+// A and B also let a DAY GO BY ON THE SAME MOUNT: the page stays open, the
+// pinned clock moves to Tue 10-06, and — with no reload and no tab switch —
+// the newly missed Monday must be asked. That is how iOS resumes an installed
+// PWA: from memory, nothing remounts. A list taken once per mount would stay
+// empty for good, and a skipped Tuesday would never ask again — which is how
+// attempt 1 faded. (A: yesterday's skip asks again; B: the page opened with
+// nothing missed, the exact case a per-mount list got wrong.)
 //   C  five missed days      at most 3 are asked per open, whether they're
 //                            skipped or answered — answering three never pulls
 //                            a 4th in behind them. The next open (a reload)
@@ -72,16 +80,19 @@ process.env.TZ = TZ;
 const NOW = '2026-10-05T10:00:00-05:00'; // Mon, CDT — mid-morning, nothing logged yet today
 const NOW_MS = Date.parse(NOW);
 const TODAY = '2026-10-05';
+// The same-mount day change: the clock jumps here with the page still open.
+const NEXT = '2026-10-06T10:00:00-05:00'; // Tue — Mon 10-05 (Day 14) is now a missed day
+const NEXT_MS = Date.parse(NEXT);
 
 const RealDate = Date;
-function atNow(fn) {
+function atNow(fn, at = NOW_MS) {
   class PinnedDate extends RealDate {
     constructor(...a) {
       if (a.length) super(...a);
-      else super(NOW_MS);
+      else super(at);
     }
     static now() {
-      return NOW_MS;
+      return at;
     }
   }
   globalThis.Date = PinnedDate;
@@ -422,6 +433,7 @@ const STEPS = {
     'storage: exactly two new backfill events; every seeded event byte-identical; a1 untouched',
     'Calendar: d12 5/8 and d10 8/8 logged; d6, d8 gray; every day matches statusForDay()',
     'reload → only d8 asks again (d12/d10 never); backfills survived (no re-seed) → Skip',
+    'same mount, clock → Tue 10-06: Day 15; asks d14 (Mon, newly missed), then d8 again (skips reset with the day) → Skip both',
     'Settings → Attempt 1 (read-only): no prompt at all → Exit; a1 + v1 still byte-identical',
   ],
   B: [
@@ -429,6 +441,7 @@ const STEPS = {
     'no Keep/Break question ever appears; backfill stored with streak "break"',
     'chip: 1, best 11 (a within-cap Keep would have made 13); Calendar: d12 amber 9/8',
     'reload → no prompt; storage append-only; a1 + v1 byte-identical',
+    'same mount, clock → Tue 10-06 (opened with nothing missed): Day 15; asks d14 (Mon) → Skip',
   ],
   C: [
     'open → d13, Skip → d12, Skip → d11, Skip → prompt gone (exactly 3 asked; d9, d8 never)',
@@ -707,6 +720,47 @@ async function expectNoPrompt(rec, page, L, why) {
   rec.check(`${L} no prompt ${why}`, w.ok && !late, (late ?? w.s) ? `asking ${(late ?? w.s).weekday} ${(late ?? w.s).monthDay}` : '');
 }
 
+// Moves the pinned clock to NEXT with the page still open — no reload, no tab
+// switch — and checks the prompt picks up the new app day on its own (the 1 s
+// tick re-renders Today). `want` is the hand-derived ask order; store.js on the
+// stored attempt at NEXT must agree. Every day asked is skipped, so nothing is
+// written.
+async function nextDaySameMount(rec, page, id, want) {
+  const L = `${id}: [next day, same mount]`;
+  rec.section(`${id} · same mount, next day`);
+  const before = await e2e.readStorage(page, 'pouch-down-v2');
+  // A DOM node from Today's header: if Today remounted, it would be detached.
+  await page.evaluate(() => {
+    window.__sameMount = [...document.querySelectorAll('button')]
+      .find((b) => /trophy case/i.test(b.getAttribute('aria-label') ?? '')) ?? null;
+  });
+  const stored = storedA2(await storedRoot(page));
+  const fromStore = atNow(() => missedDays(stored), NEXT_MS).map((d) => numOf(d.day));
+  rec.check(`${L} hand = store.js at Tue 10-06: asks ${want.map((n) => `d${n}`).join(' → ')}`,
+    JSON.stringify(fromStore) === JSON.stringify(want), fromStore.map((n) => `d${n}`).join(' → ') || 'none');
+  await page.clock.setSystemTime(NEXT_MS);
+  const w = await waitPrompt(page, (s) => !!s, 5000);
+  const text = await e2e.bodyText(page);
+  await rec.snap(page, `${id}-next-day`);
+  rec.check(`${L} Today moved to Day ${TODAY_N + 1} on its own`, new RegExp(`Day ${TODAY_N + 1} of 90`, 'i').test(text),
+    (text.match(/Day \d+ of 90/i) ?? ['no day header'])[0]);
+  rec.check(`${L} still the same mount (no reload, no remount)`,
+    await page.evaluate(() => !!window.__sameMount && window.__sameMount.isConnected));
+  rec.check(`${L} asks the newly missed ${short(want[0])} without a reload`, w.s?.n === want[0],
+    w.s ? `asking ${w.s.weekday} ${w.s.monthDay}` : 'no prompt');
+  const seen = [];
+  for (let i = 0; i < 5; i++) {
+    const s = await waitPrompt(page, (x) => !!x && !seen.includes(x.n), 2500);
+    if (!s.ok) break;
+    seen.push(s.s.n);
+    if (!(await tap(page, /^skip$/i))) break;
+  }
+  rec.check(`${L} asked exactly ${want.map((n) => `d${n}`).join(' → ')} this new day`,
+    JSON.stringify(seen) === JSON.stringify(want), seen.map((n) => `d${n}`).join(' → ') || 'none');
+  await expectNoPrompt(rec, page, L, 'after skipping them');
+  rec.check(`${L} skips wrote nothing`, (await e2e.readStorage(page, 'pouch-down-v2')) === before);
+}
+
 /* -------------------------------------------------------------- context A */
 
 async function walkA(browser, base, rec) {
@@ -774,6 +828,10 @@ async function walkA(browser, base, rec) {
   await checkChip(rec, page, `${L} [after reload]`, again, X.hand.steps[1]);
   await skip(rec, page, `${L} [reload]`, 8);
   await expectNoPrompt(rec, page, L, 'after skipping d8 again');
+
+  // A day goes by with the app still open: yesterday's skip asks again, and so
+  // does the day that just went by unlogged.
+  await nextDaySameMount(rec, page, 'A', [14, 8]);
 
   // Read-only isolation: Attempt 1 is full of gray days, and must ask nothing.
   rec.section('A · read-only Attempt 1');
@@ -858,6 +916,10 @@ async function walkB(browser, base, rec) {
   rec.check(`${L} after reload the backfill is still stored (no re-seed)`,
     JSON.stringify(storedA2(await storedRoot(page))?.events) === JSON.stringify(stored.events));
   await rec.snap(page, 'B-reload');
+
+  // The exact case a once-per-mount list got wrong: this open started with
+  // nothing missed. A day later, same page, Monday must be asked.
+  await nextDaySameMount(rec, page, 'B', [14]);
   await checkUntouched(rec, page, L);
   if (!args.keep) await ctx.close();
   return errors;
