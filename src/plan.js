@@ -26,7 +26,7 @@ export const RECOVERY_MILESTONES = [
   { hours: 336, label: '2 weeks', body: 'Gum and mouth blood flow have visibly recovered. Oral tissue is healing.' },
   { hours: 504, label: '3 weeks', body: 'Nicotinic receptor density is normalizing — the physical addiction is unwinding.' },
   { hours: 720, label: '1 month', body: 'Craving episodes are dramatically rarer and shorter. This is the new normal forming.' },
-  { hours: 2160, label: '3 months', body: 'Dopamine function has substantially recovered. You are a person who does not use nicotine.' },
+  { hours: 2160, label: '3 months', body: 'Dopamine function has substantially recovered. Each day past quit day is one more you chose.' },
 ];
 
 export const WITHDRAWAL_NOTES = {

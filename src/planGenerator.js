@@ -105,9 +105,9 @@ function nameAndTagline(step, cutIndex, dropIndex) {
   if (step.kind === 'hold') return ['Baseline hold', `Lock the ceiling at ${step.count}. No new habits, just a hard cap.`];
   if (step.kind === 'drop') return [`Strength drop ${ROMAN[dropIndex]}`, `Same slots, weaker pouch: ${step.mg}mg. Your routine stays put while the dose falls.`];
   if (step.count === 2) return ['Push the first back', 'After lunch and after dinner only. Mornings are yours again.'];
-  if (step.count === 3) return ['Meals only', 'Three meals, three pouches. Every floater is gone.'];
-  if (step.count === 4) return ['Meals only (+1)', 'Three meals plus one evening pouch. The floaters are nearly gone.'];
-  return [cutIndex === 0 ? 'First cut' : `Cut to ${step.count}`, 'Drop the weakest floaters. Meals stay protected.'];
+  if (step.count === 3) return ['Meals only', 'Three meals, three pouches. Every extra pouch between meals is gone.'];
+  if (step.count === 4) return ['Meals only (+1)', 'Three meals plus one evening pouch. The extras between meals are nearly gone.'];
+  return [cutIndex === 0 ? 'First cut' : `Cut to ${step.count}`, 'Drop the extra pouches you need least. Meals stay protected.'];
 }
 
 export function generatePlan({ pouchesPerDay, mg, strengths = [], lengthDays = 90, startDate, mealTimes, sleepTime = '23:00', pouchesPerTin = 20 }) {

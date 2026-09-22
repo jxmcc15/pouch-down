@@ -38,8 +38,14 @@ const tileSpring = { type: 'spring', damping: 26, stiffness: 320 };
 const tileDelay = (i) => Math.min(i, 10) * 0.025;
 
 // Same date voice as the rest of the app (noon avoids the UTC-parse off-by-one).
-const fmtShort = (iso) =>
-  new Date(`${iso}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+// An award can be earned with no date — one kept because it was already
+// celebrated, after the log that earned it is gone — so no date means no date,
+// never "Invalid Date".
+const fmtShort = (iso) => {
+  if (!iso) return null;
+  const d = new Date(`${iso}T12:00:00`);
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
 
 const colorOf = (tier) => TIER_COLOR[tier] ?? 'var(--fg-muted)';
 const labelOf = (tier) => TIER_LABEL[tier] ?? tier;
@@ -98,13 +104,14 @@ function useEscape(onClose, enabled = true) {
 /* ---------------------------------------------------------------- one seal */
 
 function TrophyButton({ award, index, onOpen }) {
+  const on = award.earned ? fmtShort(award.earnedOn) : null;
   return (
     <motion.button
       type="button"
       onClick={() => onOpen(award)}
       aria-label={
         award.earned
-          ? `${award.title} — earned ${fmtShort(award.earnedOn)}`
+          ? `${award.title} — earned${on ? ` ${on}` : ''}`
           : `${award.title} — locked`
       }
       initial={{ opacity: 0, scale: 0.84, y: 6 }}
@@ -200,11 +207,13 @@ function CaseBody({ groups, onOpen }) {
 
 /* --------------------------------------------------------- detail sheet */
 
-// One badge, large. Earned: the body it was hiding, plus the date. Locked: the
-// ring and "Keep going to reveal" — no invented counts, ever.
-function TrophyDetailSheet({ award, onClose, escapes = true }) {
+// One badge, large. Earned: the body it was hiding, plus the date when there is
+// one. Locked: the ring and "Keep going to reveal" — or, on a past attempt
+// that can't go anywhere now, a plain "Not earned". No invented counts, ever.
+function TrophyDetailSheet({ award, onClose, escapes = true, readOnly = false }) {
   useEscape(onClose, escapes);
   const plain = plainMotion();
+  const on = award.earned ? fmtShort(award.earnedOn) : null;
   // Straight off the 0–0.99 fraction. Below 1% there is nothing honest to
   // round to, so the ring speaks for itself.
   const pct = Math.round(award.progress * 100);
@@ -253,17 +262,17 @@ function TrophyDetailSheet({ award, onClose, escapes = true }) {
               {award.body}
             </p>
             <p className="small faint num" style={{ margin: '12px 0 0' }}>
-              Earned {fmtShort(award.earnedOn)}
+              {on ? `Earned ${on}` : 'Earned'}
             </p>
           </>
         ) : (
           <>
             <p className="small muted" style={{ margin: '10px auto 0', maxWidth: 300 }}>
-              Keep going to reveal
+              {readOnly ? 'Not earned' : 'Keep going to reveal'}
             </p>
             {pct >= 1 && (
               <p className="small faint num" style={{ margin: '12px 0 0' }}>
-                About {pct}% of the way
+                {readOnly ? `Got about ${pct}% of the way` : `About ${pct}% of the way`}
               </p>
             )}
           </>
@@ -314,7 +323,7 @@ export default function TrophyCase() {
 
       <AnimatePresence>
         {detail && (
-          <TrophyDetailSheet key={detail.id} award={detail} onClose={() => setDetail(null)} />
+          <TrophyDetailSheet key={detail.id} award={detail} readOnly={readOnly} onClose={() => setDetail(null)} />
         )}
       </AnimatePresence>
     </>
@@ -391,6 +400,7 @@ export function TrophyCaseSheet({ onClose }) {
           <TrophyDetailSheet
             key={detail.id}
             award={detail}
+            readOnly={readOnly}
             onClose={() => setDetail(null)}
             escapes={false} /* the case above owns Escape for this tree */
           />

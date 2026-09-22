@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Flame } from 'lucide-react';
 import { useApp } from '../../state.jsx';
-import { streaks } from '../../store.js';
+import { streaks, statusForDay, todayKey } from '../../store.js';
 import { plainMotion } from '../../motion.js';
 import AnimatedNumber from '../AnimatedNumber.jsx';
 
@@ -26,6 +26,9 @@ function readStreak(state) {
     return {
       current: Number.isFinite(current) ? current : 0,
       best: Number.isFinite(best) ? best : 0,
+      // Today is already over its cap, so today can't start anything — the
+      // honest invitation is tomorrow.
+      todayOver: statusForDay(state, todayKey()) === 'today-over',
     };
   } catch {
     return null;
@@ -36,8 +39,9 @@ function readStreak(state) {
  * Today header: flame + current streak, and the door to the trophy case.
  *
  * Tone rules this thing exists to hold:
- * - Zero is an invitation ("Start a streak today"), never a "0" and never a
- *   flame-out. A broken streak gets no animation, no colour change, no comment.
+ * - Zero is an invitation ("Start a streak today" — or, once today is
+ *   already over its cap, "A new streak starts tomorrow"), never a "0" and
+ *   never a flame-out. A broken streak gets no animation, no colour change, no comment.
  *   The app already knows the day was hard; it doesn't need to say so.
  * - The only flourish is upward — a small pop when the number climbs.
  *
@@ -48,6 +52,7 @@ export default function StreakChip({ onOpenTrophies }) {
   const data = readStreak(app?.state);
   const current = data?.current ?? 0;
   const best = data?.best ?? 0;
+  const todayOver = !!data?.todayOver;
 
   // Hooks stay above the early return so their order can never depend on
   // whether an attempt happens to be loaded this render.
@@ -71,7 +76,7 @@ export default function StreakChip({ onOpenTrophies }) {
 
   const label = live
     ? `${current} day streak${showBest ? `, personal best ${best}` : ''}. Tap to open your trophy case.`
-    : 'No streak going yet. Tap to open your trophy case.';
+    : `${todayOver ? 'A new streak starts tomorrow' : 'No streak going yet'}. Tap to open your trophy case.`;
 
   // A chip nobody wired a sheet to is still true, it just isn't a control —
   // so it stops claiming to be a button.
@@ -161,7 +166,7 @@ export default function StreakChip({ onOpenTrophies }) {
             AnimatedNumber stay mounted and actually spring 2 -> 3. */}
         <AnimatePresence mode="wait" initial={false}>
           <motion.span
-            key={live ? 'live' : 'zero'}
+            key={live ? 'live' : todayOver ? 'tomorrow' : 'zero'}
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
@@ -200,7 +205,9 @@ export default function StreakChip({ onOpenTrophies }) {
                 )}
               </>
             ) : (
-              <span style={{ whiteSpace: 'nowrap' }}>Start a streak today</span>
+              <span style={{ whiteSpace: 'nowrap' }}>
+                {todayOver ? 'A new streak starts tomorrow' : 'Start a streak today'}
+              </span>
             )}
           </motion.span>
         </AnimatePresence>

@@ -320,7 +320,7 @@ export function StartDateStep({ draft, set, min, max, error, onTouch }) {
       <FieldError>{error}</FieldError>
       <Helper id="setup-start-help">
         Tomorrow is a good answer. Until Day 1 arrives the app still logs everything — it
-        just doesn&rsquo;t judge it.
+        just doesn&rsquo;t hold you to a cap.
       </Helper>
     </div>
   );
@@ -335,7 +335,7 @@ export function RhythmStep({ draft, set, error, onTouch }) {
     <div>
       <Head
         title="Your daily rhythm"
-        sub="Pouch slots hang off your meals. The plan protects those and cuts the floaters first."
+        sub="Pouch slots hang off your meals. The plan protects those and cuts the extra pouches between meals first."
       />
 
       {/* Two columns, not three: a time input's intrinsic width (08:00 AM plus

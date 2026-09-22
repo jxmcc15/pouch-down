@@ -138,7 +138,7 @@ export default function MoneyCard({ onOpenSettings }) {
           {/* Muted and dimmed rather than .faint — .faint sits under 3:1 on
               glass, and this caveat is the whole point of the card. */}
           <p className="small" style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--fg-muted)', opacity: 0.85 }}>
-            Counted on {loggedDays} logged day{loggedDays === 1 ? '' : 's'}. Unlogged days count for nothing.
+            Counted on {loggedDays} logged day{loggedDays === 1 ? '' : 's'}. Days without a log aren&rsquo;t counted.
           </p>
         </>
       )}

@@ -117,7 +117,10 @@ function Figure({ icon, value, label, color }) {
 // attempt is open. A record, not a verdict: no grades, no totals that silence
 // could have inflated.
 export function ReadOnlySummaryCard() {
-  const { state } = useApp();
+  const { state, root } = useApp();
+  // Exit goes back to the attempt in progress if there is one, and to the
+  // start screen if there isn't — so the line under the card says which.
+  const hasActive = !!root?.activeAttemptId;
   if (!state) return null;
 
   const { loggedDays, kept } = moneyStats(state);
@@ -166,12 +169,20 @@ export function ReadOnlySummaryCard() {
             logged. Days without a log aren't in these numbers — nobody knows what
             happened on them.
           </p>
+          {/* Entries the migration couldn't read are kept aside, never dropped. */}
+          {(state.unreadableEvents?.length ?? 0) > 0 && (
+            <p className="small faint" style={{ margin: '8px 0 0' }}>
+              {state.unreadableEvents.length === 1
+                ? "One old entry couldn't be read. It's kept in your backup."
+                : `${state.unreadableEvents.length} old entries couldn't be read. They're kept in your backup.`}
+            </p>
+          )}
         </>
       )}
 
       <p className="small faint" style={{ margin: '8px 0 0' }}>
-        Nothing here can be logged or changed. Exit at the top to get back to your
-        current attempt.
+        Nothing here can be logged or changed. Exit at the top to get back to{' '}
+        {hasActive ? 'your current attempt' : 'the start screen'}.
       </p>
     </motion.div>
   );

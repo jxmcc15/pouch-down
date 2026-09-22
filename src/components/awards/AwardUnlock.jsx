@@ -12,9 +12,10 @@
 //      or refill itself forever. So a batch is captured ONCE into `batchRef`,
 //      and while a batch is on screen nothing re-derives underneath it.
 //   2. MARKING HAPPENS ONLY ON DISMISSAL, and every dismissal marks. The Nice
-//      button, a tap on the backdrop, and Escape all run the same idempotent
-//      path. An award that is shown and not marked replays on the next open,
-//      forever; an award marked without being shown is gone, forever. The only
+//      (or Got it) button, a tap on the backdrop, and Escape all run the same
+//      idempotent path. An award that is shown and not marked replays on the
+//      next open, forever; an award marked without being shown is gone,
+//      forever. The only
 //      exception is the overflow described under MAX_PER_OPEN, which is marked
 //      deliberately and never shown.
 //
@@ -29,6 +30,7 @@ import { newlyEarned } from '../../awards.js';
 import { todayKey } from '../../store.js';
 import { tierBurst } from '../../confetti.js';
 import { plainMotion } from '../../motion.js';
+import { UNDO_WINDOW_MS, isJustLogged } from '../../justLogged.js';
 import Badge from './Badge.jsx';
 import { TIER_COLOR, TIER_GLOW, TIER_LABEL, TIER_RANK } from './tiers.js';
 
@@ -39,6 +41,18 @@ const MAX_PER_OPEN = 3;
 // The badge spring has visually landed by here — the shimmer sweep and the
 // confetti both hang off this beat.
 const LAND_MS = 420;
+
+// Several awards unlock the instant their triggering event is logged, and that
+// event can still be undone for UNDO_WINDOW_MS (a little past the log toast's
+// lifetime) — so nothing is celebrated, or marked as celebrated, while the
+// attempt's newest event is still "just logged". That also keeps the overlay
+// off the toast's Undo button. The re-check lands a beat after the window,
+// because the window's edge is inclusive.
+const RECHECK_PAD_MS = 250;
+
+// The one award where "Nice" reads as cheering the slip rather than the
+// honesty of logging it.
+const ACK_LABEL = { 'honest-yellow': 'Got it' };
 
 // Which three, when more than three are waiting: rarest first. A backlog only
 // happens once, and the badge it would hurt most to swallow in silence is the
@@ -65,6 +79,7 @@ export default function AwardUnlock() {
   const [batch, setBatch] = useState([]); // the snapshot, minus what's been dismissed
   const [batchSize, setBatchSize] = useState(0); // how big it was when captured
   const [lit, setLit] = useState(false); // the badge has landed: shimmer + confetti
+  const [recheck, setRecheck] = useState(0); // bumped when the undo window closes
 
   const batchRef = useRef([]); // mirrors `batch`, but true *now* rather than next render
   const handledRef = useRef(new Set()); // ids this session has marked (or tried to)
@@ -136,6 +151,21 @@ export default function AwardUnlock() {
     // without ever being seen.
     if (batchRef.current.length) return;
 
+    // And never inside the undo window: a log the user takes back during
+    // the toast must not have been celebrated — or marked — first. Wait until
+    // the newest event is old enough, then come back through this same intake
+    // (`recheck`), so every guard above and below still applies. "Just
+    // logged" is the api's own test (the event's age, not a UI timer), so this
+    // opens exactly when undo stops being possible.
+    const events = state.events ?? [];
+    const last = events[events.length - 1];
+    const now = Date.now();
+    if (last && isJustLogged(last, UNDO_WINDOW_MS, now)) {
+      const wait = UNDO_WINDOW_MS - (now - Date.parse(last.ts)) + RECHECK_PAD_MS;
+      const t = setTimeout(() => setRecheck((n) => n + 1), wait);
+      return () => clearTimeout(t);
+    }
+
     const pending = newlyEarned(state).filter((a) => !handledRef.current.has(a.id));
     if (!pending.length) return;
 
@@ -153,7 +183,7 @@ export default function AwardUnlock() {
     restoreRef.current = document.activeElement;
     setBatchSize(chosen.length);
     show(chosen);
-  }, [live, state, day, api, show, restoreFocus]);
+  }, [live, state, day, recheck, api, show, restoreFocus]);
 
   // The beat where the badge lands: one shimmer sweep, one tier-scaled burst,
   // then stillness. Plain motion gets neither.
@@ -342,7 +372,7 @@ export default function AwardUnlock() {
                   whileTap={plain ? undefined : { scale: 0.97 }}
                   onClick={dismiss}
                 >
-                  Nice
+                  {ACK_LABEL[current.id] ?? 'Nice'}
                 </motion.button>
               </motion.div>
 

@@ -16,15 +16,24 @@ const EXAMPLE = 'e.g. 5-pack at the gas station for $23.99 plus tax';
 // The model's own sentence is the only message shown verbatim. It lands here
 // as a plain string and is rendered as a React text child, so it is escaped
 // like any other text — never HTML.
-function errorCopy(err) {
+//
+// No key: say where one goes, truthfully. During setup there is no attempt yet,
+// so Settings can't be opened — the key comes later and the price comes now.
+function errorCopy(err, inSetup) {
   const code = String(err?.message ?? '');
-  if (code === 'no-key') return 'Add a Claude API key in Settings to use this — or just type the price in.';
+  if (code === 'no-key') {
+    return inSetup
+      ? "You can add a Claude key in Settings once you've started. For now, enter the price by hand."
+      : 'Add a Claude key in Settings to use this — or enter the price by hand.';
+  }
   if (code.startsWith('unclear:')) return code.slice('unclear:'.length);
   return "Couldn't work that out — enter it by hand.";
 }
 
 export default function PriceHelpSheet({ onClose, onUse }) {
-  const { device } = useApp();
+  const { state, device } = useApp();
+  // Setup is the only screen that shows before an attempt exists (App.jsx).
+  const inSetup = !state;
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -38,7 +47,7 @@ export default function PriceHelpSheet({ onClose, onUse }) {
     try {
       setResult(await priceFromText(text.trim(), device.apiKey));
     } catch (e) {
-      setError(errorCopy(e));
+      setError(errorCopy(e, inSetup));
     } finally {
       setBusy(false);
     }
