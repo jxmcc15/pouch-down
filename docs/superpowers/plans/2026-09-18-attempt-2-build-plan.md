@@ -1122,4 +1122,13 @@ Dispatch independent review agents (use the `requesting-code-review` skill) over
 
 - [ ] All checks + all E2E green. Merge `feat/attempt-2` → `main` locally with `--no-ff`. **Do not push.**
 - [ ] Hand James the phone checklist: push → wait for deploy → reopen twice → Front door appears → Attempt 1 opens, looks right → Settings → Download full backup (v2) → AirDrop → start setup.
-- [ ] If anything in C1–C3 is red at 3 PM: cut scope in this order — AI price help, Trophy case polish, Settings→Attempts — never the migration, scoring, or setup flow. Awards are derived, so shipping their UI Tuesday loses nothing.
+- ~~If anything in C1–C3 is red at 3 PM: cut scope in this order — AI price help, Trophy case polish, Settings→Attempts — never the migration, scoring, or setup flow. Awards are derived, so shipping their UI Tuesday loses nothing.~~ **Retired 2026-09-21:** James chose no cuts; the quality bar is the gate, not the clock.
+
+### Session C exit gate (C1–C4) — passed Mon 2026-09-21
+
+- [x] **C1** `scripts/e2e/` — shared `lib.mjs` harness (pinned clock, sentinel-gated seeding, private build, never the repo's `dist/`) + five walks: migration 180 · setup 157 · backfill 192 · awards 92 · recovery 381 = **1,002 checks, 0 failures, 0 console errors**; `npm run e2e` runs them on one build. Each walk proven able to fail against planted bugs or pre-fix snapshots.
+- [x] **C2** real-data dry run — 28/28 (real v1 backup, America/Chicago, pinned and real now); v1 byte-identical. Script local-only, never committed.
+- [x] **C3** adversarial review — seven lenses (the six above plus honest scoring / backfill / streak / money); every finding re-proven by the coordinator before a fix; accepted, rejected and deferred lists with reasons in the build log.
+- [x] **C4** housekeeping — `npm audit` 0 vulnerabilities (dev tooling, no major bumps); `CLAUDE.md` rewritten for the attempts model; manifest description updated; Actions bump prepared on `chore/actions-node24` @ `baa90da`, to merge only after the phone checks out.
+- [x] `npm test` 277 passed / 1 skipped (278/278 with `POUCH_BACKUP_DIR`); lint exactly 2 baseline warnings; build clean; math harness passed.
+- [x] Build log updated.
