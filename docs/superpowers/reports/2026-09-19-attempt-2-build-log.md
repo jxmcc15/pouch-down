@@ -449,3 +449,54 @@ freeze. It started Monday evening, which was meant to be Day 1.
 - **Subagent effort:** the Agent tool has no per-agent effort switch and
   there are no custom agent definitions, so every agent inherits this
   session's setting.
+
+### How it ran
+
+Four waves, never two agents on one file. **Wave 1:** the shared E2E
+harness, seven adversarial reviewers (one lens each), and the deferred
+Actions bump, all in parallel. **Wave 2:** seven fix agents with disjoint file
+ownership, plus three E2E flows run against a frozen snapshot build so
+in-flight edits couldn't break them. **Wave 3:** the last two flows, on a
+second snapshot taken after the fixes. **Wave 4:** two-stage review (spec
+compliance, then code quality). Three reviewers were cut off mid-run by API
+overload (HTTP 529) and resumed from their transcripts, so nothing was lost.
+Every finding was re-run by the coordinator from the reviewer's own proof
+script before it was accepted.
+
+### C3 — adversarial review: what broke, what held
+
+Seven lenses. The six from the plan, plus **honest scoring / backfill /
+streak / money**, added because the backfill UI was built after Sol last
+reviewed scoring. Nothing lost real data and no path rewrote history. What the
+lenses did find:
+
+- **The API key could leave the phone** through the recovery screen's
+  "Download what's stored". It dumped the raw v1 key, which still holds the
+  key in its old settings and is never rewritten. The dump now blanks every
+  `apiKey` and masks `sk-ant-` on the raw text.
+- **The past attempt told comfortable lies from the clock.** For attempt 1,
+  the coach was told "you are nicotine-free", "29 days since last pouch"
+  ticked live, Plan marked all 8 stages done with 24 of 60 days unlogged, and
+  "pouches not used" counted silent days as a full baseline avoided. That
+  last one was also true on `main`. Every read-side view now judges through
+  `asOfDay` and counts logged days only.
+- **Times were an hour off when read from Chicago.** History used the
+  reader's zone, and early v1 verdicts flipped from on-time to "55m early".
+  Both now use the zone the event was logged in.
+- **Two crash paths and one brick.** A dinner at 23:45 threw inside
+  `logPouch`. A malformed root white-screened on every boot with no error
+  boundary. And "Start fresh" after a failed migration orphaned attempt 1 for
+  good. All three fixed. The migration is also tolerant now: one bad entry is
+  set aside instead of failing the whole history.
+- **A badge could be taken back** (a price edit or an honest backfill
+  rewrites the past), and a re-earn would never celebrate. Awards now latch
+  once celebrated. Money is computed once in integer cents, so the card and
+  the $25 badge can't disagree by a fraction of a cent.
+- **pouch-ingest scored backups by the Mac's clock**, so a 1.5-day-old
+  backup told the Live Log and Telegram "current 0" for a real 8-day streak.
+  It now scores as of the export.
+- ~25 copy fixes (tone lens). The first screen James sees tonight had a
+  sentence missing half its words.
+
+Full accepted / rejected / deferred list with reasons: **Decisions made
+without James** and **Outside review**, below.
