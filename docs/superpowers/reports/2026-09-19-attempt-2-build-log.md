@@ -794,7 +794,20 @@ registered and controlling after reload with scope `/pouch-down/`, Attempt 1 lis
 read-only with no unlock overlay, Exit, v1 byte-identical, one attempt with no key, a
 second reload migrates nothing.
 
-**Phone:** checklist handed to James at 9:53 PM CT; awaiting his report.
+**Phone:** checklist handed to James at 9:53 PM CT. A v2 backup AirDropped from the
+phone was filed by `pouch-ingest` at 6:56 AM Tue 2026-09-22 and verified: format 2,
+`device.apiKey` blank, no key string in the file, attempt a1 archived with every event
+of the v1 backup and none missing, plan dates intact. Only the new build can write a
+v2 backup, so the migration ran on the real phone. No active attempt in that export
+yet; setup still to run (Day 1 = Tue 2026-09-22). `chore/actions-node24` stays parked
+until James says the phone checks out.
+
+**Security audit (Tue 2026-09-22, morning):** six adversarial lenses plus a two-model
+panel over the app, pipeline, ingest tooling and privacy. The app itself held; the
+findings are about what surrounds it. The report is private, in the vault
+(`Pouch Down/Security Audit 2026-09-22.md`), because it lists weaknesses of a public
+app; nothing was changed in the repo, the vault tooling, `~/Library`, or GitHub
+settings.
 
 ### Next spec — kickoff (draft; not built)
 
