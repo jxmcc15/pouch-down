@@ -23,19 +23,17 @@ function segmentPath(i, total) {
 
 // Quit day stays tappable on purpose: its cap is zero, so a pouch logged then
 // scores over cap (amber) like any other — an honest slip beats a locked
-// button that makes the day look clean. `disabled` is left for callers that
-// truly have nothing to log against.
+// button that makes the day look clean.
 //
 // Before Day 1 (`prePlan`) there is no cap, so the ring shows none: a plain
 // count on a neutral track, never an over/under colour. `cap` is ignored.
-export default function LogRing({ used, cap, mg, onLog, disabled, quitDay, prePlan }) {
+export default function LogRing({ used, cap, mg, onLog, quitDay, prePlan }) {
   const over = !prePlan && used > cap;
   const [pulse, setPulse] = useState(0);
   const segments = prePlan ? 1 : Math.max(cap, 1);
   const filled = prePlan ? 0 : Math.min(used, segments);
 
   const handleLog = () => {
-    if (disabled) return;
     navigator.vibrate?.(30);
     setPulse((p) => p + 1);
     onLog();
@@ -85,7 +83,7 @@ export default function LogRing({ used, cap, mg, onLog, disabled, quitDay, prePl
 
         <motion.button
           onClick={handleLog}
-          whileTap={disabled ? {} : { scale: 0.94 }}
+          whileTap={{ scale: 0.94 }}
           transition={{ type: 'spring', damping: 18, stiffness: 320 }}
           aria-label={
             prePlan
@@ -114,7 +112,6 @@ export default function LogRing({ used, cap, mg, onLog, disabled, quitDay, prePl
               : prePlan
                 ? '0 0 40px rgba(255,255,255,0.04), inset 0 1px 0 rgba(255,255,255,0.08)'
                 : '0 0 40px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,0.08)',
-            opacity: disabled ? 0.5 : 1,
           }}
         >
           <span style={{ fontSize: 44, fontWeight: 800, lineHeight: 1 }} className="num">
@@ -132,9 +129,7 @@ export default function LogRing({ used, cap, mg, onLog, disabled, quitDay, prePl
                 ? 'not judged yet · tap to log'
                 : quitDay
                   ? 'Quit day — tap if you had one'
-                  : disabled
-                    ? 'nothing to log'
-                    : 'tap to log pouch'}
+                  : 'tap to log pouch'}
           </span>
           {mg > 0 && (
             <span className="small faint num">{mg}mg each</span>

@@ -45,10 +45,14 @@ const LAND_MS = 420;
 // Several awards unlock the instant their triggering event is logged, and that
 // event can still be undone for UNDO_WINDOW_MS (a little past the log toast's
 // lifetime) — so nothing is celebrated, or marked as celebrated, while the
-// attempt's newest event is still "just logged". That also keeps the overlay
-// off the toast's Undo button. The re-check lands a beat after the window,
-// because the window's edge is inclusive.
+// attempt's newest event is an undoable one still "just logged". That also
+// keeps the overlay off the toast's Undo button. The re-check lands a beat
+// after the window, because the window's edge is inclusive.
 const RECHECK_PAD_MS = 250;
+
+// The event types a just-made log can be undone as — the only ones worth
+// waiting out the undo window for.
+const UNDOABLE = new Set(['pouch', 'resisted']);
 
 // The one award where "Nice" reads as cheering the slip rather than the
 // honesty of logging it.
@@ -156,11 +160,12 @@ export default function AwardUnlock() {
     // the newest event is old enough, then come back through this same intake
     // (`recheck`), so every guard above and below still applies. "Just
     // logged" is the api's own test (the event's age, not a UI timer), so this
-    // opens exactly when undo stops being possible.
+    // opens exactly when undo stops being possible. Only a pouch or resisted
+    // log can be taken back; a backfill or check-in can't, so it never waits.
     const events = state.events ?? [];
     const last = events[events.length - 1];
     const now = Date.now();
-    if (last && isJustLogged(last, UNDO_WINDOW_MS, now)) {
+    if (last && UNDOABLE.has(last.type) && isJustLogged(last, UNDO_WINDOW_MS, now)) {
       const wait = UNDO_WINDOW_MS - (now - Date.parse(last.ts)) + RECHECK_PAD_MS;
       const t = setTimeout(() => setRecheck((n) => n + 1), wait);
       return () => clearTimeout(t);

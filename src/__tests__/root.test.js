@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { KEY_V1, KEY_V2, DEFAULT_SETTINGS, freshRoot, loadRoot, saveRoot, startAttempt, archiveActive, updateAttempt, attemptById, lastSettings, preserveCorruptV2, freshStartRoot, unreadableCount } from '../root.js';
+import { KEY_V1, KEY_V2, DEFAULT_SETTINGS, freshRoot, loadRoot, saveRoot, startAttempt, archiveActive, updateAttempt, attemptById, lastSettings, preserveCorruptV2, freshStartRoot } from '../root.js';
 import { todayKey } from '../store.js';
 
 const mem = (init = {}) => { const m = new Map(Object.entries(init)); return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, v), _m: m }; };
@@ -43,15 +43,8 @@ describe('loadRoot', () => {
       expect(problem).toBeNull();
       expect(root.attempts[0].events.map((e) => e.id)).toEqual(['e1']);
       expect(root.attempts[0].unreadableEvents).toEqual([bad]);
-      expect(unreadableCount(root)).toBe(1);
     });
   }
-
-  it('unreadableCount is 0 for clean roots, and counts across attempts', () => {
-    expect(unreadableCount(freshRoot())).toBe(0);
-    expect(unreadableCount(loadRoot(mem({ [KEY_V1]: V1 }), NOW).root)).toBe(0);
-    expect(unreadableCount({ ...freshRoot(), attempts: [{ ...attemptShape('a1'), unreadableEvents: [null, 1] }, attemptShape('a2')] })).toBe(2);
-  });
 });
 
 // A v2 that parses but is the wrong shape would render straight into a crash.

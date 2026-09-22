@@ -79,10 +79,6 @@ export function loadRoot(storage = localStorage, now = new Date().toISOString())
   return { root: freshRoot(), problem: null };
 }
 
-// Events the migration couldn't read, kept verbatim on their attempt (outside
-// `events`) so the UI can say how many there are.
-export const unreadableCount = (root) => root.attempts.reduce((n, a) => n + (a.unreadableEvents?.length ?? 0), 0);
-
 // What "Start fresh" begins from. Once v2 exists v1 is never read again, so an
 // empty root here would make attempt 1 vanish for good. Readable v1 → attempt 1
 // comes back, archived, exactly as a first boot would build it. Unreadable v1 →
