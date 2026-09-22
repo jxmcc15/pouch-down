@@ -1,9 +1,10 @@
 import { motion } from 'framer-motion';
 import { useApp } from '../state.jsx';
 import {
-  dateForDayNumber, mgForDay, todayKey, dayNumberFor,
-  pouchesForDay, plannedMgForDay,
+  dateForDayNumber, mgForDay, asOfDay, dayNumberFor,
+  pouchesForDay, plannedMgForDay, isLogged,
 } from '../store.js';
+import { capForDay } from '../plan.js';
 import { moneyStats } from '../money.js';
 import { TRIGGERS } from './SOSOverlay.jsx';
 import AnimatedNumber from './AnimatedNumber.jsx';
@@ -34,22 +35,44 @@ function y(mg, maxMg) {
 // a cliff is the motivational core of the stats tab.
 function MgChart({ state }) {
   const { totalDays, startDate, quitDate } = state.plan;
-  const maxMg = 90;
-  const todayN = Math.min(dayNumberFor(state, todayKey()), totalDays);
+  const lastN = Math.min(dayNumberFor(state, asOfDay(state)), totalDays);
+
+  // Your line: logged days only. A day with no log is a gap (null), never 0 mg.
+  const actual = [];
+  for (let n = 1; n <= lastN; n++) {
+    const d = dateForDayNumber(state, n);
+    actual.push({ n, mg: isLogged(state, d) ? mgForDay(state, d) : null });
+  }
+
+  // Scale to this plan (and any day above it), rounded up to a multiple of 30
+  // so the three gridline steps stay whole numbers.
+  let peak = 0;
+  for (let n = 1; n <= totalDays; n++) peak = Math.max(peak, plannedMgForDay(state, n));
+  for (const p of actual) if (p.mg != null) peak = Math.max(peak, p.mg);
+  const maxMg = Math.max(30, Math.ceil(peak / 30) * 30);
+  const ticks = [0, maxMg / 3, (2 * maxMg) / 3, maxMg];
 
   const plannedPts = [];
   for (let n = 1; n <= totalDays; n++) plannedPts.push(`${x(n, totalDays)},${y(plannedMgForDay(state, n), maxMg)}`);
   const plannedPath = `M ${plannedPts.join(' L ')}`;
 
-  let actualPath = null;
-  if (todayN >= 1) {
-    const pts = [];
-    for (let n = 1; n <= todayN; n++) {
-      const d = dateForDayNumber(state, n);
-      pts.push(`${x(n, totalDays)},${y(mgForDay(state, d), maxMg)}`);
-    }
-    actualPath = `M ${pts.join(' L ')}`;
+  // Split into runs of consecutive logged days. Runs of 2+ become one path;
+  // a lone logged day between gaps gets a dot so it still shows.
+  const runs = [];
+  let run = [];
+  for (const p of actual) {
+    if (p.mg == null) {
+      if (run.length) runs.push(run);
+      run = [];
+    } else run.push(p);
   }
+  if (run.length) runs.push(run);
+  const actualPath = runs
+    .filter((r) => r.length > 1)
+    .map((r) => `M ${r.map((p) => `${x(p.n, totalDays)},${y(p.mg, maxMg)}`).join(' L ')}`)
+    .join(' ') || null;
+  const lone = runs.filter((r) => r.length === 1).map((r) => r[0]);
+  const hasGaps = actual.some((p) => p.mg == null);
 
   return (
     <div style={{ overflowX: 'auto' }}>
@@ -59,7 +82,7 @@ function MgChart({ state }) {
         role="img"
         aria-label="Daily nicotine milligrams: planned taper versus actual"
       >
-        {[0, 30, 60, 90].map((mg) => (
+        {ticks.map((mg) => (
           <g key={mg}>
             <line x1={PAD.l} x2={W - PAD.r} y1={y(mg, maxMg)} y2={y(mg, maxMg)} stroke="rgba(255,255,255,0.06)" />
             <text x={PAD.l - 6} y={y(mg, maxMg) + 3} fontSize="9" fill="var(--fg-faint)" textAnchor="end" className="num">
@@ -90,6 +113,19 @@ function MgChart({ state }) {
             style={{ filter: 'drop-shadow(0 0 6px var(--accent-glow))' }}
           />
         )}
+        {lone.map((p) => (
+          <motion.circle
+            key={p.n}
+            cx={x(p.n, totalDays)}
+            cy={y(p.mg, maxMg)}
+            r={2.5}
+            fill="var(--accent-bright)"
+            initial={{ opacity: 0, scale: 0 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ type: 'spring', damping: 24, stiffness: 180, delay: 0.3 }}
+            style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
+          />
+        ))}
         <text x={x(1, totalDays)} y={H - 6} fontSize="9" fill="var(--fg-faint)">{fmtShort(startDate)}</text>
         <text x={x(totalDays, totalDays)} y={H - 6} fontSize="9" fill="var(--fg-faint)" textAnchor="end">{fmtShort(quitDate)}</text>
       </svg>
@@ -100,6 +136,7 @@ function MgChart({ state }) {
         <span className="row" style={{ gap: 6 }}>
           <span style={{ width: 14, borderTop: '2.5px solid var(--accent-bright)' }} /> you
         </span>
+        {hasGaps && <span className="faint">gaps = no log</span>}
       </div>
     </div>
   );
@@ -165,19 +202,25 @@ export default function StatsView({ openSettings }) {
   const money = moneyStats(state);
   const saved = money.kept;
   const perPouch = money.perPouch;
-  const todayN = dayNumberFor(state, todayKey());
+  // Scored "as of" today for a live attempt; for a past one, the day it ended.
+  const asOfN = dayNumberFor(state, asOfDay(state));
+  // Nothing left to project once the attempt is over or quit day has come.
+  const finished = state.status === 'archived' || asOfN >= totalDays;
 
-  // Projection: money saved by quit day if the rest of the plan is followed.
+  // Projection: money kept by quit day if the rest of the plan is followed.
+  // Price is per pouch whatever the strength, so only fewer pouches keep
+  // money — a strength drop doesn't.
   let projected = saved;
-  for (let n = Math.max(todayN + 1, 1); n <= totalDays; n++) {
-    projected += (baseline.pouchesPerDay * baseline.mg - plannedMgForDay(state, n)) / baseline.mg * perPouch;
+  for (let n = Math.max(asOfN + 1, 1); n <= totalDays; n++) {
+    projected += Math.max(0, baseline.pouchesPerDay - capForDay(state.plan, n)) * perPouch;
   }
 
+  // Logged days only: a day with no log tells us nothing, so it adds nothing.
   let avoided = 0;
   const resistedTotal = state.events.filter((e) => e.type === 'resisted').length;
-  for (let n = 1; n <= Math.min(todayN, totalDays); n++) {
+  for (let n = 1; n <= Math.min(asOfN, totalDays); n++) {
     const d = dateForDayNumber(state, n);
-    if (d <= todayKey()) avoided += Math.max(0, baseline.pouchesPerDay - pouchesForDay(state, d));
+    if (isLogged(state, d)) avoided += Math.max(0, baseline.pouchesPerDay - pouchesForDay(state, d));
   }
 
   const spring = { type: 'spring', damping: 24, stiffness: 180 };
@@ -197,26 +240,41 @@ export default function StatsView({ openSettings }) {
 
       <motion.div
         className="row"
-        style={{ marginTop: 14, gap: 14 }}
+        style={{ marginTop: 14, gap: 14, alignItems: 'stretch' }}
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ ...spring, delay: 0.08 }}
       >
-        <div className="card" style={{ flex: 1, textAlign: 'center' }}>
-          <div style={{ fontSize: 26, fontWeight: 800 }} className="num">
-            ${projected.toFixed(0)}
+        {finished ? (
+          <div className="card" style={{ flex: 1, textAlign: 'center' }}>
+            <div style={{ fontSize: 26, fontWeight: 800 }} className="num">
+              {money.loggedDays}
+            </div>
+            <div className="tiny faint">of {totalDays} days</div>
+            <div className="small muted" style={{ marginTop: 4 }}>
+              logged
+            </div>
           </div>
-          <div className="tiny faint">by {fmtShort(quitDate)}</div>
-          <div className="small muted" style={{ marginTop: 4 }}>
-            if you follow the plan
+        ) : (
+          <div className="card" style={{ flex: 1, textAlign: 'center' }}>
+            <div style={{ fontSize: 26, fontWeight: 800 }} className="num">
+              ${projected.toFixed(0)}
+            </div>
+            <div className="tiny faint">by {fmtShort(quitDate)}</div>
+            <div className="small muted" style={{ marginTop: 4 }}>
+              if you follow the plan
+            </div>
           </div>
-        </div>
+        )}
         <div className="card" style={{ flex: 1, textAlign: 'center' }}>
           <div style={{ fontSize: 26, fontWeight: 800 }} className="num">
             <AnimatedNumber value={avoided} />
           </div>
           <div className="tiny faint">pouches not used</div>
-          <div className="small muted num" style={{ marginTop: 4 }}>
+          <div className="small muted" style={{ marginTop: 4 }}>
+            on logged days
+          </div>
+          <div className="small faint num" style={{ marginTop: 2 }}>
             {resistedTotal} cravings beaten
           </div>
         </div>

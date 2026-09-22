@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { Star } from 'lucide-react';
 import { useApp } from '../state.jsx';
-import { statusForDay, pouchesForDay, dateForDayNumber, todayKey } from '../store.js';
+import { statusForDay, pouchesForDay, dateForDayNumber, asOfDay } from '../store.js';
 import { capForDay } from '../plan.js';
 
 const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -11,7 +11,9 @@ const fmtLong = (iso) =>
 
 export default function CalendarView() {
   const { state } = useApp();
-  const today = todayKey();
+  // Today for a live attempt; for a past one, the last day it can be judged,
+  // so days after it ended show only their planned cap.
+  const today = asOfDay(state);
   const { totalDays, startDate, quitDate } = state.plan;
 
   const cells = [];
@@ -24,12 +26,13 @@ export default function CalendarView() {
 
   const greens = cells.filter((c) => c.status === 'green').length;
   const yellows = cells.filter((c) => c.status === 'yellow').length;
+  const nologs = cells.filter((c) => c.status === 'nolog').length;
 
   return (
     <div>
       <h2 style={{ fontSize: 20, margin: '4px 0 2px' }}>The {totalDays} days</h2>
       <p className="small muted" style={{ margin: '0 0 16px' }}>
-        {fmtLong(startDate)} → {fmtLong(quitDate)} · don't break the chain
+        {fmtLong(startDate)} → {fmtLong(quitDate)} · Every logged day counts. Gray means no log.
       </p>
 
       <div className="cal-grid" style={{ marginBottom: 8 }}>
@@ -71,7 +74,7 @@ export default function CalendarView() {
         )}
       </div>
 
-      <div className="row" style={{ marginTop: 18, justifyContent: 'center', gap: 18 }}>
+      <div className="row" style={{ marginTop: 18, justifyContent: 'center', gap: '8px 18px', flexWrap: 'wrap' }}>
         <span className="row small muted" style={{ gap: 6 }}>
           <span className="slot-dot" style={{ background: 'var(--green)', borderColor: 'var(--green)' }} />
           on plan ({greens})
@@ -82,7 +85,7 @@ export default function CalendarView() {
         </span>
         <span className="row small muted" style={{ gap: 6 }}>
           <span className="slot-dot" style={{ background: 'var(--nolog)', borderColor: 'var(--nolog)' }} />
-          no log
+          no log ({nologs})
         </span>
         <span className="row small muted" style={{ gap: 6 }}>
           <Star size={12} color="var(--accent-bright)" /> quit day

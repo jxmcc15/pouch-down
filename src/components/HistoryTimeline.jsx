@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ShieldCheck, Moon, ChevronDown } from 'lucide-react';
 import { useApp } from '../state.jsx';
 import {
-  eventsForDay, pouchesForDay, todayKey, dayNumberFor, dateForDayNumber,
+  eventsForDay, pouchesForDay, asOfDay, dayNumberFor, dateForDayNumber,
   statusForDay, classifyPouch, fmtTime,
 } from '../store.js';
 import { capForDay } from '../plan.js';
@@ -70,7 +70,7 @@ function EventRow({ state, ev }) {
     const v = pouchVerdict(state, ev);
     icon = <span style={{ width: 8, height: 8, borderRadius: '50%', background: v.color, display: 'block', opacity: 0.85 }} />;
     segs = [
-      <span key="t" className="muted num">{fmtTime(ev.ts)}</span>,
+      <span key="t" className="muted num">{fmtTime(ev)}</span>,
       ...(ev.ctx?.slotLabel ? [<span key="s" className="muted">{ev.ctx.slotLabel}</span>] : []),
       <span key="v" style={{ color: v.color, fontWeight: 500 }}>{v.text}</span>,
       ...(ev.trigger ? [<span key="g" className="faint">{ev.trigger}</span>] : []),
@@ -78,14 +78,14 @@ function EventRow({ state, ev }) {
   } else if (ev.type === 'resisted') {
     icon = <ShieldCheck size={15} color="var(--green)" />;
     segs = [
-      <span key="t" className="muted num">{fmtTime(ev.ts)}</span>,
+      <span key="t" className="muted num">{fmtTime(ev)}</span>,
       <span key="r" style={{ color: 'var(--green)', fontWeight: 500 }}>resisted</span>,
       ...(ev.trigger ? [<span key="g" className="faint">{ev.trigger}</span>] : []),
     ];
   } else if (ev.type === 'checkin') {
     icon = <Moon size={15} color="var(--accent-bright)" />;
     segs = [
-      <span key="t" className="muted num">{fmtTime(ev.ts)}</span>,
+      <span key="t" className="muted num">{fmtTime(ev)}</span>,
       <span key="c" className="muted">check-in</span>,
     ];
     if (ev.sleepQuality != null) segs.push(<span key="q" className="muted num">quality {ev.sleepQuality}/5</span>);
@@ -127,13 +127,17 @@ function DayRows({ state, dateStr }) {
 
 export default function HistoryTimeline() {
   const { state } = useApp();
-  const todayN = dayNumberFor(state, todayKey());
+  // Live attempt: today. Past attempt: the last day it can be judged, so the
+  // list stops where the attempt did.
+  const live = state.status !== 'archived';
+  const todayN = dayNumberFor(state, asOfDay(state));
   // Today defaults open against the LIVE day number (correct across the 4am
   // rollover); explicit taps are stored as overrides on top of that default.
+  // A past attempt has no today, so nothing opens by itself.
   const [overrides, setOverrides] = useState({});
   const [showAll, setShowAll] = useState(false);
 
-  const isOpen = (n) => overrides[n] ?? (n === todayN);
+  const isOpen = (n) => overrides[n] ?? (live && n === todayN);
   const toggle = (n) => setOverrides((prev) => ({ ...prev, [n]: !isOpen(n) }));
 
   // Before day 1 there is no plan history to show yet.
@@ -148,7 +152,9 @@ export default function HistoryTimeline() {
       >
         <div className="tiny muted" style={{ marginBottom: 8 }}>History</div>
         <p className="small muted" style={{ margin: 0 }}>
-          Your history starts on day 1 — every pouch, resisted craving, and check-in lands here.
+          {live
+            ? 'Your history starts on day 1 — every pouch, resisted craving, and check-in lands here.'
+            : 'This attempt ended before day 1, so there’s no history to show.'}
         </p>
       </motion.div>
     );

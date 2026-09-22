@@ -40,7 +40,7 @@ function clockLabel(minSince4am) {
 
 const spring = { type: 'spring', damping: 24, stiffness: 180 };
 
-function Graph({ points, lunchMin, totalDays, startDate, quitDate }) {
+function Graph({ points, target, totalDays, startDate, quitDate }) {
   const linePath =
     points.length > 1
       ? `M ${points.map((p) => `${x(p.dayNum, totalDays)},${y(p.minutesSince4am)}`).join(' L ')}`
@@ -52,7 +52,7 @@ function Graph({ points, lunchMin, totalDays, startDate, quitDate }) {
         viewBox={`0 0 ${W} ${H}`}
         style={{ width: '100%', height: 'auto' }}
         role="img"
-        aria-label="Time of day of each day's first pouch across the 60-day plan"
+        aria-label={`Time of day of each day's first pouch across your ${totalDays}-day plan`}
       >
         {/* time-of-day gridlines + labels */}
         {Y_TICKS.map((t) => (
@@ -64,14 +64,14 @@ function Graph({ points, lunchMin, totalDays, startDate, quitDate }) {
           </g>
         ))}
 
-        {/* current lunch meal time — the Stage 6 target James is tapering toward */}
-        {lunchMin != null && (
+        {/* the meal your plan first pushes the day's first pouch back to */}
+        {target && (
           <g>
             <line
               x1={PAD.l}
               x2={W - PAD.r}
-              y1={y(lunchMin)}
-              y2={y(lunchMin)}
+              y1={y(target.min)}
+              y2={y(target.min)}
               stroke="var(--amber)"
               strokeWidth="1"
               strokeDasharray="4 4"
@@ -79,12 +79,12 @@ function Graph({ points, lunchMin, totalDays, startDate, quitDate }) {
             />
             <text
               x={PAD.l + 2}
-              y={y(lunchMin) - 4}
+              y={y(target.min) - 4}
               fontSize="9"
               fill="var(--amber)"
               opacity="0.85"
             >
-              Stage 6 target
+              Stage {target.stageId} target
             </text>
           </g>
         )}
@@ -128,16 +128,27 @@ function Graph({ points, lunchMin, totalDays, startDate, quitDate }) {
   );
 }
 
+// The reference line comes from the plan: the first stage whose first pouch
+// waits until lunch or dinner, drawn at that meal's time (e.g. lunch "12:30"
+// → 12*60+30−240 = 510). No such stage, or a missing/garbled meal time, just
+// drops the line — never a crash, never a made-up target.
+function firstPouchTarget(state) {
+  const stage = (state.plan?.stages || []).find((s) => {
+    const a = s.slots?.[0]?.anchor;
+    return a === 'lunch' || a === 'dinner';
+  });
+  if (!stage) return null;
+  const hm = state.settings?.mealTimes?.[stage.slots[0].anchor];
+  const [h, m] = typeof hm === 'string' ? hm.split(':').map(Number) : [];
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return { stageId: stage.id, min: h * 60 + m - DAY_START_MIN };
+}
+
 export default function FirstPouchChart() {
   const { state } = useApp();
   const points = firstPouchTimes(state);
-
-  // Reference line at the current lunch time (e.g. "12:30" → 12*60+30−240 = 510).
-  // Guard the parse so a missing/garbled setting just drops the line, never crashes.
-  const lunch = state.settings?.mealTimes?.lunch || '12:30';
-  const [lh, lm] = lunch.split(':').map(Number);
-  const lunchMin =
-    Number.isFinite(lh) && Number.isFinite(lm) ? lh * 60 + lm - DAY_START_MIN : null;
+  const target = firstPouchTarget(state);
+  const live = state.status !== 'archived';
 
   return (
     <motion.div
@@ -149,13 +160,14 @@ export default function FirstPouchChart() {
       <div className="tiny muted" style={{ marginBottom: 8 }}>First pouch of the day</div>
       {points.length === 0 ? (
         <p className="small faint" style={{ margin: 0 }}>
-          Nothing logged yet — this will track what time your first pouch lands
-          each day, and you'll watch it drift later as you hold out longer.
+          {live
+            ? "Nothing logged yet — this will track what time your first pouch lands each day, and you'll watch it drift later as you hold out longer."
+            : 'No pouches were logged in this attempt.'}
         </p>
       ) : (
         <Graph
           points={points}
-          lunchMin={lunchMin}
+          target={target}
           totalDays={state.plan.totalDays}
           startDate={state.plan.startDate}
           quitDate={state.plan.quitDate}

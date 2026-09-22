@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Clock, CircleCheck } from 'lucide-react';
+import { Clock, CircleCheck, Scale } from 'lucide-react';
 
 function fmtCountdown(ms) {
   const total = Math.max(0, Math.ceil(ms / 1000));
@@ -19,6 +19,9 @@ function fmtTime(d) {
 export default function PacingCard({ pacing }) {
   const { used, cap, slots, nextSlot, unlocked, now } = pacing;
   const spent = used >= cap;
+  // Over the cap is amber, not a check mark — and it's absorbed: the streak
+  // breaks, nothing else changes.
+  const over = used > cap;
 
   return (
     <motion.div
@@ -29,13 +32,20 @@ export default function PacingCard({ pacing }) {
     >
       <div className="spread">
         <div className="row" style={{ gap: 12 }}>
-          {spent ? (
+          {over ? (
+            <Scale size={22} color="var(--amber)" />
+          ) : spent ? (
             <CircleCheck size={22} color="var(--green)" />
           ) : (
             <Clock size={22} color={unlocked ? 'var(--green)' : 'var(--accent-bright)'} />
           )}
           <div>
-            {spent ? (
+            {over ? (
+              <>
+                <div style={{ fontWeight: 600, color: 'var(--amber)' }}>Over today’s cap — tomorrow doesn’t change.</div>
+                <div className="small muted">Craving? Hit SOS below — ride it out.</div>
+              </>
+            ) : spent ? (
               <>
                 <div style={{ fontWeight: 600 }}>Budget spent for today</div>
                 <div className="small muted">Craving? Hit SOS below — ride it out.</div>

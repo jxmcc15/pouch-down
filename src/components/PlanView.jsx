@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { ShoppingCart, Scale, Timer, HeartHandshake } from 'lucide-react';
-import { dateForDayNumber, dayNumberFor, todayKey } from '../store.js';
+import { dateForDayNumber, dayNumberFor, asOfDay, isLogged } from '../store.js';
 import { useApp } from '../state.jsx';
 
 function fmtDate(dateStr) {
@@ -25,22 +25,39 @@ const RULES = [
   },
 ];
 
+// How many of a stage's days (through `lastN`) have a log. Silence is never
+// success, so an ended stage says how much of it was actually logged.
+function loggedInStage(state, s, lastN) {
+  const end = Math.min(s.days[1], lastN);
+  let logged = 0;
+  for (let n = s.days[0]; n <= end; n++) if (isLogged(state, dateForDayNumber(state, n))) logged++;
+  return { logged, of: Math.max(0, end - s.days[0] + 1) };
+}
+
 export default function PlanView() {
   const { state } = useApp();
   const { plan } = state;
-  const todayN = dayNumberFor(state, todayKey());
+  // Today for a live attempt; for a past one, the last day it can be judged.
+  const asOfN = dayNumberFor(state, asOfDay(state));
+  const ended = state.status === 'archived';
   const spring = { type: 'spring', damping: 24, stiffness: 180 };
 
   return (
     <div>
       <h2 style={{ fontSize: 20, margin: '4px 0 2px' }}>The taper</h2>
       <p className="small muted" style={{ margin: '0 0 16px' }}>
-        Count first, then strength. Meals stay protected — floaters get cut.
+        Count first, then strength. Meals stay protected — extra pouches between meals get cut first.
       </p>
 
       {plan.stages.map((s, i) => {
-        const active = todayN >= s.days[0] && todayN <= s.days[1];
-        const done = todayN > s.days[1];
+        // A past attempt has no "now": the stage it stopped in reads "ended",
+        // unless it ran to that stage's last day, which makes it simply past.
+        const within = asOfN >= s.days[0] && asOfN <= s.days[1];
+        const active = !ended && within;
+        const stoppedHere = ended && within && asOfN < s.days[1];
+        const past = asOfN > s.days[1] || (ended && within && !stoppedHere);
+        const notReached = ended && asOfN < s.days[0];
+        const count = past || stoppedHere ? loggedInStage(state, s, asOfN) : null;
         return (
           <motion.div
             key={s.id}
@@ -49,18 +66,24 @@ export default function PlanView() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ ...spring, delay: i * 0.05 }}
             style={{
-              borderColor: active ? 'var(--accent-bright)' : done ? 'rgba(52,211,153,0.3)' : 'var(--border)',
+              borderColor: active ? 'var(--accent-bright)' : 'var(--border)',
               boxShadow: active ? '0 0 24px var(--accent-glow)' : undefined,
-              opacity: done ? 0.75 : 1,
+              opacity: past || stoppedHere || notReached ? 0.75 : 1,
             }}
           >
             <div className="spread">
-              <div className="tiny" style={{ color: active ? 'var(--accent-bright)' : done ? 'var(--green)' : 'var(--fg-faint)' }}>
-                {done ? 'done · ' : active ? 'now · ' : ''}
-                days {s.days[0]}{s.days[1] !== s.days[0] ? `–${s.days[1]}` : ''} · {fmtDate(dateForDayNumber(state, s.days[0]))}
+              <div className="tiny" style={{ color: active ? 'var(--accent-bright)' : past || stoppedHere ? 'var(--fg-muted)' : 'var(--fg-faint)' }}>
+                {past ? 'past · ' : stoppedHere ? 'ended · ' : active ? 'now · ' : notReached ? 'not reached · ' : ''}
+                {s.days[1] !== s.days[0] ? `days ${s.days[0]}–${s.days[1]}` : `day ${s.days[0]}`} · {fmtDate(dateForDayNumber(state, s.days[0]))}
                 {s.days[1] !== s.days[0] ? `–${fmtDate(dateForDayNumber(state, s.days[1]))}` : ''}
+                {count && (
+                  <div style={{ marginTop: 3 }}>
+                    {count.logged} of {count.of} day{count.of === 1 ? '' : 's'} logged
+                    {stoppedHere ? ` · ended day ${asOfN}` : ''}
+                  </div>
+                )}
               </div>
-              <div className="num" style={{ fontWeight: 800, fontSize: 17 }}>
+              <div className="num" style={{ fontWeight: 800, fontSize: 17, whiteSpace: 'nowrap', flexShrink: 0 }}>
                 {s.pouchesPerDay === 0 ? 'zero' : `${s.pouchesPerDay}/day · ${s.mg}mg`}
               </div>
             </div>
@@ -83,7 +106,8 @@ export default function PlanView() {
                 ))}
               </div>
             )}
-            {s.shopBefore && (
+            {/* Shopping is only a to-do while the stage is still ahead. */}
+            {s.shopBefore && !ended && asOfN < s.days[0] && (
               <div
                 className="row small"
                 style={{
