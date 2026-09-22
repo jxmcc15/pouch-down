@@ -14,7 +14,8 @@ settings + plan + append-only events. Attempt 1 is migrated in, archived and
 read-only. James sets up attempt 2 himself in-app; planned Day 1 is **Tue
 2026-09-22** (setup refuses past dates), which puts the first cut on Wed 10/7
 and quit day on Sun 12/20. History of the build: `docs/superpowers/` (spec,
-plan, session prompts, and the build log in `reports/`).
+plan, session prompts, and the build log in `reports/`). Released to the
+phone 2026-09-21 (merge `23e2f3e`).
 
 Rules (they outlive the build):
 

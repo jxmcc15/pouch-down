@@ -755,3 +755,67 @@ question is done and committed; only paperwork and the ship remain.
 - The C2 script lives in the old session's scratchpad
   (`/private/tmp/claude-501/-Users-jxm-Projects-pouch-down/c5f78fc1-93c2-4509-98a7-1eec9d06ab5a/scratchpad/c2-realdata.mjs`).
   If /tmp was cleared, rewrite it from the Task C2 text. Never commit it.
+
+### Release — Attempt 2 shipped (Mon 2026-09-21, late evening)
+
+**Merge:** `23e2f3e`, `feat/attempt-2` → `main` with `--no-ff`. The merge tree
+is byte-identical to the branch tip `c94e973`. Local `main` equalled
+`origin/main` at the last successful deploy (`0cd6db2`) before the merge, so
+nothing was overtaken. The manifest's identity (id, start_url, scope) is
+unchanged from the last deploy; only its description changed, so the
+installed PWA keeps its identity and its data.
+
+**Pre-push gate, on the merged `main`:** `npm test` 277 passed / 1 skipped ·
+lint at the 2 baseline warnings · build clean · math harness passed ·
+lockfile in sync with `package.json` (CI runs `npm ci`) · local Node 24 vs
+CI Node 22, same lockfile · `npm run e2e` 5/5 walks, 1,002 checks, 0 failures, 0 console errors (migration 180 · setup 157 · backfill 192 · awards 92 · recovery 381), run on the merge commit itself · outside first-boot review
+via GPT-5.6 Sol: no blockers, one call. Premise correction accepted: `src/` never imports
+`virtual:pwa-register`, so the registration is a bare `register()` with no reload on
+takeover; the phone runs v1 for one more launch and v2 boots on the launch after,
+migrating any interim v1 logs then. Six non-blocking findings go to follow-ups: run the
+migration output through `wellFormed` before the first save; `saveError` does not gate
+logging (the non-dismissible toast is the mitigation, and the root is ~300 KB against a
+~5 MB quota); a one-launch blank window while Pages swaps the tree (relaunch fixes it,
+nothing written); `LEGACY_TZ` is New York by decision; a stale well-formed v2 root would
+hide v1 (never deployed); no committed test renders the Front door on the real blob (the
+local C2 dry run covers it). Rejected: two simultaneous first boots or v1 logging after
+the snapshot (one document, partitioned storage); id collisions (needs the same
+millisecond); `setItem` read-back (generic WebKit, same as v1).
+
+**Push, authorized by James in this session** ("get this pushed whenever it
+is safe"): `git push origin main` at 9:50 PM CT (`0cd6db2..23e2f3e`); deploy run
+35680915800 watched with `gh run watch`, green in 45 s (`npm ci`, build, upload,
+deploy-pages) on the unchanged workflow. Live verification after the deploy: the live `index.html` references exactly the local build's hashed
+bundle and stylesheet, the live manifest carries the new description, the live `sw.js`
+precaches the new bundle, and `smoke-live.mjs` (scratchpad only; synthetic v1 in a
+private headless profile, America/Chicago, clock pinned) passed 30/30 on the live URL
+with 0 console errors: Front door on first load, v2 written once, service worker
+registered and controlling after reload with scope `/pouch-down/`, Attempt 1 listed and
+read-only with no unlock overlay, Exit, v1 byte-identical, one attempt with no key, a
+second reload migrates nothing.
+
+**Phone:** checklist handed to James at 9:53 PM CT; awaiting his report.
+
+### Next spec — kickoff (draft; not built)
+
+Attempt 2 starts Tue 2026-09-22, and attempt 1 cracked at the first cut, not
+at the start. So the next build is the net, and it has dates. **By Sun
+2026-09-27: Firebase sync + push reminders.** Sync must solve two writers
+(today is last-writer-wins, same as v1; the iPhone PWA is one context, and
+Firebase makes it two) and should give the store functions a `now`
+parameter so `pouch-ingest` stops pinning `Date`. Reminders are real push,
+not in-app: meal check-ins, the missed-day nudge, the stage flip. **By Sun
+2026-10-04, before the first cut on Wed 2026-10-07: off-track detection.**
+Two signals: missed days (the backfill prompt already knows them; this is
+the reach-out side) and counts that are too good to be true, such as a day
+logged far under the cap during the baseline hold or a long run with no
+resisted events, which get a warm "is this right?" rather than a badge.
+Both must respect the rules that outlived the build: silence is never
+success, no guilt mechanics, history is append-only, nothing James-specific
+is hardcoded. **Before Sun 2026-12-20: the post-quit "still free" check-in**,
+which must make quit day loggable as zero, keep slips and backfill working
+after quit day, make `day-zero` earnable, and base "since quit day" on logs.
+Small follow-ups ride along: one `isLive(state)` helper, a de-duplicated
+share → clipboard → file path, and a recovery dump that can tell blocked
+storage from absent. Spec first (brainstorming, then writing-plans), then a
+session prompt shaped like C's.

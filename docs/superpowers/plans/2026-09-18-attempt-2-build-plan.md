@@ -1120,8 +1120,8 @@ Dispatch independent review agents (use the `requesting-code-review` skill) over
 
 ### Task C5: ship
 
-- [ ] All checks + all E2E green. Merge `feat/attempt-2` → `main` locally with `--no-ff`. **Do not push.**
-- [ ] Hand James the phone checklist: push → wait for deploy → reopen twice → Front door appears → Attempt 1 opens, looks right → Settings → Download full backup (v2) → AirDrop → start setup.
+- [x] All checks + all E2E green. Merge `feat/attempt-2` → `main` locally with `--no-ff`. **Do not push.** ✅ merged `23e2f3e` 2026-09-21; pushed 9:50 PM CT on James's explicit go in-session ("get this pushed whenever it is safe"); deploy run 35680915800 green; live smoke 30/30.
+- [x] Hand James the phone checklist: push → wait for deploy → reopen twice → Front door appears → Attempt 1 opens, looks right → Settings → Download full backup (v2) → AirDrop → start setup. ✅ handed over 2026-09-21 9:53 PM CT
 - ~~If anything in C1–C3 is red at 3 PM: cut scope in this order — AI price help, Trophy case polish, Settings→Attempts — never the migration, scoring, or setup flow. Awards are derived, so shipping their UI Tuesday loses nothing.~~ **Retired 2026-09-21:** James chose no cuts; the quality bar is the gate, not the clock.
 
 ### Session C exit gate (C1–C4) — passed Mon 2026-09-21
