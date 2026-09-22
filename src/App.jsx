@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 import { Sparkles, Settings, TriangleAlert } from 'lucide-react';
 import { AppStateProvider, useApp } from './state.jsx';
-import { dayKeyFor, todayKey } from './store.js';
+import { todayKey } from './store.js';
+import { dayKeyOf } from './time.js';
 import Aurora from './components/Aurora.jsx';
 import BottomNav from './components/BottomNav.jsx';
 import TodayView from './components/TodayView.jsx';
@@ -23,21 +24,23 @@ const VIEWS = { today: TodayView, calendar: CalendarView, stats: StatsView, plan
 // iOS Shortcut bridge: ?checkin=hours:7.4,workout:1,quality:4,score:82
 // (all fields optional). Appends one shortcut check-in for today, then strips
 // the param from the URL. Coexists with ?static; re-opens are idempotent.
-function CheckinDeepLink() {
+export function CheckinDeepLink() {
   const { state, api } = useApp();
   useEffect(() => {
-    if (!state) return; // no active attempt yet — nothing to stamp a check-in onto
     const params = new URLSearchParams(window.location.search);
     const raw = params.get('checkin');
     if (raw == null) return;
-    const strip = () => {
-      params.delete('checkin');
-      const qs = params.toString();
-      window.history.replaceState(null, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
-    };
+    // Strip first, whatever happens next: a param left in the URL would be
+    // replayed by a later reload as a check-in for the wrong morning.
+    params.delete('checkin');
+    const qs = params.toString();
+    window.history.replaceState(null, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
+    if (!state) return; // no active attempt — nothing to record into, so the link is dropped
+    // The day each check-in was stamped with, not its timestamp re-read in
+    // today's zone — after a trip, those can disagree and let a duplicate in.
     const today = todayKey();
     const already = state.events.some(
-      (e) => e.type === 'checkin' && e.source === 'shortcut' && dayKeyFor(e.ts) === today
+      (e) => e.type === 'checkin' && e.source === 'shortcut' && dayKeyOf(e) === today
     );
     if (!already) {
       const data = {};
@@ -52,7 +55,6 @@ function CheckinDeepLink() {
       }
       if (Object.keys(data).length) api.logCheckin({ ...data, source: 'shortcut' });
     }
-    strip();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return null;
 }
@@ -106,7 +108,7 @@ function SaveErrorToast() {
 // The boot router. Nothing below the `state` guard may assume an attempt
 // exists: unreadable storage gets the recovery screen, a first run goes
 // straight into setup, and an empty-handed return visit gets the Front door.
-function AppContent() {
+export function AppContent() {
   const { root, state, readOnly, problem } = useApp();
   const [tab, setTab] = useState('today');
   const [sheet, setSheet] = useState(null); // null | 'coach' | 'settings' | 'trophies'
@@ -156,14 +158,18 @@ function AppContent() {
             <span style={{ fontWeight: 700, letterSpacing: '-0.02em' }}>Pouch Down</span>
           </div>
           <div className="row" style={{ gap: 4 }}>
-            <motion.button
-              whileTap={{ scale: 0.92 }}
-              onClick={() => setSheet('coach')}
-              aria-label="AI coach"
-              style={{ width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-bright)' }}
-            >
-              <Sparkles size={21} />
-            </motion.button>
+            {/* Hidden in the viewer, like SOS and the check-in: the coach talks
+                about today, and a past attempt has no today. */}
+            {!readOnly && (
+              <motion.button
+                whileTap={{ scale: 0.92 }}
+                onClick={() => setSheet('coach')}
+                aria-label="AI coach"
+                style={{ width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-bright)' }}
+              >
+                <Sparkles size={21} />
+              </motion.button>
+            )}
             <motion.button
               whileTap={{ scale: 0.92 }}
               onClick={() => setSheet('settings')}
@@ -196,7 +202,7 @@ function AppContent() {
       <BottomNav tab={tab} onChange={setTab} />
 
       <AnimatePresence>
-        {sheet === 'coach' && (
+        {sheet === 'coach' && !readOnly && (
           <CoachSheet
             key="coach"
             onClose={() => setSheet(null)}

@@ -1,9 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { loadRoot, saveRoot, freshRoot, attemptById, updateAttempt, startAttempt, archiveActive } from './root.js';
+import { loadRoot, saveRoot, attemptById, updateAttempt, startAttempt, archiveActive } from './root.js';
 import { makeEvent, pouchCtxForNow, todayKey, isLogged, dayNumberFor } from './store.js';
-
-// Mood tags may only *complete* the just-made log — same spirit as undo.
-const TAG_WINDOW_MS = 15000;
+import { UNDO_WINDOW_MS, TAG_WINDOW_MS, isJustLogged } from './justLogged.js';
 
 const SAVE_ERROR = "Couldn't save to this phone. Keep the app open — it retries on your next change.";
 
@@ -85,26 +83,33 @@ export function AppStateProvider({ children }) {
         if (!valid) return null;
         const ev = { ...makeEvent('backfill'), day, count, streak };
         // Only an unlogged, in-plan day may be filled — a day already logged (pouch/
-        // resisted/backfill) or before the plan starts is a no-op here too, even though
-        // the UI only offers eligible days; the id is still returned (see comment above).
-        onActive((a) => (isLogged(a, day) || dayNumberFor(a, day) < 1 ? a : { ...a, events: [...a.events, ev] }));
+        // resisted/backfill), before the plan starts, or after its last day is a
+        // no-op here too, even though the UI only offers eligible days; the id is
+        // still returned (see comment above).
+        onActive((a) => {
+          const n = dayNumberFor(a, day);
+          return isLogged(a, day) || n < 1 || n > a.plan.totalDays ? a : { ...a, events: [...a.events, ev] };
+        });
         return ev.id;
       },
       // The one sanctioned mutation besides undo: completing the just-made log
-      // with a mood tag. Only the most recent event, only a pouch, only ≤15s old.
+      // with a mood tag. Only the most recent event, only a pouch, only ≤15s old
+      // (and not stamped in the future — a clock set back makes the age a lie).
       tagEvent(id, trigger) {
         onActive((a) => {
           const last = a.events[a.events.length - 1];
           if (!last || last.id !== id || last.type !== 'pouch') return a;
-          if (Date.now() - new Date(last.ts).getTime() > TAG_WINDOW_MS) return a;
+          if (!isJustLogged(last, TAG_WINDOW_MS)) return a;
           return { ...a, events: [...a.events.slice(0, -1), { ...last, trigger }] };
         });
       },
-      // The only deletion: undo of the just-logged event (the most recent one).
+      // The only deletion: undo of the just-logged event — the most recent one,
+      // still inside the undo window. The window is checked here, not trusted to
+      // the toast's timer, which iOS pauses while the phone is locked.
       undoEvent(id) {
         onActive((a) => {
           const last = a.events[a.events.length - 1];
-          return last && last.id === id ? { ...a, events: a.events.slice(0, -1) } : a;
+          return last && last.id === id && isJustLogged(last, UNDO_WINDOW_MS) ? { ...a, events: a.events.slice(0, -1) } : a;
         });
       },
       dismissCheckinToday() { onActive((a) => ({ ...a, checkinDismissedFor: todayKey() })); },
@@ -120,7 +125,9 @@ export function AppStateProvider({ children }) {
       exitViewing() { setApp((cur) => (cur.viewingId === null ? cur : { ...cur, viewingId: null })); },
       // Recovery screen only: abandon unreadable storage and begin clean. A no-op
       // unless storage really is unreadable — it must never wipe readable data.
-      startFresh() { setApp((cur) => (cur.problem ? { root: freshRoot(), problem: null, viewingId: null } : cur)); },
+      // `root` comes from freshStartRoot(): attempt 1 rebuilt from v1 when it
+      // can be, else an empty root marked legacyV1:'unread'. Never a bare reset.
+      startFresh(root) { setApp((cur) => (cur.problem && root ? { root, problem: null, viewingId: null } : cur)); },
     };
   }, []);
 
