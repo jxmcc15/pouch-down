@@ -24,12 +24,22 @@ const clamp = (n) => Math.min(MAX_COUNT, Math.max(0, Math.round(n)));
 // then gets out of the way. It never judges the answer.
 export default function BackfillPrompt() {
   const { state, readOnly, api } = useApp();
+  const [opened, setOpened] = useState(null); // this open's days (≤3, newest first), fixed once
   const [skipped, setSkipped] = useState([]); // hidden for this session only; still nolog
   const [asked, setAsked] = useState(null); // which day the stepper below belongs to
   const [count, setCount] = useState(0);
   const [fork, setFork] = useState(false); // showing the keep/break choice
 
-  const days = state && !readOnly ? missedDays(state) : [];
+  // "On open, up to the 3 most recent" — so the list is taken once, when the
+  // prompt opens, and never topped up: answering or skipping one never pulls a
+  // 4th day in behind it. The next open (a fresh mount) takes a fresh list.
+  // Done during render, like the reset below, so the first paint already has it.
+  const live = state && !readOnly;
+  if (live && opened === null) setOpened(missedDays(state).map((d) => d.day));
+
+  // Each listed day is asked only while it is still eligible right now —
+  // answered days are logged, and a day can age out of the window mid-open.
+  const days = live && opened ? missedDays(state, { max: Infinity }).filter((d) => opened.includes(d.day)) : [];
   const target = days.find((d) => !skipped.includes(d.day)) || null;
 
   // Each day starts fresh at its own cap, on the question step. Done during
@@ -53,7 +63,7 @@ export default function BackfillPrompt() {
     // Over cap breaks the streak whatever was chosen — the store derives it
     // that way too, so don't write an event that disagrees with itself.
     api.logBackfill({ day: target.day, count: n, streak: n > target.cap ? 'break' : choice });
-    setFork(false); // the day drops out of missedDays; the next one asks itself
+    setFork(false); // the day is logged now, so it drops out; the next listed one asks itself
   };
 
   const save = () => {
