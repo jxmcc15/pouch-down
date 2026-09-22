@@ -246,12 +246,34 @@ const toEpochMs = (now) => {
   return ms;
 };
 
-// An iPhone-sized context. Pass `now` and the page's clock starts THERE and
-// keeps ticking in real time: Date.now(), timers, animation frames and
-// performance.now() all run normally, just from the pinned moment — so a walk
-// written for "Day 1 is 2026-09-21" still works next month. Leave `now` out
-// and the page gets the real clock. Any other option (reducedMotion, locale…)
-// passes straight through to browser.newContext.
+// Date-only clock pin: `Date` (constructor, Date(), Date.now()) runs from the
+// pinned moment and keeps ticking in real time, across reloads too, because the
+// offset is fixed when the context is made. Timers, animation frames and
+// performance.now() are left REAL on purpose: Playwright's clock.install()
+// fakes performance.now() and carries it across reloads while
+// document.timeline restarts at 0, so every Framer exit animation after a
+// reload started ~20 s late (tabs didn't swap, sheets didn't close).
+const pinDateScript = (offsetMs) => `
+(() => {
+  const RealDate = Date;
+  const OFFSET = ${offsetMs};
+  function PinnedDate(...args) {
+    if (!new.target) return new RealDate(RealDate.now() + OFFSET).toString();
+    return args.length ? new RealDate(...args) : new RealDate(RealDate.now() + OFFSET);
+  }
+  PinnedDate.prototype = RealDate.prototype; // instanceof Date keeps working
+  PinnedDate.now = () => RealDate.now() + OFFSET;
+  PinnedDate.parse = RealDate.parse;
+  PinnedDate.UTC = RealDate.UTC;
+  globalThis.Date = PinnedDate;
+})();
+`;
+
+// An iPhone-sized context. Pass `now` and the page's Date starts THERE and
+// keeps ticking in real time — so a walk written for "Day 1 is 2026-09-21"
+// still works next month. Leave `now` out and the page gets the real clock.
+// Any other option (reducedMotion, locale…) passes straight through to
+// browser.newContext.
 export async function phoneContext(browser, { tz = 'America/Chicago', now, ...options } = {}) {
   const ctx = await browser.newContext({
     viewport: { width: 390, height: 844 },
@@ -263,9 +285,8 @@ export async function phoneContext(browser, { tz = 'America/Chicago', now, ...op
     ...options,
   });
   ctx.setDefaultTimeout(12000); // a stalled click reports in 12s, not 30
-  // install() before any page exists: every page then boots on the fake clock,
-  // and Playwright carries the elapsed time across reloads rather than resetting.
-  if (now !== undefined) await ctx.clock.install({ time: toEpochMs(now) });
+  // Before any page exists, so every page boots on the pinned Date.
+  if (now !== undefined) await ctx.addInitScript(pinDateScript(toEpochMs(now) - Date.now()));
   await ctx.addInitScript(PHONE_STUBS);
   return ctx;
 }
@@ -317,10 +338,10 @@ export function createRecorder(out) {
     },
     // Numbered so the folder reads in the order the walk happened. A failed
     // screenshot is logged, not thrown — it shouldn't cost the rest of the walk.
-    async snap(page, name) {
+    async snap(page, name, { fullPage = false } = {}) {
       const file = join(out, `${String(++shot).padStart(2, '0')}-${name}.png`);
       try {
-        await page.screenshot({ path: file });
+        await page.screenshot({ path: file, fullPage });
         return file;
       } catch (e) {
         log(`  (screenshot ${name} failed: ${String(e.message ?? e).split('\n')[0]})`);
@@ -341,6 +362,9 @@ export function watchErrors(page, label = '') {
 
 // Clicks the first visible element whose text matches. Returns false rather
 // than throwing so the walk can report where it stalled instead of dying.
+// Matching is on textContent, where child elements run together with no space
+// ("Attempt 1Jul 8 – Sep 5"), so /attempt 1\b/ misses; match a prefix, or
+// use page.getByRole(…, { name }) for rows built from several elements.
 export async function clickText(page, rx, { timeout = 4000 } = {}) {
   const loc = page.locator('button, [role="button"], a').filter({ hasText: rx });
   try {
@@ -357,12 +381,13 @@ export const bodyText = (page) => page.evaluate(() => document.body.innerText);
 
 // The rollback key must come out exactly as it went in. Pass `expected: null`
 // when the walk started without v1 — then it must still be absent.
-export async function v1Unchanged(page, expected, rec) {
+export async function v1Unchanged(page, expected, rec, label = '') {
   const after = await readStorage(page, 'pouch-down-v1');
+  const tag = label ? ` (${label})` : '';
   if (expected === null) {
-    return rec.check('pouch-down-v1 still absent', after === null, after === null ? '' : 'KEY WAS WRITTEN');
+    return rec.check(`pouch-down-v1 still absent${tag}`, after === null, after === null ? '' : 'KEY WAS WRITTEN');
   }
-  return rec.check('pouch-down-v1 byte-identical', after === expected,
+  return rec.check(`pouch-down-v1 byte-identical${tag}`, after === expected,
     after === null ? 'KEY WAS DELETED' : after === expected ? '' : 'KEY WAS REWRITTEN');
 }
 
