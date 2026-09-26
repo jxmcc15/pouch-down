@@ -1,0 +1,33 @@
+# pouch-coach — the Cloudflare Worker that holds the Claude API key for the
+# Pouch Down app. See README.md in this folder for the steps to deploy it.
+#
+# THERE ARE NO SECRETS IN THIS FILE, AND THERE NEVER WILL BE. This file is
+# committed to a public repository. The API key and the device tokens are
+# uploaded separately with `npx wrangler secret put ...`, which stores them in
+# Cloudflare and never writes them to disk here. Anything under [vars] below is
+# public, so only public things go there.
+
+name = "pouch-coach"
+main = "src/worker.js"
+compatibility_date = "2026-09-01"
+
+# Gives the Worker its own https://pouch-coach.<your-subdomain>.workers.dev
+# address, which is the URL the app talks to.
+workers_dev = true
+
+[vars]
+# Which websites' pages are allowed to call this Worker, comma-separated, each
+# one written scheme + host (+ port) and nothing else. This is not a secret —
+# it's the same information anyone can read out of the app's network tab.
+# Add "http://localhost:5173" here temporarily if you ever need to test the
+# proxy from `npm run dev` on your laptop.
+ALLOWED_ORIGINS = "https://jxmcc15.github.io"
+
+# Log lines from `npx wrangler tail` are also kept in the Cloudflare dashboard
+# for a short while, which makes a problem easier to look at after the fact.
+[observability]
+enabled = true
+
+# Set as secrets, never here:
+#   ANTHROPIC_API_KEY  the Claude API key, from console.anthropic.com
+#   DEVICE_TOKENS      comma-separated list of device tokens you generate
