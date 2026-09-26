@@ -27,6 +27,7 @@ const WALKS = [
   { name: 'walk-backfill', port: 4333 },
   { name: 'walk-awards', port: 4335 },
   { name: 'walk-recovery', port: 4337 },
+  { name: 'walk-fixday', port: 4339 },
 ];
 
 const argv = process.argv.slice(2);

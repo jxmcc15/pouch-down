@@ -49,8 +49,8 @@ Rules (they outlive the build):
   is the only real kill switch. The key belongs on a dedicated Console
   workspace with a monthly spend cap — that cap is what bounds the loss if a
   key ever leaks, since nothing in the app can stop misuse through the API.
-- **E2E**: `npm run e2e` runs the five Playwright walks in `scripts/e2e/`
-  (migration, setup, backfill, awards, recovery) on one private build.
+- **E2E**: `npm run e2e` runs the six Playwright walks in `scripts/e2e/`
+  (migration, setup, backfill, awards, recovery, fixday) on one private build.
   `lib.mjs` is the harness: clocks are pinned (`phoneContext({ now })`),
   seeding runs once per context (a re-seed on reload makes reload checks lie),
   and nothing builds into the repo's `dist/`. Synthetic data only.
