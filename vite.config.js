@@ -2,6 +2,54 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
+// What the page is allowed to load, and who it is allowed to talk to. Every
+// directive is a closed door with the app's own origin as the only key; the one
+// exception is the coach, which posts straight to the Claude API from the
+// browser. `worker-src` keeps `blob:` because that is how the service worker
+// and Workbox get themselves registered.
+//
+// The list is a whitelist, so the interesting part is what is absent:
+// no `'unsafe-inline'`, no `'unsafe-eval'`, nothing to embed us in a frame,
+// no third-party font host — Inter is served from our own files (src/fonts/).
+// If a directive ever needs widening, widen it here and in csp.test.js, which
+// pins this string on purpose.
+const POLICY = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self'",
+  "font-src 'self'",
+  "img-src 'self'",
+  "connect-src 'self' https://api.anthropic.com",
+  "worker-src 'self' blob:",
+  "manifest-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "form-action 'self'",
+  "frame-src 'none'",
+].join('; ')
+
+// GitHub Pages serves static files and can't set response headers, so the
+// policy rides in the HTML as a <meta http-equiv>, at the top of <head> —
+// ahead of every element that could fetch something.
+//
+// `apply: 'build'` is load-bearing: dev-mode hot reload needs inline script and
+// a websocket back to Vite, both of which this policy forbids. Dev stays
+// unpoliced; the thing that ships is the thing that's locked down.
+const csp = () => ({
+  name: 'csp',
+  apply: 'build',
+  transformIndexHtml(html) {
+    const tag = `<meta http-equiv="Content-Security-Policy" content="${POLICY}" />`
+    // Straight after the charset declaration when there is one — that one has
+    // to stay inside the document's first 1024 bytes or the parser guesses the
+    // encoding — otherwise straight after <head>. Either way the policy is in
+    // place before the first element that could fetch anything.
+    const anchor = /<meta\s+charset=[^>]*>/i.test(html) ? /<meta\s+charset=[^>]*>/i : /<head[^>]*>/i
+    if (!anchor.test(html)) throw new Error('csp: no <head> to inject the policy into')
+    return html.replace(anchor, (found) => `${found}\n    ${tag}`)
+  },
+})
+
 // Served from https://<user>.github.io/pouch-down/
 export default defineConfig({
   base: '/pouch-down/',
@@ -11,6 +59,7 @@ export default defineConfig({
   test: { environment: 'node', include: ['src/**/*.test.js'], env: { TZ: 'America/Chicago' } },
   plugins: [
     react(),
+    csp(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg', 'apple-touch-icon.png'],
@@ -31,18 +80,10 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // Inter lives in src/fonts/ now, so the woff2 files are ordinary build
+        // assets and this one line precaches them. There is no runtimeCaching
+        // block any more: nothing the app loads comes from another origin.
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'google-fonts',
-              expiration: { maxEntries: 12, maxAgeSeconds: 60 * 60 * 24 * 365 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-        ],
       },
     }),
   ],
