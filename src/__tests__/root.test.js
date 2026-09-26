@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { KEY_V1, KEY_V2, DEFAULT_SETTINGS, freshRoot, loadRoot, saveRoot, startAttempt, archiveActive, updateAttempt, attemptById, lastSettings, preserveCorruptV2, freshStartRoot } from '../root.js';
+import { KEY_V1, KEY_V2, DEFAULT_SETTINGS, freshRoot, loadRoot, saveRoot, startAttempt, archiveActive, updateAttempt, attemptById, lastSettings, preserveCorruptV2, freshStartRoot, rawStorageDump, redactSecrets } from '../root.js';
+import { generatePlan } from '../planGenerator.js';
 import { getKey, setKey, clearKey } from '../sessionKey.js';
 import { todayKey } from '../store.js';
 
@@ -106,6 +107,117 @@ describe('loadRoot on a structurally broken v2', () => {
     const { root, problem } = loadRoot(mem({ [KEY_V2]: JSON.stringify({ ...good(), attempts: [bare] }) }), NOW);
     expect(problem).toBeNull();
     expect(root.attempts[0]).toMatchObject({ celebratedStages: [], celebratedAwards: [] });
+  });
+});
+
+// The outer shape check let a root through that no screen could render: a null
+// `mealTimes` (every slot time is read off it), a stage with no `slots`, an
+// event whose `trigger` is an object (React throws on an object child). Each one
+// threw on the first render, landed on the crash screen, and reloaded straight
+// back into the same crash — the recovery screen was never offered. They are
+// unreadable stored data like any other: recovery, and nothing written.
+describe('loadRoot on a v2 that parses and passes the outer shape but cannot render', () => {
+  const slot = () => ({ id: 'after-lunch', label: 'After lunch', anchor: 'lunch', offsetMin: 15 });
+  const stage = () => ({ id: 1, name: 'Baseline hold', days: [1, 10], pouchesPerDay: 8, mg: 9, tagline: 'Lock the ceiling at 8.', slots: [slot()] });
+  const fullPlan = () => ({ generator: 'gen-1', startDate: '2026-09-21', quitDate: '2026-12-19', totalDays: 90, baseline: { pouchesPerDay: 9, mg: 9 }, stages: [stage()] });
+  const renderable = () => ({
+    ...attemptShape('a1'),
+    plan: fullPlan(),
+    events: [
+      { id: 'e1', ts: '2026-09-21T17:42:07.123Z', tzOffsetMin: -300, day: '2026-09-21', type: 'pouch', trigger: 'coffee', ctx: { nth: 1, cap: 8, slotId: 'after-lunch', slotLabel: 'After lunch', slotAt: '2026-09-21T17:45:00.000Z', firstSlotAt: '2026-09-21T13:15:00.000Z' } },
+      { id: 'e2', ts: '2026-09-21T23:10:00.000Z', tzOffsetMin: -300, day: '2026-09-21', type: 'checkin', trigger: null, sleepHours: 7.5, sleepQuality: 4, workout: true, source: 'manual' },
+      { id: 'e3', ts: '2026-09-22T14:00:00.000Z', tzOffsetMin: -300, day: '2026-09-22', type: 'backfill', trigger: null, count: 5, streak: 'keep' },
+    ],
+  });
+  const rootWith = (attempt) => ({ version: 2, device: { apiKey: '' }, activeAttemptId: null, attempts: [attempt] });
+
+  const breakIt = {
+    // settings: every slot time is looked up on mealTimes, and PlanView puts
+    // the three meal times straight into the DOM.
+    'settings.mealTimes is null': (a) => { a.settings = { ...a.settings, mealTimes: null }; },
+    'settings.mealTimes is a string': (a) => { a.settings = { ...a.settings, mealTimes: '08:00' }; },
+    'a meal time is an object': (a) => { a.settings = { ...a.settings, mealTimes: { ...a.settings.mealTimes, lunch: { h: 12 } } }; },
+    // plan: capForDay reads baseline, stageForDay reads days[0]/days[1],
+    // pacingForNow maps stage.slots, PlanView renders name/tagline/mg.
+    'plan has no baseline': (a) => { delete a.plan.baseline; },
+    'plan baseline is null': (a) => { a.plan.baseline = null; },
+    'baseline pouchesPerDay is not a number': (a) => { a.plan.baseline.pouchesPerDay = '9'; },
+    'plan totalDays is not a number': (a) => { a.plan.totalDays = '90'; },
+    'plan startDate is not a string': (a) => { a.plan.startDate = 20260921; },
+    'plan quitDate is missing': (a) => { delete a.plan.quitDate; },
+    'a stage is null': (a) => { a.plan.stages[0] = null; },
+    'a stage has no slots': (a) => { delete a.plan.stages[0].slots; },
+    'a stage slots is not a list': (a) => { a.plan.stages[0].slots = {}; },
+    'a stage has no days': (a) => { delete a.plan.stages[0].days; },
+    'a stage days has one bound': (a) => { a.plan.stages[0].days = [1]; },
+    'a stage pouchesPerDay is not a number': (a) => { a.plan.stages[0].pouchesPerDay = null; },
+    'a stage name is an object': (a) => { a.plan.stages[0].name = { n: 'Baseline' }; },
+    'a slot is null': (a) => { a.plan.stages[0].slots[0] = null; },
+    'a slot has no label': (a) => { delete a.plan.stages[0].slots[0].label; },
+    'a slot label is an object': (a) => { a.plan.stages[0].slots[0].label = { text: 'After lunch' }; },
+    // events: the timeline puts trigger, ctx.slotLabel and the check-in numbers
+    // straight into the DOM, and every reader parses ts / buckets by day.
+    'an event type is not a string': (a) => { a.events[0].type = { t: 'pouch' }; },
+    'an event has no ts': (a) => { delete a.events[0].ts; },
+    'an event ts is a number': (a) => { a.events[0].ts = 1758480127123; },
+    'an event trigger is an object': (a) => { a.events[0].trigger = { name: 'coffee' }; },
+    'an event trigger is a list': (a) => { a.events[0].trigger = ['coffee']; },
+    'an event day is an object': (a) => { a.events[0].day = { d: '2026-09-21' }; },
+    'an event tzOffsetMin is a string': (a) => { a.events[0].tzOffsetMin = '-300'; },
+    'an event ctx is a list': (a) => { a.events[0].ctx = ['nope']; },
+    'an event ctx slotLabel is an object': (a) => { a.events[0].ctx.slotLabel = { l: 'After lunch' }; },
+    'a check-in sleepQuality is an object': (a) => { a.events[1].sleepQuality = { q: 4 }; },
+    'a backfill count is an object': (a) => { a.events[2].count = { n: 5 }; },
+  };
+
+  for (const [label, wreck] of Object.entries(breakIt)) {
+    it(`${label} → corrupt, nothing written, v1 untouched`, () => {
+      const attempt = renderable();
+      wreck(attempt);
+      const s = mem({ [KEY_V1]: V1, [KEY_V2]: JSON.stringify(rootWith(attempt)) });
+      const writes = [];
+      const raw = s.getItem(KEY_V2);
+      const guarded = { getItem: (k) => s.getItem(k), setItem: (k, v) => writes.push([k, v]) };
+      expect(loadRoot(guarded, NOW).problem).toBe('corrupt');
+      expect(writes).toEqual([]);
+      expect(s.getItem(KEY_V1)).toBe(V1);
+      expect(s.getItem(KEY_V2)).toBe(raw);
+    });
+  }
+
+  it('the renderable root itself still loads cleanly', () => {
+    expect(loadRoot(mem({ [KEY_V2]: JSON.stringify(rootWith(renderable())) }), NOW).problem).toBeNull();
+  });
+
+  it('a plan with no stages yet is still legitimate', () => {
+    const a = renderable();
+    a.plan.stages = [];
+    expect(loadRoot(mem({ [KEY_V2]: JSON.stringify(rootWith(a)) }), NOW).problem).toBeNull();
+  });
+
+  it('an attempt with no events yet is still legitimate', () => {
+    const a = renderable();
+    a.events = [];
+    expect(loadRoot(mem({ [KEY_V2]: JSON.stringify(rootWith(a)) }), NOW).problem).toBeNull();
+  });
+
+  // The deeper check also tightens what the ingest pipeline accepts, so the one
+  // root that must never be rejected is the real one: attempt 1, migrated out
+  // of v1 with its frozen legacy plan, saved, and read back.
+  it('attempt 1 migrated out of v1 survives a save/load round trip', () => {
+    const s = mem({ [KEY_V1]: V1 });
+    const first = loadRoot(s, NOW);
+    expect(first.problem).toBeNull();
+    saveRoot(first.root, s);
+    expect(loadRoot(s, NOW).problem).toBeNull();
+    expect(s.getItem(KEY_V1)).toBe(V1);
+  });
+
+  // The other legitimate shape: a plan the generator built for a new attempt.
+  it('a freshly generated plan and settings load cleanly', () => {
+    const genPlan = generatePlan({ pouchesPerDay: 9, mg: 9, strengths: [9, 6, 3], lengthDays: 90, startDate: '2026-09-22', mealTimes: DEFAULT_SETTINGS.mealTimes, sleepTime: DEFAULT_SETTINGS.sleepTime });
+    const root = startAttempt(freshRoot(), { plan: genPlan, settings: DEFAULT_SETTINGS, now: NOW });
+    expect(loadRoot(mem({ [KEY_V2]: JSON.stringify(root) }), NOW).problem).toBeNull();
   });
 });
 
@@ -288,6 +400,33 @@ describe('preserveCorruptV2', () => {
     const s = mem({ [KEY_V2]: '{corrupt' });
     expect(preserveCorruptV2(s, NOW)).toBe(preserveCorruptV2(s, NOW));
     expect([...s._m.keys()].filter((k) => k.includes('-corrupt-'))).toHaveLength(1);
+  });
+});
+
+// Every stored blob is redacted on the way in, but the dump has fields of its
+// own that never went through that pass. The redactor runs once more over the
+// finished text, so a key-shaped string is masked whichever field held it.
+describe('rawStorageDump redacts the whole finished dump, not only the stored blobs', () => {
+  const noStorage = { getItem: () => null };
+
+  it('a key-shaped string in a field that is not a stored blob is masked too', () => {
+    const out = rawStorageDump(noStorage, `${NOW}-sk-ant-leaked-from-somewhere-else`);
+    expect(out).not.toContain('sk-ant-leaked');
+    expect(out).toContain('sk-ant-REDACTED');
+  });
+
+  it('the finished dump is already its own redacted form', () => {
+    const s = mem({ [KEY_V1]: V1, [KEY_V2]: '{"note":"sk-ant-pasted-here"' });
+    const out = rawStorageDump(s, NOW);
+    expect(redactSecrets(out)).toBe(out);
+    expect(out).not.toContain('sk-ant-TEST');
+    expect(out).not.toContain('sk-ant-pasted');
+  });
+
+  it('it still only reads: the redaction pass writes nothing and cannot throw', () => {
+    const s = { getItem: () => { throw new Error('SecurityError'); }, setItem: () => { throw new Error('must not write'); } };
+    expect(() => rawStorageDump(s, NOW)).not.toThrow();
+    expect(JSON.parse(rawStorageDump(s, NOW)).keys).toEqual({ [KEY_V2]: null, [KEY_V1]: null });
   });
 });
 

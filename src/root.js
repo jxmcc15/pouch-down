@@ -8,6 +8,12 @@ import { setKey } from './sessionKey.js';
 export const KEY_V1 = 'pouch-down-v1';
 export const KEY_V2 = 'pouch-down-v2';
 
+// Set when a render crashes, read on the next boot. sessionStorage on purpose:
+// per-tab, and it survives a reload — exactly the span of "the reload landed
+// back on the same crash". It says nothing about the log, so losing it costs
+// one extra reload and nothing else.
+export const BOOT_CRASH_KEY = 'pouch-down-boot-crash';
+
 export const DEFAULT_SETTINGS = {
   mealTimes: { breakfast: '08:00', lunch: '12:30', dinner: '18:30' },
   costPerTin: 5,
@@ -21,15 +27,67 @@ export function freshRoot() {
 }
 
 const isObj = (x) => !!x && typeof x === 'object' && !Array.isArray(x);
+const isStr = (x) => typeof x === 'string';
+const isNum = (x) => typeof x === 'number' && Number.isFinite(x);
+
+// Safe to hand React as a child. An object or an array thrown into the DOM
+// ("Objects are not valid as a React child") throws on the first render, and
+// that crash comes back on every reload. null/undefined render as nothing,
+// which the screens already expect from optional fields.
+const renderable = (x) => x == null || isStr(x) || isNum(x) || typeof x === 'boolean';
+
+// A slot: PlanView renders `slot.label.toLowerCase()`, and store.js reads
+// `anchor` to pick a meal time (or `time` for a fixed slot).
+const wellFormedSlot = (s) => isObj(s) && isStr(s.label) && renderable(s.id) && renderable(s.anchor) && renderable(s.time);
+
+// A stage: stageForDay indexes `days[0]`/`days[1]`, capForDay returns
+// `pouchesPerDay`, pacingForNow maps `slots`, PlanView prints name/tagline/mg.
+const wellFormedStage = (s) => isObj(s)
+  && Array.isArray(s.days) && isNum(s.days[0]) && isNum(s.days[1])
+  && isNum(s.pouchesPerDay) && isNum(s.mg)
+  && renderable(s.name) && renderable(s.tagline)
+  && Array.isArray(s.slots) && s.slots.every(wellFormedSlot);
+
+// A plan: every day number is derived from `startDate`, asOfDay compares
+// `quitDate`, capForDay reaches into `baseline` before day 1, and `totalDays`
+// bounds every loop over the plan. An empty `stages` is legitimate.
+const wellFormedPlan = (p) => isObj(p)
+  && isStr(p.startDate) && isStr(p.quitDate) && isNum(p.totalDays)
+  && isObj(p.baseline) && isNum(p.baseline.pouchesPerDay) && isNum(p.baseline.mg)
+  && Array.isArray(p.stages) && p.stages.every(wellFormedStage);
+
+// Settings: every slot time is looked up on `mealTimes` by anchor name, and
+// PlanView puts the three meal times straight into the DOM.
+const wellFormedSettings = (s) => isObj(s) && isObj(s.mealTimes) && Object.values(s.mealTimes).every(renderable);
+
+// An event: `type` routes the timeline, `ts` is parsed by every reader, `day`
+// buckets it. Beyond those, the timeline prints whatever field the type carries
+// — trigger, ctx.slotLabel, a check-in's numbers, a backfill's count — so every
+// value on the event has to be renderable. `ctx` is the one nested object.
+function wellFormedEvent(e) {
+  if (!isObj(e) || !isStr(e.type) || !isStr(e.ts)) return false;
+  if (e.day !== undefined && !isStr(e.day)) return false;
+  if (e.tzOffsetMin != null && !isNum(e.tzOffsetMin)) return false;
+  for (const [k, v] of Object.entries(e)) {
+    if (k === 'ctx') {
+      if (v != null && !(isObj(v) && Object.values(v).every(renderable))) return false;
+    } else if (!renderable(v)) return false;
+  }
+  return true;
+}
 
 // Enough shape that the app can render it without crashing. A v2 that parses
 // but fails this is unreadable stored data like any other — the recovery
-// screen, never a white screen. Only what every screen leans on is checked.
+// screen, never a white screen. Only what the screens actually lean on is
+// checked, and it is checked all the way down: an outer-shape-only pass let
+// through roots (null `mealTimes`, a stage with no `slots`, an object
+// `trigger`) that threw on the first render and reloaded back into the same
+// crash, with no recovery screen and no way out but clearing storage by hand.
 // Exported for the ingest pipeline, which validates a backup before filing it.
 export function wellFormed(root) {
   return isObj(root) && root.version === 2 && Array.isArray(root.attempts)
-    && root.attempts.every((a) => isObj(a) && isObj(a.plan) && Array.isArray(a.plan.stages) && isObj(a.settings)
-      && Array.isArray(a.events) && a.events.every(isObj));
+    && root.attempts.every((a) => isObj(a) && wellFormedPlan(a.plan) && wellFormedSettings(a.settings)
+      && Array.isArray(a.events) && a.events.every(wellFormedEvent));
 }
 
 // In memory only — loadRoot never writes. Repairs the things that can't hide
@@ -158,6 +216,11 @@ export function redactSecrets(raw) {
 // Exactly what is in storage, as strings — no parsing, no repair, nothing
 // dropped but the key. Either key may be missing (null), which is itself worth
 // knowing. Reading is all this does to storage.
+//
+// Each blob is redacted on the way in, and the finished text is redacted once
+// more on the way out. The second pass is what covers the dump's own fields —
+// anything not read out of storage never met the first one — so a key-shaped
+// string is masked whichever field it ended up in.
 export function rawStorageDump(storage, now = new Date().toISOString()) {
   const read = (key) => {
     try {
@@ -166,7 +229,7 @@ export function rawStorageDump(storage, now = new Date().toISOString()) {
       return null; // storage can be blocked outright; say so rather than crash
     }
   };
-  return JSON.stringify(
+  return redactSecrets(JSON.stringify(
     {
       app: 'pouch-down',
       format: 'raw-storage',
@@ -176,7 +239,7 @@ export function rawStorageDump(storage, now = new Date().toISOString()) {
     },
     null,
     2
-  );
+  ));
 }
 
 // "Download what's stored", shared by the recovery screen and the crash screen
@@ -211,6 +274,69 @@ export async function sendRawStorage(name) {
   link.click();
   URL.revokeObjectURL(url);
   return 'downloaded';
+}
+
+// ---- the boot-crash marker --------------------------------------------------
+// A crash that comes out of the stored data itself crashed again the instant the
+// user reloaded: same boot, same render, same crash screen, and the only way out
+// was clearing storage by hand. The marker is how the second boot in a row knows
+// to offer the way out instead of the same dead end.
+//
+// Every touch is guarded twice, like sessionKey.js: reaching the property can
+// throw on its own (Safari with site data blocked) and so can each method
+// (private mode, full quota). The crash screen's whole job is to work when
+// nothing else does, so a blocked storage costs the marker, never the screen.
+function sessionStore() {
+  try {
+    return globalThis.sessionStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function bootCrashSeen() {
+  try {
+    return !!sessionStore()?.getItem(BOOT_CRASH_KEY);
+  } catch {
+    return false;
+  }
+}
+
+export function markBootCrash() {
+  try {
+    sessionStore()?.setItem(BOOT_CRASH_KEY, '1');
+  } catch { /* no marker this time: one more reload, not a crash */ }
+}
+
+export function clearBootCrash() {
+  try {
+    sessionStore()?.removeItem(BOOT_CRASH_KEY);
+  } catch { /* nothing to do about it, and nothing depends on it */ }
+}
+
+// The recovery path taken from the crash screen once reloading has stopped
+// helping: copy what's stored aside, rebuild from v1, save that. The same order
+// and the same functions the recovery screen uses — v1 is the rollback, so it is
+// read and never written and never deleted.
+//
+// → 'started' (the caller reloads) · 'rescue-failed' (the copy aside didn't
+// land, so nothing has been written: ask again with force once the user holds a
+// download) · 'failed' (storage would not give or take anything).
+export function startFreshFromCrash(storage, now = new Date().toISOString(), { force = false } = {}) {
+  if (preserveCorruptV2(storage, now) === false && !force) return 'rescue-failed';
+  let root;
+  try {
+    root = freshStartRoot(storage, now);
+  } catch {
+    return 'failed';
+  }
+  try {
+    saveRoot(root, storage ?? localStorage);
+  } catch {
+    return 'failed';
+  }
+  clearBootCrash();
+  return 'started';
 }
 
 export const attemptById = (root, id) => root.attempts.find((a) => a.id === id) ?? null;
