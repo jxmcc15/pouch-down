@@ -998,3 +998,54 @@ with James's go-ahead. It keeps the same four request fields, the same model and
 `max_tokens: 400`, and will verify the total body against the Worker's 16 KB cap with the
 7-day log at its largest. The stale comment at the top of `coach.js` belongs to this
 session, not that one.
+
+### Session D, part 2 — the coach proxy (Thu 2026-09-25, late evening)
+
+Built after James rejected per-session key entry, which was the right call: a
+security fix that costs a daily tax gets switched off eventually. So the key
+leaves the phone instead of moving around on it. Both halves are **built,
+tested and dormant** — nothing changes for the user until `COACH_PROXY` in
+`src/proxyConfig.js` is filled in and a rebuild ships.
+
+- **`workers/coach-proxy/`** — a Cloudflare Worker holding `ANTHROPIC_API_KEY`
+  as a secret. Every decision is a pure function in `guard.js`: an origin
+  allowlist, a timing-safe device-token compare (fixed-work, no early exit), and
+  clamps that bound what a stolen token could cost — one model, `max_tokens`
+  400, a 16 KB body, 40 messages, and no body field outside the four the app
+  sends. `README.md` is James's deploy script, written for a beginner: he runs
+  `wrangler login`, `secret put` and `deploy` himself, and no secret is ever in
+  the repo, in a chat, or in Claude's hands.
+- **The app** picks its transport at call time (`proxyConfig.js`): the proxy
+  when one is configured *and* this device holds a token, otherwise the
+  session-key path, which keeps working and stays the labelled fallback. The
+  request body is byte-identical either way. The CSP imports the same constant,
+  so `connect-src` widens only when a proxy is set; with it empty the shipped
+  policy is unchanged, asserted by diffing the built HTML.
+
+**Gates:** `npm test` **485 passed / 1 skipped** (the Worker's 32 guard tests
+are now inside `npm test` — `vite.config.js`'s `test.include` gained
+`workers/**`, because a gate nobody remembers to run is not a gate) · lint at
+the 2 baseline warnings · build clean · math harness passed · **`npm run e2e`
+5/5, 1,002 checks, 0 console errors**.
+
+**Known, deliberate, and worth reading before the deploy:**
+1. **Filling `COACH_PROXY` in without shipping a rebuild is a silent CSP block.**
+   The policy is baked into the HTML at build time. Change the constant and
+   deploy together.
+2. **Every upstream error becomes a 502**, so the app cannot tell a rate limit
+   from an overload and Anthropic's `retry-after` is lost. Kept generic because
+   passing the upstream body through leaks account and request detail, and
+   because 401 is already spent on the device token. The clean fix is a
+   machine-readable `error.code` — **the first follow-up when the proxy goes
+   live.**
+3. **A request with no `Origin` header is refused.** Fine for a browser; a
+   Shortcut or a future native client would have to send one.
+4. **`max_tokens` 400 is exactly what the coach sends**, so there is no
+   headroom: bumping the coach means bumping `LIMITS.maxTokens` in the same
+   change or the proxy refuses it.
+5. **`api.anthropic.com` stays in `connect-src`** while the key fallback exists.
+   Dropping the fallback and the host is a deliberate second step, once the
+   Worker has proven itself.
+6. **The device token is invisible to backups** because the dump reads the two
+   root keys by name. True by accident rather than design — decide it on purpose
+   if a future dump ever enumerates storage.

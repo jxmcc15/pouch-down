@@ -112,7 +112,19 @@ status colors. All motion is Framer springs; `MotionConfig reducedMotion="user"`
   root that comes out of storage hands an inherited key to the session and
   comes back with `device.apiKey: ''`, so no path persists one again. NEVER
   commit a key, never move it into the repo or build, and never reintroduce a
-  saved key field. The agreed end state is a proxy holding the key server-side.
+  saved key field.
+- **The coach proxy** (`workers/coach-proxy/`, built 2026-09-25, **dormant until
+  `COACH_PROXY` in `src/proxyConfig.js` is filled in and deployed**): a
+  Cloudflare Worker James owns holds the key as a secret, so the phone holds
+  nothing and nothing is entered per session. The app picks its transport at
+  call time — proxy when one is configured *and* this device holds a token,
+  otherwise the session-key path, which stays the labelled fallback. The device
+  token is a rotatable preference, not a secret of value; the Worker's clamps
+  (one model, `max_tokens` 400, 16 KB body, no field outside the four the app
+  sends) are what bound its misuse. `proxyConfig.js` is the single source of
+  truth and `vite.config.js` imports it for the CSP, so **filling the constant
+  in without deploying a rebuild gives a silent CSP block** — change and ship
+  together.
 - **The ingest pipeline trusts sources, not filenames** (2026-09-25): the
   iCloud `PouchDown` folder by location, and `~/Downloads` only for files whose
   macOS quarantine attribute says they arrived by AirDrop. A backup is validated
