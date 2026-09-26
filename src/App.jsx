@@ -10,6 +10,7 @@ import StatsView from './components/StatsView.jsx';
 import PlanView from './components/PlanView.jsx';
 import CoachSheet from './components/CoachSheet.jsx';
 import SettingsSheet from './components/SettingsSheet.jsx';
+import FixDaySheet from './components/FixDaySheet.jsx';
 import { TrophyCaseSheet } from './components/awards/TrophyCase.jsx';
 import AwardUnlock from './components/awards/AwardUnlock.jsx';
 import ReadOnlyBanner from './components/ReadOnlyBanner.jsx';
@@ -77,7 +78,7 @@ function SaveErrorToast() {
 export function AppContent() {
   const { root, state, readOnly, problem } = useApp();
   const [tab, setTab] = useState('today');
-  const [sheet, setSheet] = useState(null); // null | 'coach' | 'settings' | 'trophies'
+  const [sheet, setSheet] = useState(null); // null | 'coach' | 'settings' | 'trophies' | { kind: 'fix', day }
   const [setupOpen, setSetupOpen] = useState(false);
 
   // Setup is a route, not a sheet. Leaving it open would skip the Front door
@@ -159,6 +160,7 @@ export function AppContent() {
               <View
                 openSettings={() => setSheet('settings')}
                 openTrophies={() => setSheet('trophies')}
+                onFixDay={(day) => setSheet({ kind: 'fix', day })}
               />
             </motion.div>
           </AnimatePresence>
@@ -177,6 +179,9 @@ export function AppContent() {
         )}
         {sheet === 'settings' && (
           <SettingsSheet key="settings" onClose={() => setSheet(null)} />
+        )}
+        {sheet?.kind === 'fix' && !readOnly && (
+          <FixDaySheet key="fix" day={sheet.day} onClose={() => setSheet(null)} />
         )}
         {sheet === 'trophies' && (
           <TrophyCaseSheet key="trophies" onClose={() => setSheet(null)} />

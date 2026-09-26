@@ -6,11 +6,13 @@ import { capForDay } from '../plan.js';
 
 const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
+const fmtShort = (iso) =>
+  new Date(`${iso}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 const fmtLong = (iso) =>
   new Date(`${iso}T12:00:00`).toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
 
-export default function CalendarView() {
-  const { state } = useApp();
+export default function CalendarView({ onFixDay = null }) {
+  const { state, readOnly } = useApp();
   // Today for a live attempt; for a past one, the last day it can be judged,
   // so days after it ended show only their planned cap.
   const today = asOfDay(state);
@@ -23,6 +25,8 @@ export default function CalendarView() {
     const d = dateForDayNumber(state, n);
     cells.push({ n, d, status: statusForDay(state, d), used: pouchesForDay(state, d), cap: capForDay(state.plan, n), key: d });
   }
+
+  const tappable = (c) => !c.blank && !!onFixDay && !readOnly && c.status !== 'future' && c.status !== 'pre';
 
   const greens = cells.filter((c) => c.status === 'green').length;
   const yellows = cells.filter((c) => c.status === 'yellow').length;
@@ -42,11 +46,15 @@ export default function CalendarView() {
       </div>
 
       <div className="cal-grid">
-        {cells.map((c, i) =>
-          c.blank ? (
+        {cells.map((c, i) => {
+          const Cell = tappable(c) ? motion.button : motion.div;
+          return c.blank ? (
             <div key={c.key} />
           ) : (
-            <motion.div
+            // A past or today cell opens "Fix this day"; future/pre cells and
+            // the read-only viewer stay plain.
+            <Cell
+              {...(tappable(c) ? { type: 'button', onClick: () => onFixDay(c.d) } : {})}
               key={c.key}
               className={[
                 'cal-cell',
@@ -59,7 +67,7 @@ export default function CalendarView() {
               initial={{ opacity: 0, scale: 0.7 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ type: 'spring', damping: 20, stiffness: 260, delay: i * 0.015 }}
-              aria-label={c.status === 'nolog' ? `Day ${c.n}: no log` : `Day ${c.n}: ${c.used} of ${c.cap} pouches`}
+              aria-label={`Day ${c.n}, ${fmtShort(c.d)}: ${c.status === 'nolog' ? 'no log' : `${c.used} of ${c.cap} pouches`}`}
             >
               {c.n === totalDays ? (
                 <Star size={16} color="var(--accent-bright)" fill="var(--accent-bright)" />
@@ -69,9 +77,9 @@ export default function CalendarView() {
               <span className="cap num">
                 {c.status === 'nolog' ? 'no log' : (c.d <= today ? `${c.used}/${c.cap}` : c.cap)}
               </span>
-            </motion.div>
-          )
-        )}
+            </Cell>
+          );
+        })}
       </div>
 
       <div className="row" style={{ marginTop: 18, justifyContent: 'center', gap: '8px 18px', flexWrap: 'wrap' }}>

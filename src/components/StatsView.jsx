@@ -198,7 +198,7 @@ function TriggerBars({ state }) {
   );
 }
 
-export default function StatsView({ openSettings }) {
+export default function StatsView({ openSettings, onFixDay }) {
   const { state } = useApp();
   const { totalDays, baseline, quitDate } = state.plan;
   const money = moneyStats(state);
@@ -301,7 +301,7 @@ export default function StatsView({ openSettings }) {
         <TriggerBars state={state} />
       </motion.div>
 
-      <HistoryTimeline />
+      <HistoryTimeline onFixDay={onFixDay} />
     </div>
   );
 }

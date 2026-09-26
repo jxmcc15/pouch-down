@@ -1,12 +1,13 @@
 import { Fragment, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShieldCheck, Moon, ChevronDown } from 'lucide-react';
+import { ShieldCheck, Moon, ChevronDown, PencilLine } from 'lucide-react';
 import { useApp } from '../state.jsx';
 import {
   eventsForDay, pouchesForDay, asOfDay, dayNumberFor, dateForDayNumber,
-  statusForDay, classifyPouch, fmtTime, triggersFor,
+  statusForDay, fmtTime, triggersFor, reasonFor, timedPouchesForDay,
 } from '../store.js';
 import { capForDay } from '../plan.js';
+import { pouchVerdict } from '../pouchVerdict.js';
 
 const spring = { type: 'spring', damping: 24, stiffness: 180 };
 // A gentle tween reads smoother than a spring on animated `height: auto`.
@@ -31,18 +32,6 @@ function dotStyle(status) {
   if (status === 'green') return { ...base, background: 'var(--green)' };
   if (status === 'nolog') return { ...base, background: 'var(--nolog)' };
   return { ...base, background: 'var(--fg-faint)' }; // pre/future — shouldn't reach a rendered section
-}
-
-// Verdict text + color for a pouch, always via classifyPouch (which reconstructs
-// missing ctx for pre-stamp events). Colors: on-time green, early/over-cap amber,
-// baseline muted — over-cap stays plain amber, never alarm-red.
-function pouchVerdict(state, ev) {
-  const v = classifyPouch(state, ev);
-  if (v.bucket === 'early') return { text: `${Math.abs(v.deltaMin ?? 0)}m early`, color: 'var(--amber)' };
-  if (v.bucket === 'over-cap') return { text: 'over cap', color: 'var(--amber)' };
-  if (v.bucket === 'baseline') return { text: 'baseline', color: 'var(--fg-muted)' };
-  // ≥1 matches TodayLog: a 0-minute delta reads "on time", not "on time +0m"
-  return { text: v.deltaMin >= 1 ? `on time +${v.deltaMin}m` : 'on time', color: 'var(--green)' };
 }
 
 // A single "a · b · c" line whose segments wrap gracefully at 375px.
@@ -74,6 +63,7 @@ function EventRow({ state, ev }) {
       ...(ev.ctx?.slotLabel ? [<span key="s" className="muted">{ev.ctx.slotLabel}</span>] : []),
       <span key="v" style={{ color: v.color, fontWeight: 500 }}>{v.text}</span>,
       ...(triggersFor(state, ev).length ? [<span key="g" className="faint">{triggersFor(state, ev).join(', ')}</span>] : []),
+      ...(reasonFor(state, ev)?.note ? [<span key="n" className="faint" style={{ fontStyle: 'italic' }}>{reasonFor(state, ev).note}</span>] : []),
     ];
   } else if (ev.type === 'resisted') {
     icon = <ShieldCheck size={15} color="var(--green)" />;
@@ -99,8 +89,18 @@ function EventRow({ state, ev }) {
       <span key="c" className="muted">{c} {c === 1 ? 'pouch' : 'pouches'} backfilled</span>,
       <span key="n" className="faint">no timing</span>,
     ];
+  } else if (ev.type === 'correction') {
+    // The real total entered later. Timed count shown beside it so the log
+    // stays readable: what was tapped vs. what it really was.
+    const c = Number.isInteger(ev.count) && ev.count >= 0 ? ev.count : 0;
+    icon = <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--fg-muted)', display: 'block', opacity: 0.85 }} />;
+    segs = [
+      <span key="c" className="muted num">Corrected total: {c} ({timedPouchesForDay(state, ev.day)} timed)</span>,
+    ];
   } else {
-    return null; // unknown event type — never crash
+    // `reason` events never render as lines — they show on their pouch via
+    // triggersFor + the note. Unknown types: never crash.
+    return null;
   }
 
   return (
@@ -125,8 +125,8 @@ function DayRows({ state, dateStr }) {
   );
 }
 
-export default function HistoryTimeline() {
-  const { state } = useApp();
+export default function HistoryTimeline({ onFixDay = null }) {
+  const { state, readOnly } = useApp();
   // Live attempt: today. Past attempt: the last day it can be judged, so the
   // list stops where the attempt did.
   const live = state.status !== 'archived';
@@ -182,13 +182,13 @@ export default function HistoryTimeline() {
         const status = statusForDay(state, dateStr);
         const open = isOpen(n);
         return (
-          <div key={n} style={{ borderTop: idx === 0 ? 'none' : '1px solid var(--border)' }}>
+          <div key={n} className="row" style={{ borderTop: idx === 0 ? 'none' : '1px solid var(--border)', gap: 0, flexWrap: 'wrap', alignItems: 'stretch' }}>
             <button
               type="button"
               onClick={() => toggle(n)}
               className="spread"
               aria-expanded={open}
-              style={{ width: '100%', background: 'transparent', padding: '12px 2px', minHeight: 44, textAlign: 'left' }}
+              style={{ flex: 1, minWidth: 0, background: 'transparent', padding: '12px 2px', minHeight: 44, textAlign: 'left' }}
             >
               <span className="row" style={{ gap: 9, minWidth: 0 }}>
                 <span style={dotStyle(status)} />
@@ -211,6 +211,17 @@ export default function HistoryTimeline() {
                 <ChevronDown size={16} color="var(--fg-faint)" />
               </motion.span>
             </button>
+            {/* Fix this day — hidden in the viewer; pre/future never reach a section. */}
+            {onFixDay && !readOnly && status !== 'future' && status !== 'pre' && (
+              <button
+                type="button"
+                onClick={() => onFixDay(dateStr)}
+                aria-label={`Fix Day ${n}, ${fmtShort(dateStr)}`}
+                style={{ width: 44, minHeight: 44, flexShrink: 0, background: 'transparent', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <PencilLine size={15} color="var(--fg-faint)" />
+              </button>
+            )}
 
             <AnimatePresence initial={false}>
               {open && (
@@ -220,7 +231,7 @@ export default function HistoryTimeline() {
                   animate={{ height: 'auto', opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }}
                   transition={collapse}
-                  style={{ overflow: 'hidden' }}
+                  style={{ overflow: 'hidden', flexBasis: '100%' }}
                 >
                   <DayRows state={state} dateStr={dateStr} />
                 </motion.div>
