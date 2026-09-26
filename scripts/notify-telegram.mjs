@@ -83,6 +83,30 @@ export function failedText(failed, home = os.homedir()) {
   ].join('\n');
 }
 
+// A refusal is deliberate — the file was left alone on purpose — so it reads
+// differently from a failure, and it never shows James the internal reason code.
+// It has to be said out loud: a file he thinks he sent, silently ignored, would
+// look exactly like a file that arrived.
+const WHY_REFUSED = {
+  'untrusted-source': "it didn't arrive by AirDrop, and ~/Downloads is only trusted for AirDrop now. Send it from the phone with AirDrop, or save it to iCloud Drive → PouchDown",
+  'too-large': "it's far bigger than a backup should be, so it wasn't opened",
+  'future-export': 'its export time is in the future, which a real backup never is — check the phone\'s date',
+  'unreadable-root': "the app couldn't read what's inside it, so it wasn't filed",
+};
+const whyRefused = (reason) => WHY_REFUSED[reason] ?? 'it did not look like a backup from this app';
+
+export function refusedText(rejected, home = os.homedir()) {
+  if (rejected.length === 1) {
+    const [r] = rejected;
+    return `🚫 Pouch Down left ${friendlyPath(r.file, home)} where it is: ${whyRefused(r.reason)}. Nothing was filed and nothing was deleted.`;
+  }
+  return [
+    `🚫 Pouch Down left ${rejected.length} files where they are:`,
+    ...rejected.map((r) => `• ${friendlyPath(r.file, home)}: ${whyRefused(r.reason)}`),
+    'Nothing was filed and nothing was deleted.',
+  ].join('\n');
+}
+
 export const errorText = (err) =>
   `⚠️ The Pouch Down watcher hit an error and didn't file anything: ${redact(err?.message ?? err)}. Backups stay where they landed — run pouch-ingest in Terminal to see more.`;
 
@@ -94,6 +118,10 @@ export function planMessages(r, state = {}, { now = new Date(), nodePath = proce
   const told = new Set(state.failedNotified ?? []);
   const fresh = r.failed.filter((f) => !told.has(failKey(f)));
   if (fresh.length) out.push({ kind: 'failed', text: failedText(fresh, home), keys: fresh.map(failKey) });
+  // Refusals share the failure memory: same { file, reason } key, so the two can
+  // never shadow each other, and neither is repeated on every Downloads change.
+  const freshRefused = (r.rejected ?? []).filter((f) => !told.has(failKey(f)));
+  if (freshRefused.length) out.push({ kind: 'refused', text: refusedText(freshRefused, home), keys: freshRefused.map(failKey) });
   if (r.blocked.length && isDue(state.blockedSentAt, now)) out.push({ kind: 'blocked', text: blockedText(r.blocked, nodePath, home) });
   // While a folder is blocked a fresh backup may be sitting in it — don't ask for another.
   const stale = !r.newest || r.newest.stale;

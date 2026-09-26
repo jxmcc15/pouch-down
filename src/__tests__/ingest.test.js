@@ -12,7 +12,7 @@ const plan = generatePlan({ pouchesPerDay: 9, mg: 9, strengths: [6, 3], lengthDa
 const ev = (type, day, extra = {}) => ({ id: `${type}-${day}-${Math.random()}`, ts: `${day}T17:00:00.000Z`, tzOffsetMin: -300, day, type, trigger: null, ...extra });
 const a2 = { id: 'a2', status: 'active', createdAt: '2026-09-21T12:00:00Z', archivedAt: null, settings, plan, events: [...Array.from({ length: 8 }, () => ev('pouch', '2026-09-21')), ev('backfill', '2026-09-23', { count: 7, streak: 'keep' })], celebratedStages: [], celebratedAwards: [], checkinDismissedFor: null };
 const v2 = JSON.stringify({ app: 'pouch-down', format: 2, exportedAt: '2026-09-25T17:00:00.000Z', root: { version: 2, device: { apiKey: '' }, activeAttemptId: 'a2', attempts: [a2] } });
-const v1 = JSON.stringify({ app: 'pouch-down', exportedAt: '2026-09-19T02:01:37.910Z', plan: {}, state: { version: 1, settings: { ...settings, apiKey: '' }, events: [{ id: 'e1', ts: '2026-07-08T11:33:12.569Z', type: 'pouch', trigger: null }], celebratedStages: [], checkinDismissedFor: null } });
+const v1 = JSON.stringify({ app: 'pouch-down', exportedAt: '2026-09-19T02:14:52.406Z', plan: {}, state: { version: 1, settings: { ...settings, apiKey: '' }, events: [{ id: 'e1', ts: '2026-07-08T11:42:07.123Z', type: 'pouch', trigger: null }], celebratedStages: [], checkinDismissedFor: null } });
 
 describe('parseBackup', () => {
   it('reads a v2 backup', () => expect(parseBackup(v2)).toMatchObject({ format: 2, exportedAt: '2026-09-25T17:00:00.000Z', root: { activeAttemptId: 'a2' } }));
@@ -95,7 +95,10 @@ describe('scored as of the export, not the Mac clock', () => {
       const search = path.join(tmp, 'Downloads');
       fs.mkdirSync(search);
       fs.writeFileSync(path.join(search, 'pouch-down-backup-1.json'), JSON.stringify({ app: 'pouch-down', format: 2, exportedAt: '2026-09-29T03:00:00.000Z', root }));
-      const r = ingest({ backupDir: path.join(tmp, 'Pouch Down'), searchDirs: [search], now: new Date(), log: () => {} });
+      // The provenance the pipeline asks ~/Downloads for is injected here: a temp
+      // file has no extended attributes, and no test should ask macOS about one.
+      // What the pipeline trusts is covered in ingestTrust.test.js.
+      const r = ingest({ backupDir: path.join(tmp, 'Pouch Down'), searchDirs: [search], now: new Date(), log: () => {}, provenance: () => 'sharingd' });
       expect(r.newest).toMatchObject({ ageDays: 1, stale: false, streak: { current: 8, best: 8 } });
       expect(fs.readFileSync(r.liveLog.path, 'utf8')).toMatch(/\*\*Streak:\*\* current 8 · best 8/);
     } finally {

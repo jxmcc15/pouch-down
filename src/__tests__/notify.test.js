@@ -7,7 +7,7 @@ import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 import {
   fmtWhen, friendlyPath, isDue, inStaleWindow, planMessages, nextState, redact,
-  ingestedText, blockedText, staleText, failedText, errorText, sendTelegram, notify,
+  ingestedText, blockedText, staleText, failedText, refusedText, errorText, sendTelegram, notify,
 } from '../../scripts/notify-telegram.mjs';
 
 const HOME = '/Users/sam';
@@ -18,7 +18,7 @@ const at = (y, mo, d, h = 12, mi = 0) => new Date(y, mo - 1, d, h, mi);
 const iso = (...a) => at(...a).toISOString();
 
 const result = (over = {}) => ({
-  dryRun: false, ingested: [], duplicates: [], failed: [], blocked: [], waiting: [], readableDirs: 2,
+  dryRun: false, ingested: [], duplicates: [], rejected: [], failed: [], blocked: [], waiting: [], readableDirs: 2,
   newest: { file: 'x.json', exportedAt: iso(2026, 9, 25, 21, 5), ageDays: 0, stale: false, attemptId: 'a2', attemptStatus: 'active', streak: { current: 4, best: 6 } },
   liveLog: { path: '/vault/Live Log.md', changed: false },
   ...over,
@@ -146,6 +146,35 @@ describe('when to send', () => {
     expect(second).toHaveLength(1);
     expect(second[0].text).toContain('pouch-down-backup-3.json');
     expect(second[0].text).not.toContain('pouch-down-backup-2.json');
+  });
+
+  // A refusal is news. Staying quiet about one would make a file James thinks he
+  // sent look like a file that arrived — the same shape as scoring silence as success.
+  const refused = { file: `${HOME}/Downloads/pouch-down-backup-9.json`, reason: 'untrusted-source' };
+  it('a refused file is reported, in words that say what to do about it', () => {
+    const r = result({ rejected: [refused] });
+    expect(kinds(r)).toEqual(['refused']);
+    const [msg] = planMessages(r, {}, opts);
+    expect(msg.text).toContain('pouch-down-backup-9.json');
+    expect(msg.text).toContain('AirDrop');
+    expect(msg.text).not.toContain('untrusted-source'); // no jargon in a phone notification
+  });
+  it('every refusal reason has plain words', () => {
+    for (const reason of ['untrusted-source', 'too-large', 'future-export', 'unreadable-root']) {
+      const text = refusedText([{ ...refused, reason }], HOME);
+      expect(text).toContain('pouch-down-backup-9.json');
+      expect(text).not.toContain(reason);
+      expect(text.length).toBeGreaterThan(40);
+    }
+  });
+  it('a refusal is reported once, not on every Downloads change', () => {
+    const r = result({ rejected: [refused] });
+    const first = planMessages(r, {}, opts);
+    const state = nextState({}, { delivered: first, failedNow: [...r.failed, ...r.rejected], now: noon });
+    expect(kinds(r, state)).toEqual([]);
+  });
+  it('a filed backup and a refused file are both reported', () => {
+    expect(kinds(result({ ingested: [filed], rejected: [refused] }))).toEqual(['ingested', 'refused']);
   });
 });
 

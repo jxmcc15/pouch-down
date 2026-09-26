@@ -20,6 +20,27 @@ import { awardsFor } from './awards.js';
 export const STALE_DAYS = 3;
 const DAY_MS = 86400000;
 const TABLE_DAYS = 21;
+const SAFE_TEXT_MAX = 80;
+
+// In the vault, Markdown, code fences, table pipes, wikilinks and Templater tags
+// are live syntax — the note is read by Obsidian, not just by a human. A backup
+// is data, so every string that came out of one goes through here on its way
+// into the note, including the ones inside headings: it is rendered as words.
+// Trusted, by contrast: this file's own fixed text, and numbers the app derived
+// itself. One line, capped, so a long value can't run away with the layout.
+const NEUTRAL = { '`': "'", '~': '-', '<': '(', '>': ')', '|': '/', '[': '(', ']': ')' };
+export function safeText(value, max = SAFE_TEXT_MAX) {
+  if (value == null) return '';
+  const flat = String(value)
+    // Control characters, which a note has no use for. oxlint reads the
+    // eslint-style directive; matching them here is the point.
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[`~<>|[\]]/g, (c) => NEUTRAL[c]);
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}
 
 // → { format: 1 | 2, exportedAt, root }. Throws with a reason that never quotes
 // the file (JSON.parse's own message can echo its contents, so it's replaced).
@@ -84,8 +105,8 @@ const validBackfill = (e) => e.type === 'backfill' && Number.isInteger(e.count) 
 
 function sleepCell(c) {
   if (!c) return '—';
-  const hours = c.sleepHours != null ? `${c.sleepHours}h` : null;
-  const quality = c.sleepQuality != null ? `${c.sleepQuality}/5` : null;
+  const hours = c.sleepHours != null ? `${safeText(c.sleepHours)}h` : null;
+  const quality = c.sleepQuality != null ? `${safeText(c.sleepQuality)}/5` : null;
   if (hours && quality) return `${hours} (${quality})`;
   return hours ?? quality ?? '—';
 }
@@ -98,7 +119,7 @@ function dayRow(state, n, { today, exportDay }) {
   const isToday = state.status !== 'archived' && d === today;
   if (!isLogged(state, d)) {
     const status = d > exportDay ? 'not in backup' : isToday ? 'no log yet' : 'no log';
-    return `| ${n} | ${d} | ${cap} | — | — | — | — | — | — | ${status} |`;
+    return `| ${n} | ${safeText(d)} | ${safeText(cap)} | — | — | — | — | — | — | ${status} |`;
   }
   const evs = eventsForDay(state, d);
   let early = 0, over = 0, first = null;
@@ -113,7 +134,7 @@ function dayRow(state, n, { today, exportDay }) {
   const isOver = used > cap;
   let status = evs.some(validBackfill) ? (isOver ? 'backfilled, over' : 'backfilled') : isOver ? 'over' : 'on plan';
   if (isToday) status += ' so far';
-  return `| ${n} | ${d} | ${cap} | ${used} | ${early} | ${over} | ${first ? fmtTime(first) : '—'} | ${resistedForDay(state, d)} | ${sleepCell(checkinForDay(state, d))} | ${status} |`;
+  return `| ${n} | ${safeText(d)} | ${safeText(cap)} | ${used} | ${early} | ${over} | ${first ? safeText(fmtTime(first)) : '—'} | ${resistedForDay(state, d)} | ${sleepCell(checkinForDay(state, d))} | ${status} |`;
 }
 
 // Scored as of the export (call it inside atExport). The table alone runs on
@@ -124,17 +145,17 @@ function attemptSection(state, { exportDay, shownThrough }) {
   const archived = state.status === 'archived';
   const asOf = asOfDay(state);
   const n = dayNumberFor(state, asOf);
-  const lines = [`## Attempt ${state.id} — ${archived ? 'archived' : 'active'}`, ''];
+  const lines = [`## Attempt ${safeText(state.id)} — ${archived ? 'archived' : 'active'}`, ''];
 
   let where;
-  if (archived) where = `archived ${dayKeyFor(state.archivedAt)} · scored through ${asOf}`;
+  if (archived) where = `archived ${safeText(dayKeyFor(state.archivedAt))} · scored through ${safeText(asOf)}`;
   else if (n < 1) where = `starts in ${1 - n} day${n === 0 ? '' : 's'}`;
   else if (n > plan.totalDays) where = `${n - plan.totalDays} day${n - plan.totalDays === 1 ? '' : 's'} past quit day`;
   else {
     const s = stageForDay(plan, n);
-    where = `day ${n} of ${plan.totalDays} · stage ${s.id} of ${plan.stages.length}, ${s.name}: cap ${s.pouchesPerDay}${s.mg ? ` × ${s.mg}mg` : ''}`;
+    where = `day ${n} of ${plan.totalDays} · stage ${safeText(s.id)} of ${plan.stages.length}, ${safeText(s.name)}: cap ${safeText(s.pouchesPerDay)}${s.mg ? ` × ${safeText(s.mg)}mg` : ''}`;
   }
-  lines.push(`- **Plan:** ${plan.startDate} → ${plan.quitDate} (${plan.totalDays} days) · ${where}`);
+  lines.push(`- **Plan:** ${safeText(plan.startDate)} → ${safeText(plan.quitDate)} (${safeText(plan.totalDays)} days) · ${where}`);
 
   const st = streaks(state);
   lines.push(`- **Streak:** ${archived ? 'final' : 'current'} ${st.current} · best ${st.best}`);
@@ -145,7 +166,7 @@ function attemptSection(state, { exportDay, shownThrough }) {
   const earned = awardsFor(state).filter((a) => a.earned);
   // A celebrated award never un-earns; when the log no longer supports it, it
   // stays earned with no date (earnedOn null), so it's listed without one.
-  lines.push(`- **Awards earned:** ${earned.length ? earned.map((a) => (a.earnedOn ? `${a.title} (${a.earnedOn})` : a.title)).join(', ') : 'none yet'}`);
+  lines.push(`- **Awards earned:** ${earned.length ? earned.map((a) => (a.earnedOn ? `${a.title} (${safeText(a.earnedOn)})` : a.title)).join(', ') : 'none yet'}`);
 
   const disc = disciplineStats(state);
   lines.push(
@@ -157,7 +178,7 @@ function attemptSection(state, { exportDay, shownThrough }) {
   const triggers = {};
   for (const e of state.events) if (e.trigger) triggers[e.trigger] = (triggers[e.trigger] || 0) + 1;
   const top = Object.entries(triggers).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  lines.push(`- **Top triggers:** ${top.length ? top.map(([t, c]) => `${t} (${c})`).join(', ') : 'none tagged'}`);
+  lines.push(`- **Top triggers:** ${top.length ? top.map(([t, c]) => `${safeText(t)} (${c})`).join(', ') : 'none tagged'}`);
 
   const through = !archived && shownThrough > asOf ? shownThrough : asOf; // never short of the export day
   const last = Math.min(dayNumberFor(state, through), plan.totalDays);
@@ -201,13 +222,13 @@ export function renderLiveLog(root, { exportedAt, now = new Date() }) {
   if (isStale(exportedAt, now)) {
     lines.push(
       `> [!warning] This backup is ${backupAgeDays(exportedAt, now)} days old — AirDrop a fresh one from Pouch Down → Settings → Download full backup.`,
-      `> Days after ${exportDay} aren't in it, so they read "not in backup" and the streak below may read short.`,
+      `> Days after ${safeText(exportDay)} aren't in it, so they read "not in backup" and the streak below may read short.`,
       ''
     );
   }
   lines.push(`Data as of ${localDateStr(exported)} ${hm(exported)} (when the backup was exported). Regenerated by \`pouch-ingest\` on every run — edits here get overwritten.`, '');
 
-  const attempts = root.attempts.map((a) => `${a.id} (${a.status}, ${a.plan.startDate} → ${a.plan.quitDate})`);
+  const attempts = root.attempts.map((a) => `${safeText(a.id)} (${safeText(a.status)}, ${safeText(a.plan.startDate)} → ${safeText(a.plan.quitDate)})`);
   lines.push(`Attempts in this backup: ${attempts.length ? attempts.join(' · ') : 'none yet'}`, '');
 
   const state = liveAttempt(root);

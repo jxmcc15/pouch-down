@@ -8,6 +8,13 @@
 // (iCloud copies stay put), and writes $POUCH_BACKUP_DIR/Live Log.md from the
 // newest backup. It never deletes a file and never overwrites a different one.
 //
+// It trusts sources, not filenames. The iCloud folder is trusted by location;
+// ~/Downloads is shared with everything else on the Mac, so a file there is
+// trusted only if macOS says AirDrop put it there. A candidate also has to be a
+// plausible backup before it is filed: within the size cap, not dated ahead of
+// the clock, and a root the app itself would load. Refusals land in
+// `result.rejected` as { file, reason }; the file stays exactly where it is.
+//
 // Usage: pouch-ingest [--dry-run] [--notify]
 // Env:   POUCH_BACKUP_DIR   where backups + Live Log go (default: the vault's Pouch Down folder)
 //        POUCH_SEARCH_DIRS  colon-separated folders to pick backups up from
@@ -22,14 +29,19 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { parseBackup, renderLiveLog, liveAttempt, backupAgeDays, isStale, atExport } from '../src/ingest.js';
 import { streaks } from '../src/store.js';
+import { wellFormed } from '../src/root.js';
 import { planMessages, nextState, isDue, errorText, statePath, loadState, saveState, notify } from './notify-telegram.mjs';
 
 const BACKUP_NAME = /^pouch-down-backup-.*\.(json|txt)$/i;
 const ICLOUD_PLACEHOLDER = /^\.(pouch-down-backup-.*\.(json|txt))\.icloud$/i; // not downloaded to this Mac yet
 const BLOCKED_CODES = new Set(['EPERM', 'EACCES']);
+const AIRDROP_AGENT = 'sharingd'; // the macOS service that writes an AirDropped file
+const MAX_BYTES = 5 * 1024 * 1024; // a real backup is orders of magnitude smaller
+const FUTURE_SLACK_MS = 5 * 60 * 1000; // the Mac and the phone don't share a clock to the second
 
 export function config(env = process.env) {
   const home = os.homedir();
@@ -43,6 +55,29 @@ export function config(env = process.env) {
 
 // iCloud Drive copies are left in place: moving one would pull it off the phone too.
 const isICloud = (dir) => dir.includes('/Mobile Documents/');
+
+// Where macOS says a file came from. It records that in the file's
+// `com.apple.quarantine` extended attribute; the third `;`-separated field
+// names the agent that put the file there. null when the attribute is absent
+// (a file this Mac made itself) or when xattr can't be run at all.
+export function provenance(file) {
+  try {
+    const r = spawnSync('xattr', ['-p', 'com.apple.quarantine', file], { encoding: 'utf8' });
+    if (r.error || r.status !== 0 || typeof r.stdout !== 'string') return null;
+    const agent = r.stdout.trim().split(';')[2];
+    return agent ? agent.trim() || null : null;
+  } catch {
+    return null;
+  }
+}
+
+// Whether this file is one we're willing to read as a backup. The iCloud folder
+// is trusted by its location, as it always was: only the phone writes there.
+// ~/Downloads is a shared doormat, so a file there is trusted by how it arrived
+// — James's phone backups come by AirDrop only, and AirDrop names its own agent.
+export function trusted({ dir, file, provenance: ask = provenance }) {
+  return isICloud(dir) || ask(file) === AIRDROP_AGENT;
+}
 
 const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 
@@ -79,9 +114,17 @@ function freePath(dir, name) {
   }
 }
 
-const readBackup = (file) => {
+// A file dated ahead of the clock is not believed: the Live Log is pinned to the
+// newest export time it can find, so a single wrong date would freeze the note.
+const isFuture = (exportedAt, now) => Date.parse(exportedAt) > now.getTime() + FUTURE_SLACK_MS;
+
+// "Valid backup", used both for what gets filed and for what the note may be
+// rendered from: it parses, it isn't dated ahead of the clock, and the app
+// itself would load its root.
+const readBackup = (file, now = new Date()) => {
   try {
-    return { file, ...parseBackup(fs.readFileSync(file, 'utf8')) };
+    const backup = parseBackup(fs.readFileSync(file, 'utf8'));
+    return isFuture(backup.exportedAt, now) || !wellFormed(backup.root) ? null : { file, ...backup };
   } catch {
     return null; // not a backup
   }
@@ -92,7 +135,7 @@ const newer = (a, b) => (!b || (a && Date.parse(a.exportedAt) > Date.parse(b.exp
 // so its first valid one is its newest. Backups filed by hand elsewhere in the
 // folder count too: a phone copy identical to one of those is a duplicate, so
 // it only goes to _ingested/ and never lands in Backups/.
-function newestArchived(backupDir) {
+function newestArchived(backupDir, now = new Date()) {
   const archiveDir = path.join(backupDir, 'Backups');
   let names = [];
   try {
@@ -101,7 +144,7 @@ function newestArchived(backupDir) {
     if (err.code !== 'ENOENT') throw err;
   }
   let best = null;
-  for (const name of names) if ((best = readBackup(path.join(archiveDir, name)))) break;
+  for (const name of names) if ((best = readBackup(path.join(archiveDir, name), now))) break;
   const walk = (d) => {
     let entries;
     try {
@@ -114,20 +157,30 @@ function newestArchived(backupDir) {
       const p = path.join(d, e.name);
       if (e.name.startsWith('.') || p === archiveDir) continue;
       if (e.isDirectory()) walk(p);
-      else if (e.isFile() && /\.(json|txt)$/i.test(e.name)) best = newer(readBackup(p), best);
+      else if (e.isFile() && /\.(json|txt)$/i.test(e.name)) best = newer(readBackup(p, now), best);
     }
   };
   walk(backupDir);
   return best;
 }
 
-// → { dryRun, ingested, duplicates, failed, blocked, waiting, readableDirs, newest, liveLog }
+// → { dryRun, ingested, duplicates, rejected, failed, blocked, waiting, readableDirs, newest, liveLog }
+// `provenance` and `trusted` are injectable so tests never consult the real
+// extended attributes of a real file.
 export function ingest(opts = {}) {
-  const { backupDir, searchDirs, dryRun = false, now = new Date(), log = console.log } = { ...config(), ...opts };
+  const {
+    backupDir, searchDirs, dryRun = false, now = new Date(), log = console.log,
+    provenance: ask = provenance, trusted: isTrusted = trusted,
+  } = { ...config(), ...opts };
   const archiveDir = path.join(backupDir, 'Backups');
   const movedDir = path.join(archiveDir, '_ingested');
   const say = (line) => log(dryRun ? `[dry run] ${line}` : line);
-  const result = { dryRun, ingested: [], duplicates: [], failed: [], blocked: [], waiting: [], readableDirs: 0, newest: null, liveLog: null };
+  const result = { dryRun, ingested: [], duplicates: [], rejected: [], failed: [], blocked: [], waiting: [], readableDirs: 0, newest: null, liveLog: null };
+  // A refused file is named with its reason and nothing else, and is left alone.
+  const reject = (file, reason) => {
+    result.rejected.push({ file, reason });
+    say(`refused  ${file}: ${reason} — left where it is`);
+  };
 
   // 1. Find candidates in every search dir. A folder macOS won't let us read is
   //    recorded and skipped — the others still get ingested.
@@ -157,7 +210,10 @@ export function ingest(opts = {}) {
       const file = path.join(dir, name);
       try {
         const st = fs.statSync(file);
-        if (st.isFile()) candidates.push({ file, dir, mtimeMs: st.mtimeMs });
+        if (!st.isFile()) continue;
+        if (!isTrusted({ dir, file, provenance: ask })) { reject(file, 'untrusted-source'); continue; }
+        if (st.size > MAX_BYTES) { reject(file, 'too-large'); continue; } // decided from stat, before any read
+        candidates.push({ file, dir, mtimeMs: st.mtimeMs });
       } catch (err) {
         if (BLOCKED_CODES.has(err.code)) result.blocked.push({ path: file, code: err.code });
         else result.failed.push({ file, reason: `can't read it (${err.code ?? err.message})` });
@@ -188,6 +244,10 @@ export function ingest(opts = {}) {
       say(`skipped  ${file}: ${err.message} — left where it is`);
       continue;
     }
+    if (isFuture(backup.exportedAt, now)) { reject(file, 'future-export'); continue; }
+    // The same check the app makes before it trusts stored data. A file that
+    // parses but can't be read as a root is not a backup we can score.
+    if (!wellFormed(backup.root)) { reject(file, 'unreadable-root'); continue; }
     const hash = sha256(buf);
     const duplicate = hashes.has(hash);
     hashes.add(hash);
@@ -225,7 +285,7 @@ export function ingest(opts = {}) {
 
   // 3. Render the newest backup we know of — new or already archived. Every run
   //    re-renders, so the staleness warning stays current.
-  let newest = newestArchived(backupDir);
+  let newest = newestArchived(backupDir, now);
   for (const p of parsed) if (!newest || Date.parse(p.exportedAt) > Date.parse(newest.exportedAt)) newest = p;
   if (newest) {
     const attempt = liveAttempt(newest.root);
@@ -264,6 +324,8 @@ const fmtLocal = (iso) => {
 export function summaryLines(r) {
   const extra = [
     r.duplicates.length && `${r.duplicates.length} already filed`,
+    // A refusal James never hears about reads as "nothing arrived" when something did.
+    r.rejected?.length && `${r.rejected.length} refused`,
     r.failed.length && `${r.failed.length} failed`,
     r.blocked.length && `${r.blocked.length} blocked by macOS`,
     r.waiting.length && `${r.waiting.length} waiting on iCloud`,
@@ -288,6 +350,10 @@ const USAGE = `Usage: pouch-ingest [--dry-run] [--notify]
 Files Pouch Down backups (pouch-down-backup-*.json|.txt) from ~/Downloads and
 iCloud Drive/PouchDown into the vault, then re-renders "Live Log.md".
 
+A file in ~/Downloads is only read if macOS says AirDrop put it there, which is
+how the phone sends them; the iCloud folder is trusted by location. Anything
+refused is named with its reason and left exactly where it is.
+
   --dry-run   print what would happen; write, copy, move and send nothing
   --notify    watcher mode: message James on Telegram (macOS notification as
               fallback) when a backup is filed, a file fails, macOS blocks a
@@ -303,7 +369,9 @@ Env:
                      scripts/notify-telegram.mjs)`;
 
 // → Promise of the exit code: 0 ok (including "nothing new"), 1 error, 2 when no search folder could be read, 64 bad usage.
-export async function main(argv = process.argv.slice(2), env = process.env) {
+// `opts` is passed through to ingest(), so a test can pin the clock and inject
+// provenance instead of asking macOS about a real file.
+export async function main(argv = process.argv.slice(2), env = process.env, opts = {}) {
   const flags = new Set(argv);
   if (flags.has('--help') || flags.has('-h')) {
     console.log(USAGE);
@@ -314,10 +382,10 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     console.error(`pouch-ingest: unknown argument ${unknown[0]}\n\n${USAGE}`);
     return 64;
   }
-  if (flags.has('--notify')) return watch(env, flags.has('--dry-run'));
+  if (flags.has('--notify')) return watch(env, flags.has('--dry-run'), opts);
   let r;
   try {
-    r = ingest({ ...config(env), dryRun: flags.has('--dry-run') });
+    r = ingest({ ...config(env), dryRun: flags.has('--dry-run'), ...opts });
   } catch (err) {
     console.error(`pouch-ingest: ${err.message}`);
     return 1;
@@ -336,12 +404,12 @@ const stamp = (d) => `${fmtLocal(d.toISOString())}:${String(d.getSeconds()).padS
 // 09:00. Same ingest, then the messages planMessages() picks, deduped through
 // the state file. The log gets a block only when something happened, so a
 // busy ~/Downloads doesn't fill it with "nothing new".
-async function watch(env, dryRun) {
+async function watch(env, dryRun, opts = {}) {
   const now = new Date();
   const lines = [];
   let r = null, error = null;
   try {
-    r = ingest({ ...config(env), dryRun, now, log: (line) => lines.push(line) });
+    r = ingest({ ...config(env), dryRun, now, ...opts, log: (line) => lines.push(line) });
   } catch (err) {
     error = err;
     lines.push(`pouch-ingest: ${err.message}`);
@@ -363,7 +431,9 @@ async function watch(env, dryRun) {
     if (sent.delivered) delivered.push(m);
   }
   if (!dryRun) {
-    const next = nextState(state, { delivered, failedNow: r?.failed, now });
+    // Refusals ride in the same memory as failures, so neither is repeated on
+    // every Downloads change and both are forgotten once the file is gone.
+    const next = nextState(state, { delivered, failedNow: r && [...r.failed, ...r.rejected], now });
     try {
       if (JSON.stringify(next) !== JSON.stringify(state)) saveState(file, next);
     } catch (err) {
@@ -373,7 +443,7 @@ async function watch(env, dryRun) {
 
   // A file that keeps failing or a folder that stays blocked is logged when its
   // message goes out, not again on every run after that.
-  const happened = error || messages.length || r.ingested.length || r.duplicates.length || r.liveLog?.changed;
+  const happened = error || messages.length || r.ingested.length || r.duplicates.length || r.rejected.length || r.liveLog?.changed;
   if (dryRun || happened) {
     console.log(`── ${stamp(now)} pouch-ingest --notify${dryRun ? ' --dry-run' : ''}`);
     for (const line of [...lines, ...(r ? summaryLines(r) : [])]) console.log(line);
