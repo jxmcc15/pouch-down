@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { smallWin } from '../confetti.js';
-
-export const TRIGGERS = ['after-meal', 'coffee', 'driving', 'stress', 'boredom', 'social'];
+import { TRIGGERS } from '../triggers.js';
 
 const SOS_SECONDS = 600; // the 10-minute rule
 

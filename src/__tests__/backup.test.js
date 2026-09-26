@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { fullBackup } from '../store.js';
-import { KEY_V1, KEY_V2, loadRoot, freshStartRoot, rawStorageDump, redactSecrets } from '../root.js';
+import { KEY_V1, KEY_V2, loadRoot, freshStartRoot, rawStorageDump, redactSecrets, wellFormed } from '../root.js';
+import { parseBackup } from '../ingest.js';
 
 describe('fullBackup', () => {
   it('exports the whole root without the API key, without mutating it', () => {
@@ -98,5 +99,27 @@ describe('rawStorageDump', () => {
   it('redactSecrets leaves non-strings alone and an escaped quote inside the key cannot end it early', () => {
     expect(redactSecrets(null)).toBeNull();
     expect(redactSecrets('{"apiKey":"abc\\"def","x":1}')).toBe('{"apiKey":"","x":1}');
+  });
+});
+
+// Coach chats live on the attempt, so the whole-root backup carries them with
+// no change — and the key scan still covers every message.
+describe('coach chats in the backup', () => {
+  const chat = { id: 'c1', startedAt: '2026-09-24T01:00:00.000Z', day: '2026-09-23', messages: [
+    { role: 'user', text: 'Can you fix day 3 for me?', ts: '2026-09-24T01:00:00.000Z' },
+    { role: 'assistant', text: "I can't change the log. Stats → tap the day → Fix this day.", ts: '2026-09-24T01:00:03.000Z' },
+  ] };
+  const plan = { startDate: '2026-09-21', quitDate: '2026-12-19', totalDays: 90, baseline: { pouchesPerDay: 9, mg: 9 }, stages: [] };
+  const root = { version: 2, device: { apiKey: '' }, activeAttemptId: 'a1', attempts: [{ id: 'a1', status: 'active', createdAt: NOW, archivedAt: null, settings: { mealTimes: {} }, plan, events: [], chats: [chat], celebratedStages: [], celebratedAwards: [] }] };
+
+  it('round-trips through fullBackup → parseBackup and stays well formed', () => {
+    const back = parseBackup(fullBackup(root));
+    expect(back.root.attempts[0].chats).toEqual([chat]);
+    expect(wellFormed(back.root)).toBe(true);
+  });
+
+  it('a message holding a key is refused by the whole-file scan', () => {
+    const leaky = { ...root, attempts: [{ ...root.attempts[0], chats: [{ ...chat, messages: [{ ...chat.messages[0], text: `my key is ${FAKE}` }] }] }] };
+    expect(() => parseBackup(fullBackup(leaky))).toThrow(/API key/);
   });
 });

@@ -12,7 +12,7 @@ import { stageForDay, capForDay } from './plan.js';
 import {
   asOfDay, todayKey, dayKeyFor, dayNumberFor, dateForDayNumber, eventsForDay, isLogged,
   pouchesForDay, resistedForDay, streaks, classifyPouch, disciplineStats, checkinForDay,
-  fmtTime, localDateStr,
+  fmtTime, localDateStr, triggersFor,
 } from './store.js';
 import { moneyStats } from './money.js';
 import { awardsFor } from './awards.js';
@@ -176,7 +176,7 @@ function attemptSection(state, { exportDay, shownThrough }) {
   );
 
   const triggers = {};
-  for (const e of state.events) if (e.trigger) triggers[e.trigger] = (triggers[e.trigger] || 0) + 1;
+  for (const e of state.events) for (const t of triggersFor(state, e)) triggers[t] = (triggers[t] || 0) + 1;
   const top = Object.entries(triggers).sort((a, b) => b[1] - a[1]).slice(0, 5);
   lines.push(`- **Top triggers:** ${top.length ? top.map(([t, c]) => `${safeText(t)} (${c})`).join(', ') : 'none tagged'}`);
 

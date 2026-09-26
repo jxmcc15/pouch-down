@@ -9,10 +9,16 @@ import { stampNow, dayKeyOf, localHM, DAY_CUTOFF_HOURS } from './time.js';
 // ---- events ----------------------------------------------------------------
 
 let idCounter = 0;
-// type: 'pouch' | 'resisted' | 'checkin' ('backfill' events are built by the caller)
-// trigger: 'coffee' | 'driving' | 'stress' | 'after-meal' | 'boredom' | null
+// Unique on this device: the clock plus a per-session counter. Chats use it too.
+export function makeId(now = new Date()) {
+  return `${now.getTime()}-${idCounter++}`;
+}
+
+// type: 'pouch' | 'resisted' | 'checkin' ('backfill', 'correction' and 'reason'
+// events get their fields set by the caller)
+// trigger: one of TRIGGERS (triggers.js) or null
 export function makeEvent(type, trigger = null, now = new Date()) {
-  return { id: `${now.getTime()}-${idCounter++}`, ...stampNow(now), type, trigger };
+  return { id: makeId(now), ...stampNow(now), type, trigger };
 }
 
 export function fmtTime(tsOrEvent) {
@@ -81,8 +87,8 @@ export function eventsForDay(state, dateStr) {
   return state.events.filter((e) => dayKeyOf(e) === dateStr);
 }
 
-// Pouches used that day: taps plus anything backfilled afterwards.
-export function pouchesForDay(state, dateStr) {
+// Pouches with a log behind them: taps plus anything backfilled afterwards.
+export function timedPouchesForDay(state, dateStr) {
   let n = 0;
   for (const e of eventsForDay(state, dateStr)) {
     if (e.type === 'pouch') n++;
@@ -92,6 +98,59 @@ export function pouchesForDay(state, dateStr) {
     }
   }
   return n;
+}
+
+// Same trust rule as a backfill: only a real whole number ≥ 0 counts.
+const correctionCount = backfillCount;
+
+// The real total entered later for a logged day. Latest by ts wins (ties go to
+// the later entry); earlier ones stay in history.
+export function correctionForDay(state, dateStr) {
+  let latest = null;
+  for (const e of state.events) {
+    if (e.type !== 'correction' || dayKeyOf(e) !== dateStr || correctionCount(e) == null) continue;
+    if (!latest || new Date(e.ts) >= new Date(latest.ts)) latest = e;
+  }
+  return latest;
+}
+
+// Pouches used that day: the timed count, raised by a correction. max, never
+// the correction alone — stored data can't lower a count that was logged. A
+// correction on an unlogged day counts nothing: silence stays silence.
+export function pouchesForDay(state, dateStr) {
+  const timed = timedPouchesForDay(state, dateStr);
+  const c = correctionForDay(state, dateStr);
+  return c && isLogged(state, dateStr) ? Math.max(timed, c.count) : timed;
+}
+
+// target id → latest reason event, rebuilt only when the events array changes
+// (every append makes a new one). Keeps per-row triggersFor calls linear.
+const reasonIndex = new WeakMap();
+function reasonsOf(state) {
+  let idx = reasonIndex.get(state.events);
+  if (!idx) {
+    idx = new Map();
+    for (const e of state.events) {
+      if (e.type !== 'reason' || typeof e.target !== 'string') continue;
+      const prev = idx.get(e.target);
+      if (!prev || new Date(e.ts) >= new Date(prev.ts)) idx.set(e.target, e);
+    }
+    reasonIndex.set(state.events, idx);
+  }
+  return idx;
+}
+
+// Why a pouch happened, set any time after it was logged. Latest per pouch wins.
+export function reasonFor(state, ev) {
+  return reasonsOf(state).get(ev.id) ?? null;
+}
+
+// The triggers to count and show for an event: its latest reason's set, else
+// the tag it was logged with. Every reader of `.trigger` goes through here.
+export function triggersFor(state, ev) {
+  const r = reasonFor(state, ev);
+  if (r && Array.isArray(r.triggers)) return r.triggers;
+  return ev.trigger ? [ev.trigger] : [];
 }
 
 export function resistedForDay(state, dateStr) {
@@ -477,6 +536,7 @@ export function markdownSummary(state, days = 7, kept = null) {
     '| Day | Date | Cap | Used | Early | Over | First | Resisted | mg | Status |',
     '|---|---|---|---|---|---|---|---|---|---|',
   ];
+  let corrected = false;
   for (let i = Math.max(1, last - days + 1); i <= last; i++) {
     const d = dateForDayNumber(state, i);
     if (!isLogged(state, d)) {
@@ -484,6 +544,8 @@ export function markdownSummary(state, days = 7, kept = null) {
       continue;
     }
     const used = pouchesForDay(state, d);
+    const timed = timedPouchesForDay(state, d);
+    if (used !== timed) corrected = true;
     const res = resistedForDay(state, d);
     const status = statusForDay(state, d);
     let early = 0, over = 0, first = null;
@@ -494,12 +556,11 @@ export function markdownSummary(state, days = 7, kept = null) {
       if (v.bucket === 'over-cap') over++;
       if (first == null || Date.parse(e.ts) < Date.parse(first.ts)) first = e;
     }
-    lines.push(`| ${i} | ${d} | ${capForDay(state.plan, i)} | ${used} | ${early} | ${over} | ${first != null ? fmtTime(first) : '—'} | ${res} | ${mgForDay(state, d)}mg | ${status.includes('over') || status === 'yellow' ? 'over' : 'on plan'} |`);
+    lines.push(`| ${i} | ${d} | ${capForDay(state.plan, i)} | ${used !== timed ? `${used}* (${timed})` : used} | ${early} | ${over} | ${first != null ? fmtTime(first) : '—'} | ${res} | ${mgForDay(state, d)}mg | ${status.includes('over') || status === 'yellow' ? 'over' : 'on plan'} |`);
   }
+  if (corrected) lines.push('', '* corrected total (timed logs in parentheses)');
   const triggers = {};
-  state.events.filter((e) => e.trigger).forEach((e) => {
-    triggers[e.trigger] = (triggers[e.trigger] || 0) + 1;
-  });
+  for (const e of state.events) for (const t of triggersFor(state, e)) triggers[t] = (triggers[t] || 0) + 1;
   const trigLine = Object.entries(triggers).sort((a, b) => b[1] - a[1]).map(([t, c]) => `${t} (${c})`).join(', ');
   lines.push('', `Streak: ${currentStreak(state)}${kept != null ? ` · Kept: $${kept.toFixed(2)}` : ''}${trigLine ? ` · Triggers: ${trigLine}` : ''}`);
 

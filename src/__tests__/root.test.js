@@ -7,7 +7,7 @@ import { todayKey } from '../store.js';
 const mem = (init = {}) => { const m = new Map(Object.entries(init)); return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, v), _m: m }; };
 const NOW = '2026-09-20T18:00:00.000Z';
 const V1 = JSON.stringify({ version: 1, settings: { ...DEFAULT_SETTINGS, apiKey: 'sk-ant-TEST' }, events: [{ id: 'e1', ts: '2026-07-08T11:42:07.123Z', type: 'pouch', trigger: null }], celebratedStages: [1], checkinDismissedFor: null });
-const attemptShape = (id) => ({ id, status: 'archived', createdAt: NOW, archivedAt: NOW, settings: DEFAULT_SETTINGS, plan: { generator: 'gen-1', startDate: '2026-09-21', quitDate: '2026-12-19', totalDays: 90, baseline: { pouchesPerDay: 9, mg: 9 }, stages: [] }, events: [], celebratedStages: [], celebratedAwards: [], checkinDismissedFor: null });
+const attemptShape = (id) => ({ id, status: 'archived', createdAt: NOW, archivedAt: NOW, settings: DEFAULT_SETTINGS, plan: { generator: 'gen-1', startDate: '2026-09-21', quitDate: '2026-12-19', totalDays: 90, baseline: { pouchesPerDay: 9, mg: 9 }, stages: [] }, events: [], chats: [], celebratedStages: [], celebratedAwards: [], checkinDismissedFor: null });
 const plan = { generator: 'gen-1', startDate: '2026-09-21', quitDate: '2026-12-19', totalDays: 90, baseline: { pouchesPerDay: 9, mg: 9 }, stages: [] };
 
 describe('loadRoot', () => {
@@ -127,7 +127,13 @@ describe('loadRoot on a v2 that parses and passes the outer shape but cannot ren
       { id: 'e1', ts: '2026-09-21T17:42:07.123Z', tzOffsetMin: -300, day: '2026-09-21', type: 'pouch', trigger: 'coffee', ctx: { nth: 1, cap: 8, slotId: 'after-lunch', slotLabel: 'After lunch', slotAt: '2026-09-21T17:45:00.000Z', firstSlotAt: '2026-09-21T13:15:00.000Z' } },
       { id: 'e2', ts: '2026-09-21T23:10:00.000Z', tzOffsetMin: -300, day: '2026-09-21', type: 'checkin', trigger: null, sleepHours: 7.5, sleepQuality: 4, workout: true, source: 'manual' },
       { id: 'e3', ts: '2026-09-22T14:00:00.000Z', tzOffsetMin: -300, day: '2026-09-22', type: 'backfill', trigger: null, count: 5, streak: 'keep' },
+      { id: 'e4', ts: '2026-09-23T14:00:00.000Z', tzOffsetMin: -300, day: '2026-09-21', type: 'correction', trigger: null, count: 7 },
+      { id: 'e5', ts: '2026-09-23T14:01:00.000Z', tzOffsetMin: -300, day: '2026-09-21', type: 'reason', trigger: null, target: 'e1', triggers: ['stress', 'coffee'], note: 'late meeting' },
     ],
+    chats: [{ id: 'c1', startedAt: '2026-09-23T15:00:00.000Z', day: '2026-09-23', messages: [
+      { role: 'user', text: 'how am I doing?', ts: '2026-09-23T15:00:00.000Z' },
+      { role: 'assistant', text: 'Steady.', ts: '2026-09-23T15:00:02.000Z' },
+    ] }],
   });
   const rootWith = (attempt) => ({ version: 2, device: { apiKey: '' }, activeAttemptId: null, attempts: [attempt] });
 
@@ -168,6 +174,25 @@ describe('loadRoot on a v2 that parses and passes the outer shape but cannot ren
     'an event ctx slotLabel is an object': (a) => { a.events[0].ctx.slotLabel = { l: 'After lunch' }; },
     'a check-in sleepQuality is an object': (a) => { a.events[1].sleepQuality = { q: 4 }; },
     'a backfill count is an object': (a) => { a.events[2].count = { n: 5 }; },
+    // reasons: `triggers` is the one list an event may carry, and every member
+    // is printed as text.
+    'a reason triggers holds an object': (a) => { a.events[4].triggers = ['stress', { t: 'coffee' }]; },
+    'a reason triggers is an object': (a) => { a.events[4].triggers = { 0: 'stress' }; },
+    'a reason triggers is a string': (a) => { a.events[4].triggers = 'stress'; },
+    'a reason note is an object': (a) => { a.events[4].note = { text: 'x' }; },
+    // chats: absent is fine (attempt 1 predates them); anything present must
+    // be the shape the ingest renders.
+    'chats is an object': (a) => { a.chats = {}; },
+    'chats is null': (a) => { a.chats = null; },
+    'a chat is null': (a) => { a.chats[0] = null; },
+    'a chat id is a number': (a) => { a.chats[0].id = 1; },
+    'a chat has no startedAt': (a) => { delete a.chats[0].startedAt; },
+    'a chat day is an object': (a) => { a.chats[0].day = { d: '2026-09-23' }; },
+    'a chat messages is not a list': (a) => { a.chats[0].messages = {}; },
+    'a message role is unknown': (a) => { a.chats[0].messages[0].role = 'system'; },
+    'a message text is an object': (a) => { a.chats[0].messages[1].text = { t: 'Steady.' }; },
+    'a message ts is a number': (a) => { a.chats[0].messages[0].ts = 1758639600000; },
+    'a message is null': (a) => { a.chats[0].messages[0] = null; },
   };
 
   for (const [label, wreck] of Object.entries(breakIt)) {
@@ -192,6 +217,31 @@ describe('loadRoot on a v2 that parses and passes the outer shape but cannot ren
   it('a plan with no stages yet is still legitimate', () => {
     const a = renderable();
     a.plan.stages = [];
+    expect(loadRoot(mem({ [KEY_V2]: JSON.stringify(rootWith(a)) }), NOW).problem).toBeNull();
+  });
+
+  it('a reason with no triggers (note only) is still legitimate', () => {
+    const a = renderable();
+    a.events[4].triggers = [];
+    expect(loadRoot(mem({ [KEY_V2]: JSON.stringify(rootWith(a)) }), NOW).problem).toBeNull();
+  });
+
+  it('an attempt with no chats key loads, and settle gives it an empty list', () => {
+    const a = renderable();
+    delete a.chats;
+    const { root, problem } = loadRoot(mem({ [KEY_V2]: JSON.stringify(rootWith(a)) }), NOW);
+    expect(problem).toBeNull();
+    expect(root.attempts[0].chats).toEqual([]);
+  });
+
+  it('an attempt with chats keeps them through load', () => {
+    const { root } = loadRoot(mem({ [KEY_V2]: JSON.stringify(rootWith(renderable())) }), NOW);
+    expect(root.attempts[0].chats).toEqual(renderable().chats);
+  });
+
+  it('a chat with no messages yet is still legitimate', () => {
+    const a = renderable();
+    a.chats[0].messages = [];
     expect(loadRoot(mem({ [KEY_V2]: JSON.stringify(rootWith(a)) }), NOW).problem).toBeNull();
   });
 
@@ -251,7 +301,7 @@ describe('attempt lifecycle', () => {
     const r0 = loadRoot(mem({ [KEY_V1]: V1 }), NOW).root;
     const r1 = startAttempt(r0, { plan, settings: DEFAULT_SETTINGS, now: NOW });
     expect(r1.activeAttemptId).toBe('a2');
-    expect(attemptById(r1, 'a2')).toMatchObject({ status: 'active', archivedAt: null, events: [], plan });
+    expect(attemptById(r1, 'a2')).toMatchObject({ status: 'active', archivedAt: null, events: [], chats: [], plan });
     expect(r0.attempts).toHaveLength(1); // not mutated
     const r2 = updateAttempt(r1, 'a2', (a) => ({ ...a, events: [...a.events, { id: 'x' }] }));
     expect(attemptById(r2, 'a2').events).toHaveLength(1);

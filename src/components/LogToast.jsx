@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import { Undo2 } from 'lucide-react';
 import { useApp } from '../state.jsx';
 import { classifyPouch, fmtTime } from '../store.js';
-import { TRIGGERS } from './SOSOverlay.jsx';
+import { TRIGGERS } from '../triggers.js';
 
 const spring = { type: 'spring', damping: 24, stiffness: 180 };
 

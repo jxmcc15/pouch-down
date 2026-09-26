@@ -4,7 +4,7 @@ import { ShieldCheck, Moon, ChevronDown } from 'lucide-react';
 import { useApp } from '../state.jsx';
 import {
   eventsForDay, pouchesForDay, asOfDay, dayNumberFor, dateForDayNumber,
-  statusForDay, classifyPouch, fmtTime,
+  statusForDay, classifyPouch, fmtTime, triggersFor,
 } from '../store.js';
 import { capForDay } from '../plan.js';
 
@@ -73,14 +73,14 @@ function EventRow({ state, ev }) {
       <span key="t" className="muted num">{fmtTime(ev)}</span>,
       ...(ev.ctx?.slotLabel ? [<span key="s" className="muted">{ev.ctx.slotLabel}</span>] : []),
       <span key="v" style={{ color: v.color, fontWeight: 500 }}>{v.text}</span>,
-      ...(ev.trigger ? [<span key="g" className="faint">{ev.trigger}</span>] : []),
+      ...(triggersFor(state, ev).length ? [<span key="g" className="faint">{triggersFor(state, ev).join(', ')}</span>] : []),
     ];
   } else if (ev.type === 'resisted') {
     icon = <ShieldCheck size={15} color="var(--green)" />;
     segs = [
       <span key="t" className="muted num">{fmtTime(ev)}</span>,
       <span key="r" style={{ color: 'var(--green)', fontWeight: 500 }}>resisted</span>,
-      ...(ev.trigger ? [<span key="g" className="faint">{ev.trigger}</span>] : []),
+      ...(triggersFor(state, ev).length ? [<span key="g" className="faint">{triggersFor(state, ev).join(', ')}</span>] : []),
     ];
   } else if (ev.type === 'checkin') {
     icon = <Moon size={15} color="var(--accent-bright)" />;

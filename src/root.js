@@ -63,7 +63,8 @@ const wellFormedSettings = (s) => isObj(s) && isObj(s.mealTimes) && Object.value
 // An event: `type` routes the timeline, `ts` is parsed by every reader, `day`
 // buckets it. Beyond those, the timeline prints whatever field the type carries
 // — trigger, ctx.slotLabel, a check-in's numbers, a backfill's count — so every
-// value on the event has to be renderable. `ctx` is the one nested object.
+// value on the event has to be renderable. `ctx` is the one nested object;
+// `triggers` (a reason's set) the one list, and every member is printed as text.
 function wellFormedEvent(e) {
   if (!isObj(e) || !isStr(e.type) || !isStr(e.ts)) return false;
   if (e.day !== undefined && !isStr(e.day)) return false;
@@ -71,10 +72,18 @@ function wellFormedEvent(e) {
   for (const [k, v] of Object.entries(e)) {
     if (k === 'ctx') {
       if (v != null && !(isObj(v) && Object.values(v).every(renderable))) return false;
+    } else if (k === 'triggers') {
+      if (!(Array.isArray(v) && v.every(isStr))) return false;
     } else if (!renderable(v)) return false;
   }
   return true;
 }
+
+// A coach chat, as the ingest renders it into the vault: every field is text.
+// Exported so the ingest can skip a bad chat instead of throwing on it.
+const wellFormedMessage = (m) => isObj(m) && (m.role === 'user' || m.role === 'assistant') && isStr(m.text) && isStr(m.ts);
+export const wellFormedChat = (c) => isObj(c) && isStr(c.id) && isStr(c.startedAt) && isStr(c.day)
+  && Array.isArray(c.messages) && c.messages.every(wellFormedMessage);
 
 // Enough shape that the app can render it without crashing. A v2 that parses
 // but fails this is unreadable stored data like any other — the recovery
@@ -87,13 +96,16 @@ function wellFormedEvent(e) {
 export function wellFormed(root) {
   return isObj(root) && root.version === 2 && Array.isArray(root.attempts)
     && root.attempts.every((a) => isObj(a) && wellFormedPlan(a.plan) && wellFormedSettings(a.settings)
-      && Array.isArray(a.events) && a.events.every(wellFormedEvent));
+      && Array.isArray(a.events) && a.events.every(wellFormedEvent)
+      // absent is fine (attempts older than chats); present must be all good
+      && (a.chats === undefined || (Array.isArray(a.chats) && a.chats.every(wellFormedChat))));
 }
 
 // In memory only — loadRoot never writes. Repairs the things that can't hide
 // any history: a missing device, an API key inherited from when the key was
 // kept on the device, missing celebration lists (they only record which
-// celebrations already played), and an active id that doesn't lead to an
+// celebrations already played), a missing chat list (attempts older than
+// chats), and an active id that doesn't lead to an
 // active attempt. Left dangling, that id hides the Front door, makes
 // startAttempt refuse, and gives Exit nothing to exit.
 //
@@ -103,10 +115,11 @@ export function wellFormed(root) {
 // root with no key never clears a key typed in during this session.
 function settle(stored) {
   const root = takeInheritedKey({ ...freshRoot(), ...stored });
-  root.attempts = root.attempts.map((a) => (Array.isArray(a.celebratedStages) && Array.isArray(a.celebratedAwards) ? a : {
+  root.attempts = root.attempts.map((a) => (Array.isArray(a.celebratedStages) && Array.isArray(a.celebratedAwards) && Array.isArray(a.chats) ? a : {
     ...a,
     celebratedStages: Array.isArray(a.celebratedStages) ? a.celebratedStages : [],
     celebratedAwards: Array.isArray(a.celebratedAwards) ? a.celebratedAwards : [],
+    chats: Array.isArray(a.chats) ? a.chats : [],
   }));
   if (root.activeAttemptId !== null && attemptById(root, root.activeAttemptId)?.status !== 'active') root.activeAttemptId = null;
   return root;
@@ -357,7 +370,7 @@ function nextAttemptId(root) {
 export function startAttempt(root, { plan, settings, now = new Date().toISOString() }) {
   if (root.activeAttemptId) throw new Error('an attempt is already active');
   const id = nextAttemptId(root);
-  const attempt = { id, status: 'active', createdAt: now, archivedAt: null, settings, plan, events: [], celebratedStages: [], celebratedAwards: [], checkinDismissedFor: null };
+  const attempt = { id, status: 'active', createdAt: now, archivedAt: null, settings, plan, events: [], chats: [], celebratedStages: [], celebratedAwards: [], checkinDismissedFor: null };
   return { ...root, activeAttemptId: id, attempts: [...root.attempts, attempt] };
 }
 

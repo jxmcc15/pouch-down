@@ -242,3 +242,119 @@ describe('an over-cap today breaks the streak the moment it happens', () => {
     expect(S.streaks(s)).toEqual({ current: 0, best: 4 });
   });
 });
+
+// Day corrections: the real total for a logged past day, entered later. Day 2
+// (2026-09-22) has a cap of 8 in this plan.
+describe('corrections', () => {
+  const D = '2026-09-22';
+  const corr = (count, ts = `${D}T23:00:00.000Z`, day = D) => ({ ...ev('correction', day), ts, count });
+
+  it('no correction: pouchesForDay is the timed count', () => {
+    const s = attempt(pouches(D, 4));
+    expect(S.correctionForDay(s, D)).toBeNull();
+    expect(S.timedPouchesForDay(s, D)).toBe(4);
+    expect(S.pouchesForDay(s, D)).toBe(4);
+  });
+  it('one correction raises the total and keeps the timed count', () => {
+    const s = attempt([...pouches(D, 4), corr(8)]);
+    expect(S.timedPouchesForDay(s, D)).toBe(4);
+    expect(S.pouchesForDay(s, D)).toBe(8);
+    expect(S.statusForDay(s, D)).toBe('green');
+  });
+  it('a correction over the cap turns the day yellow and breaks the streak', () => {
+    const s = attempt([...pouches(D, 4), corr(9)]);
+    expect(S.statusForDay(s, D)).toBe('yellow');
+    expect(S.dayCountsForStreak(s, D)).toBe(false);
+  });
+  it('the latest correction by ts wins, wherever it sits in the array', () => {
+    const s = attempt([...pouches(D, 4), corr(10, '2026-09-24T01:00:00.000Z'), corr(7, '2026-09-23T01:00:00.000Z')]);
+    expect(S.correctionForDay(s, D).count).toBe(10);
+    expect(S.pouchesForDay(s, D)).toBe(10);
+  });
+  it('a correction below the timed count never lowers it', () => {
+    const s = attempt([...pouches(D, 6), corr(2)]);
+    expect(S.pouchesForDay(s, D)).toBe(6);
+  });
+  it('a correction with a bad count is ignored', () => {
+    for (const count of [-1, '12', 2.5, null]) {
+      const s = attempt([...pouches(D, 4), corr(count)]);
+      expect(S.correctionForDay(s, D)).toBeNull();
+      expect(S.pouchesForDay(s, D)).toBe(4);
+    }
+  });
+  it('a correction on an unlogged day counts nothing and logs nothing', () => {
+    const s = attempt([corr(8)]);
+    expect(S.isLogged(s, D)).toBe(false);
+    expect(S.pouchesForDay(s, D)).toBe(0);
+    expect(S.statusForDay(s, D)).toBe('nolog');
+  });
+  it('corrected pouches are counted, not scored', () => {
+    const s = attempt([...pouches(D, 4), corr(12)]);
+    const d = S.disciplineStats(s);
+    expect(d.onTime + d.early + d.overCap).toBe(4);
+  });
+});
+
+describe('reasons and triggersFor', () => {
+  const D = '2026-09-22';
+  const reason = (target, triggers, ts = `${D}T23:00:00.000Z`, note = '') => ({ ...ev('reason', D), ts, target, triggers, note });
+
+  it('no reason: falls back to the legacy trigger, or nothing', () => {
+    const p = ev('pouch', D, { trigger: 'coffee' });
+    const q = ev('pouch', D);
+    const s = attempt([p, q]);
+    expect(S.reasonFor(s, p)).toBeNull();
+    expect(S.triggersFor(s, p)).toEqual(['coffee']);
+    expect(S.triggersFor(s, q)).toEqual([]);
+  });
+  it('a reason replaces the legacy trigger with its own set', () => {
+    const p = ev('pouch', D, { trigger: 'coffee' });
+    const r = reason(p.id, ['stress', 'driving'], undefined, 'late meeting');
+    const s = attempt([p, r]);
+    expect(S.reasonFor(s, p)).toBe(r);
+    expect(S.triggersFor(s, p)).toEqual(['stress', 'driving']);
+  });
+  it('the latest reason per target wins; earlier ones stay in history', () => {
+    const p = ev('pouch', D);
+    const s = attempt([p, reason(p.id, ['boredom'], '2026-09-24T01:00:00.000Z'), reason(p.id, ['stress'], '2026-09-23T01:00:00.000Z')]);
+    expect(S.triggersFor(s, p)).toEqual(['boredom']);
+    expect(s.events.filter((e) => e.type === 'reason')).toHaveLength(2);
+  });
+  it('a reason for one pouch does not touch another; resisted keeps its trigger', () => {
+    const p = ev('pouch', D);
+    const q = ev('pouch', D);
+    const r = ev('resisted', D, { trigger: 'social' });
+    const s = attempt([p, q, r, reason(p.id, ['stress'])]);
+    expect(S.triggersFor(s, q)).toEqual([]);
+    expect(S.triggersFor(s, r)).toEqual(['social']);
+  });
+  it('a note-only reason clears the legacy trigger to an empty set', () => {
+    const p = ev('pouch', D, { trigger: 'coffee' });
+    const s = attempt([p, reason(p.id, [], undefined, 'just habit')]);
+    expect(S.triggersFor(s, p)).toEqual([]);
+  });
+  it('the reason is found again after an append (no stale cache)', () => {
+    const p = ev('pouch', D);
+    const s1 = attempt([p]);
+    expect(S.triggersFor(s1, p)).toEqual([]);
+    const s2 = { ...s1, events: [...s1.events, reason(p.id, ['coffee'])] };
+    expect(S.triggersFor(s2, p)).toEqual(['coffee']);
+  });
+});
+
+describe('markdownSummary with corrections and reasons', () => {
+  it('marks a corrected day as total* (timed) and adds the legend', () => {
+    const p = pouches('2026-09-22', 4);
+    const s = attempt([...p, { ...ev('correction', '2026-09-22'), count: 10 }, { ...ev('reason', '2026-09-22'), target: p[0].id, triggers: ['stress', 'coffee'], note: '' }]);
+    const out = S.markdownSummary(s);
+    expect(out).toMatch(/\| 2 \| 2026-09-22 \| 8 \| 10\* \(4\) \|/);
+    expect(out).toContain('* corrected total (timed logs in parentheses)');
+    expect(out).toMatch(/Triggers: .*stress \(1\)/);
+    expect(out).toMatch(/coffee \(1\)/);
+  });
+  it('no corrected day in range: no marker, no legend', () => {
+    const out = S.markdownSummary(attempt(pouches('2026-09-22', 4)));
+    expect(out).toMatch(/\| 2 \| 2026-09-22 \| 8 \| 4 \|/);
+    expect(out).not.toContain('corrected total');
+  });
+});

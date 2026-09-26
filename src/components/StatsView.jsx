@@ -2,11 +2,11 @@ import { motion } from 'framer-motion';
 import { useApp } from '../state.jsx';
 import {
   dateForDayNumber, mgForDay, asOfDay, dayNumberFor,
-  pouchesForDay, plannedMgForDay, isLogged,
+  pouchesForDay, plannedMgForDay, isLogged, triggersFor,
 } from '../store.js';
 import { capForDay } from '../plan.js';
 import { moneyStats } from '../money.js';
-import { TRIGGERS } from './SOSOverlay.jsx';
+import { TRIGGERS } from '../triggers.js';
 import AnimatedNumber from './AnimatedNumber.jsx';
 import DisciplineCard from './DisciplineCard.jsx';
 import FirstPouchChart from './FirstPouchChart.jsx';
@@ -146,9 +146,11 @@ function TriggerBars({ state }) {
   const counts = {};
   TRIGGERS.forEach((t) => (counts[t] = { used: 0, resisted: 0 }));
   state.events.forEach((e) => {
-    if (!e.trigger || !counts[e.trigger]) return;
-    if (e.type === 'pouch') counts[e.trigger].used++;
-    else counts[e.trigger].resisted++;
+    for (const t of triggersFor(state, e)) {
+      if (!counts[t]) continue;
+      if (e.type === 'pouch') counts[t].used++;
+      else counts[t].resisted++;
+    }
   });
   const rows = Object.entries(counts)
     .map(([t, c]) => ({ t, ...c, total: c.used + c.resisted }))

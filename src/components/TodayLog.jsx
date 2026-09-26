@@ -11,6 +11,7 @@ import {
   timeSinceLastPouch,
   fmtTime,
   fmtDuration,
+  triggersFor,
 } from '../store.js';
 
 const spring = { type: 'spring', damping: 24, stiffness: 180 };
@@ -36,7 +37,7 @@ function LogRow({ state, ev }) {
         <div>
           <span className="num">{fmtTime(ev)}</span>
           <span style={{ color: 'var(--green)' }}> · resisted</span>
-          {ev.trigger && <span className="faint"> · {ev.trigger}</span>}
+          {triggersFor(state, ev).length > 0 && <span className="faint"> · {triggersFor(state, ev).join(', ')}</span>}
         </div>
       </div>
     );
@@ -54,7 +55,11 @@ function LogRow({ state, ev }) {
     );
   }
 
-  // pouch (default). classifyPouch derives ctx for old events that lack it;
+  // Corrections and reasons aren't pouches; they show through the pouch they
+  // belong to (triggersFor), never as rows of their own here.
+  if (ev.type !== 'pouch') return null;
+
+  // pouch. classifyPouch derives ctx for old events that lack it;
   // the display slot label reads straight off the stamp, omitted when absent.
   const verdict = pouchVerdict(classifyPouch(state, ev));
   const slotLabel = ev.ctx?.slotLabel;
@@ -67,7 +72,7 @@ function LogRow({ state, ev }) {
         <span className="num">{fmtTime(ev)}</span>
         {slotLabel && <span className="muted"> · {slotLabel}</span>}
         <span style={{ color: verdict.color }}> · {verdict.text}</span>
-        {ev.trigger && <span className="faint"> · {ev.trigger}</span>}
+        {triggersFor(state, ev).length > 0 && <span className="faint"> · {triggersFor(state, ev).join(', ')}</span>}
       </div>
     </div>
   );
