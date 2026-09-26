@@ -144,7 +144,7 @@ status colors. All motion is Framer springs; `MotionConfig reducedMotion="user"`
 - After `pouch-ingest`, read `Pouch Down/Coach Chats.md`. Any new chat that
   asks for a change or a feature is a request: bring each one to James with a
   proposed next step. Claude cannot change the phone's data — corrections and
-  reasons are made in the app (Stats or Calendar → tap the day).
+  reasons are made in the app (tap the day on Calendar, or the pencil beside it in Stats).
 - Vault plan note: `/Users/jxm/jxm-vault/Topics/Nicotine Cessation — 60-Day Plan.md`
 - Todoist project "Pouch Down" holds the reminder scaffold (meal check-ins,
   stage flips, shopping deadlines).

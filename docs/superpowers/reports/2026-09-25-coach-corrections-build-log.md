@@ -18,8 +18,8 @@ It said yes both times and did nothing. The investigation found:
    vanished when it closed. The API has no endpoint to fetch past
    conversations, so what you asked before tonight is gone.
 3. **Both asks were real gaps in the app.** Backfill only fills an *unlogged*
-   day; the mood tag only works for 15 seconds on the newest pouch. Day 3
-   (Thu 2026-09-24) showed 4 pouches on a cap of 10 and read green; you used 10.
+   day; the mood tag only works for 15 seconds on the newest pouch. The day
+   you wanted fixed was under-logged and scored green.
 
 ## What was built
 
@@ -36,9 +36,9 @@ It said yes both times and did nothing. The investigation found:
 - Nothing is edited. A correction is a new `correction` event; reasons are new
   `reason` events pointing at the pouch. Latest wins, history keeps every
   version. History shows "Corrected total: 10 (4 timed)".
-- The six extra pouches on day 3 have no times, so they count toward the total
-  and the money but are not scored early or on time. Day 3 becomes 10 of 10,
-  still on plan; the tin math changes.
+- Pouches added by a correction have no times, so they count toward the total
+  and the money but are not scored early or on time. A day corrected up to its
+  cap stays on plan; the tin math changes.
 
 **Coach chats come home.** Each successful turn is saved on the attempt, so it
 rides inside "Download full backup" untouched. `pouch-ingest` now writes
@@ -68,12 +68,15 @@ prompt is 2,938 characters with a full 7-day log; the proxy allows 16 KB.
 1. Merge `feat/coach-corrections` (after tonight's authorized push of the
    proxy work, since this branch sits on top of it) and push. Never let a
    session push this for you.
-2. Open Stats → find Thu Sep 24 in History → pencil → set Actual total to 10 →
-   Save total. The calendar cell and the Live Log update on the next backup.
+2. Open Stats → find the under-logged day in History → pencil → set Actual
+   total → Save total. The calendar cell and the Live Log update on the next
+   backup.
 3. Tap any pouch on that day and give it its reasons.
 
 ## What the reviewers caught (and why it matters)
 
+- A corrected day could still earn the "On the clock" award although its
+  added pouches have no times. Fixed: the award needs every used pouch timed.
 - A reason could attach to a *resisted* event, changing its trigger. Fixed:
   reasons only apply to pouches.
 - The sheet's number field clamped every keystroke, so typing "12" gave 40.

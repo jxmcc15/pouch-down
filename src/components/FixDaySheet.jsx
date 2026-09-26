@@ -317,7 +317,7 @@ export default function FixDaySheet({ day, onClose }) {
           </div>
         )}
 
-        {(status === 'green' || status === 'yellow') && (
+        {(status === 'green' || status === 'yellow') && n <= state.plan.totalDays && (
           <CorrectionForm key={`${day}:${correctionForDay(state, day)?.id ?? ''}`} state={state} day={day} cap={cap} />
         )}
 

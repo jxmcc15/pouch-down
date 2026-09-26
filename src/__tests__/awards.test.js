@@ -142,6 +142,8 @@ describe('other awards', () => {
   it('on-the-clock: a finished day with every pouch at or after its slot', () => {
     expect(get(attempt([tap('2026-09-22', '15:00', '16:00')]), 'on-the-clock').earned).toBe(false); // an hour early
     expect(get(attempt([tap('2026-09-22', '17:00', '16:00')]), 'on-the-clock')).toMatchObject({ earned: true, earnedOn: '2026-09-22' });
+    // A correction adds pouches with no time, and an untimed pouch can't be on time.
+    expect(get(attempt([tap('2026-09-22', '17:00', '16:00'), ev('correction', '2026-09-22', { count: 3 })]), 'on-the-clock').earned).toBe(false);
   });
   it('showed-up and rode-it-out count logs from before Day 1', () => {
     const s = attempt([ev('resisted', '2026-09-20')]);

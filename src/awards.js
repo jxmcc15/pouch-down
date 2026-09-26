@@ -39,7 +39,9 @@ function dayFacts(state) {
       live: taps.length > 0 || evs.some((e) => e.type === 'resisted'), // logged on the day itself, not backfilled later
       green: dayCountsForStreak(state, day),
       over: logged && used > capForDay(state.plan, n),
-      allOnTime: settled && taps.length > 0 && !evs.some((e) => e.type === 'backfill') && taps.every((e) => classifyPouch(state, e).bucket === 'on-time'),
+      // Every used pouch must be a timed tap: a backfill or a correction adds
+      // pouches with no time, and an untimed pouch can't be "on time".
+      allOnTime: settled && taps.length > 0 && used === taps.length && !evs.some((e) => e.type === 'backfill') && taps.every((e) => classifyPouch(state, e).bucket === 'on-time'),
     });
   }
   return facts;

@@ -12,8 +12,8 @@ could not make. James lost trust in the coach and had no way to do either thing
 himself: backfill only fills an *unlogged* day, and the mood tag is a 15-second
 window on the most recent pouch.
 
-Real data behind the ask (attempt 2, from the Live Log): day 3 (2026-09-24) shows
-4 pouches against a cap of 10, scored green. James used 10; six went unlogged.
+The trigger: a recent day in the active attempt was under-logged — a few
+timed taps, a real total well above them — and the app scored it green.
 
 Three builds, one spec, built in the order 2 → 3 → 1.
 
@@ -52,7 +52,7 @@ Both are made with `makeEvent(type)` so they carry `id`, `ts`, `day`,
 **`correction`** — the real total for a day that *is* logged.
 
 ```js
-{ id, type: 'correction', ts, tzOffsetMin, day: '2026-09-24', count: 10 }
+{ id, type: 'correction', ts, tzOffsetMin, day: '2026-09-10', count: 10 }
 ```
 
 - `day` is the day being corrected (as backfill does), so `eventsForDay(day)`
@@ -62,7 +62,7 @@ Both are made with `makeEvent(type)` so they carry `id`, `ts`, `day`,
 **`reason`** — why a pouch happened, set any time after it was logged.
 
 ```js
-{ id, type: 'reason', ts, tzOffsetMin, day: '2026-09-24', target: '<pouch id>', triggers: ['stress', 'coffee'], note: 'late meeting' }
+{ id, type: 'reason', ts, tzOffsetMin, day: '2026-09-10', target: '<pouch id>', triggers: ['stress', 'coffee'], note: 'late meeting' }
 ```
 
 - `target` is a pouch event id in the same attempt. `day` is `dayKeyOf(target)`,
@@ -252,7 +252,7 @@ whole file).
 > After `pouch-ingest`, read `Pouch Down/Coach Chats.md`. Any new chat that
 > asks for a change or a feature is a request: bring each one to James with a
 > proposed next step. Claude cannot change the phone's data — corrections and
-> reasons are made in the app (Stats or Calendar → tap the day).
+> reasons are made in the app (tap the day on Calendar, or the pencil beside it in Stats).
 
 ---
 
@@ -266,8 +266,8 @@ under 600 characters; "the user", never "your"):
 > What you can and can't do: you can talk about the plan and the log; you
 > cannot add, change, backfill or tag anything, and you cannot see or change
 > settings. If the user asks for a change, say plainly that you can't make it
-> and point to the path in the app: Stats or Calendar → tap the day → Fix this
-> day (correct a total, add reasons to a pouch). This conversation is saved
+> and point to the path in the app: tap the day on Calendar, or the pencil
+> beside it in Stats → Fix this day (correct a total, add reasons to a pouch). This conversation is saved
 > with the user's data and reviewed later, so for anything the app can't do
 > yet, ask for the specifics a reviewer needs — which day, what count, which
 > pouch — and confirm you've noted it. Never claim a change was made.
