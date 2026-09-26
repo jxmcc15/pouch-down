@@ -58,6 +58,8 @@ export function AppStateProvider({ children }) {
   // The last rendered app, for api methods whose return value depends on the
   // log (null = refused). The updater re-checks against the queued state, which
   // is the real guard; this only lags for two calls inside one tick.
+  // A state box, not useRef: the api tests stub React with the hooks this
+  // provider uses, and a box that is never set behaves the same as a ref.
   const [latest] = useState(() => ({ current: null }));
   latest.current = app;
 
@@ -158,6 +160,7 @@ export function AppStateProvider({ children }) {
       appendChatTurn(chatId, { user, assistant } = {}) {
         const a = editable();
         if (!a || typeof user !== 'string' || typeof assistant !== 'string') return null;
+        if (user.trim() === '' || assistant.trim() === '') return null; // a blank turn is nothing to keep
         const now = new Date();
         const ts = now.toISOString();
         const messages = [

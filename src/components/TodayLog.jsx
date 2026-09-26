@@ -30,6 +30,7 @@ function pouchVerdict(v) {
 }
 
 function LogRow({ state, ev }) {
+  const tags = triggersFor(state, ev);
   if (ev.type === 'resisted') {
     return (
       <div className="row small">
@@ -37,7 +38,7 @@ function LogRow({ state, ev }) {
         <div>
           <span className="num">{fmtTime(ev)}</span>
           <span style={{ color: 'var(--green)' }}> · resisted</span>
-          {triggersFor(state, ev).length > 0 && <span className="faint"> · {triggersFor(state, ev).join(', ')}</span>}
+          {tags.length > 0 && <span className="faint"> · {tags.join(', ')}</span>}
         </div>
       </div>
     );
@@ -72,7 +73,7 @@ function LogRow({ state, ev }) {
         <span className="num">{fmtTime(ev)}</span>
         {slotLabel && <span className="muted"> · {slotLabel}</span>}
         <span style={{ color: verdict.color }}> · {verdict.text}</span>
-        {triggersFor(state, ev).length > 0 && <span className="faint"> · {triggersFor(state, ev).join(', ')}</span>}
+        {tags.length > 0 && <span className="faint"> · {tags.join(', ')}</span>}
       </div>
     </div>
   );

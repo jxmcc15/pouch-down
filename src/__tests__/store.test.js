@@ -340,6 +340,16 @@ describe('reasons and triggersFor', () => {
     const s2 = { ...s1, events: [...s1.events, reason(p.id, ['coffee'])] };
     expect(S.triggersFor(s2, p)).toEqual(['coffee']);
   });
+  it('a reason only applies to pouch events: a resisted event falls through to its own trigger even if hostile stored data targets it with a reason', () => {
+    const r = ev('resisted', D, { trigger: 'stress' });
+    const s = attempt([r, reason(r.id, ['boredom'])]);
+    expect(S.triggersFor(s, r)).toEqual(['stress']);
+  });
+  it('a reason\'s triggers are deduplicated, even if hostile stored data has duplicates', () => {
+    const p = ev('pouch', D);
+    const s = attempt([p, reason(p.id, ['stress', 'coffee', 'stress'])]);
+    expect(S.triggersFor(s, p)).toEqual(['stress', 'coffee']);
+  });
 });
 
 describe('markdownSummary with corrections and reasons', () => {

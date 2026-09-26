@@ -107,8 +107,8 @@ const correctionCount = backfillCount;
 // the later entry); earlier ones stay in history.
 export function correctionForDay(state, dateStr) {
   let latest = null;
-  for (const e of state.events) {
-    if (e.type !== 'correction' || dayKeyOf(e) !== dateStr || correctionCount(e) == null) continue;
+  for (const e of eventsForDay(state, dateStr)) {
+    if (e.type !== 'correction' || correctionCount(e) == null) continue;
     if (!latest || new Date(e.ts) >= new Date(latest.ts)) latest = e;
   }
   return latest;
@@ -147,9 +147,11 @@ export function reasonFor(state, ev) {
 
 // The triggers to count and show for an event: its latest reason's set, else
 // the tag it was logged with. Every reader of `.trigger` goes through here.
+// A reason only ever applies to a pouch — resisted events keep their own tag
+// even if stored data has a reason targeting them.
 export function triggersFor(state, ev) {
-  const r = reasonFor(state, ev);
-  if (r && Array.isArray(r.triggers)) return r.triggers;
+  const r = ev.type === 'pouch' ? reasonFor(state, ev) : null;
+  if (r && Array.isArray(r.triggers)) return [...new Set(r.triggers)];
   return ev.trigger ? [ev.trigger] : [];
 }
 

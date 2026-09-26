@@ -212,6 +212,8 @@ describe('appendChatTurn — coach chats saved with the attempt', () => {
     ['no turn', undefined],
     ['user not a string', { user: 5, assistant: 'x' }],
     ['assistant missing', { user: 'x' }],
+    ['user blank', { user: '   ', assistant: 'x' }],
+    ['assistant blank', { user: 'x', assistant: '' }],
   ])('%s → null, nothing stored', (_, turn) => {
     expect(app().api.appendChatTurn(null, turn)).toBeNull();
     expect(chats()).toEqual([]);
