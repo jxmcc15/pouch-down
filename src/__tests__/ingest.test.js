@@ -36,6 +36,14 @@ describe('renderLiveLog', () => {
   afterEach(() => vi.useRealTimers());
   const render = () => renderLiveLog(parseBackup(v2).root, { exportedAt: '2026-09-25T17:00:00.000Z', now: new Date() });
 
+  it('a corrected day reads as the coach table does: starred total, timed logs in parentheses', () => {
+    const root = { version: 2, device: { apiKey: '' }, activeAttemptId: 'a2', attempts: [{ ...a2, events: [...a2.events, ev('correction', '2026-09-21', { count: 10 })] }] };
+    const md = renderLiveLog(root, { exportedAt: '2026-09-25T17:00:00.000Z', now: new Date() });
+    expect(md).toMatch(/\| 1 \| 2026-09-21 \| \d+ \| 10\* \(8\) \|/);
+    expect(md).toContain('\\* corrected total (timed logs in parentheses)');
+    expect(render()).not.toContain('corrected total'); // no legend without a correction
+  });
+
   it('is a valid vault note', () => {
     const md = render();
     expect(md.startsWith('---\ntitle: Pouch Down — Live Log\n')).toBe(true);

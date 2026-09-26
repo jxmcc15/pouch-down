@@ -11,7 +11,7 @@ import { migrateV1 } from './migrate.js';
 import { stageForDay, capForDay } from './plan.js';
 import {
   asOfDay, todayKey, dayKeyFor, dayNumberFor, dateForDayNumber, eventsForDay, isLogged,
-  pouchesForDay, resistedForDay, streaks, classifyPouch, disciplineStats, checkinForDay,
+  pouchesForDay, timedPouchesForDay, resistedForDay, streaks, classifyPouch, disciplineStats, checkinForDay,
   fmtTime, localDateStr, triggersFor,
 } from './store.js';
 import { moneyStats } from './money.js';
@@ -138,10 +138,14 @@ function dayRow(state, n, { today, exportDay }) {
     if (first == null || Date.parse(e.ts) < Date.parse(first.ts)) first = e;
   }
   const used = pouchesForDay(state, d);
+  // A corrected day reads as the coach's table does: the real total, starred,
+  // with the timed logs in parentheses.
+  const timed = timedPouchesForDay(state, d);
+  const usedCell = used > timed ? `${used}* (${timed})` : `${used}`;
   const isOver = used > cap;
   let status = evs.some(validBackfill) ? (isOver ? 'backfilled, over' : 'backfilled') : isOver ? 'over' : 'on plan';
   if (isToday) status += ' so far';
-  return `| ${n} | ${safeText(d)} | ${safeText(cap)} | ${used} | ${early} | ${over} | ${first ? safeText(fmtTime(first)) : '—'} | ${resistedForDay(state, d)} | ${sleepCell(checkinForDay(state, d))} | ${status} |`;
+  return `| ${n} | ${safeText(d)} | ${safeText(cap)} | ${usedCell} | ${early} | ${over} | ${first ? safeText(fmtTime(first)) : '—'} | ${resistedForDay(state, d)} | ${sleepCell(checkinForDay(state, d))} | ${status} |`;
 }
 
 // Scored as of the export (call it inside atExport). The table alone runs on
@@ -196,7 +200,13 @@ function attemptSection(state, { exportDay, shownThrough }) {
   }
   lines.push('| Day | Date | Cap | Used | Early | Over | First | Resisted | Sleep | Status |', '|---|---|---|---|---|---|---|---|---|---|');
   const ctx = { today: asOf, exportDay }; // an active attempt's "today" is the export day
-  for (let i = Math.max(1, last - TABLE_DAYS + 1); i <= last; i++) lines.push(dayRow(state, i, ctx));
+  let corrected = false;
+  for (let i = Math.max(1, last - TABLE_DAYS + 1); i <= last; i++) {
+    const row = dayRow(state, i, ctx);
+    if (row.includes('* (')) corrected = true;
+    lines.push(row);
+  }
+  if (corrected) lines.push('', '\\* corrected total (timed logs in parentheses)');
   return lines;
 }
 
