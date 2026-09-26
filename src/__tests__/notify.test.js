@@ -48,6 +48,12 @@ describe('message text', () => {
     const r = result({ ingested: [filed, filed] });
     expect(ingestedText(r)).toBe('📦 2 Pouch Down backups filed — data as of Fri Sep 25, 9:05 PM. Streak 4 (best 6). Live Log already up to date.');
   });
+  it('ingested: names new coach chats, and only when there are some', () => {
+    const r = (fresh) => result({ ingested: [filed], liveLog: { path: '/vault/Live Log.md', changed: true }, coachChats: { path: '/vault/Coach Chats.md', changed: true, total: 3, fresh } });
+    expect(ingestedText(r(['c1', 'c2']))).toBe('📦 Pouch Down backup filed — data as of Fri Sep 25, 9:05 PM. Streak 4 (best 6). Live Log updated. · 2 new coach chats');
+    expect(ingestedText(r(['c1']))).toMatch(/Live Log updated\. · 1 new coach chat$/);
+    expect(ingestedText(r([]))).toMatch(/Live Log updated\.$/);
+  });
   it('ingested: no streak line for a backup without an attempt', () => {
     const r = result({ ingested: [filed], newest: { ...result().newest, streak: null, attemptId: null } });
     expect(ingestedText(r)).not.toMatch(/Streak/);

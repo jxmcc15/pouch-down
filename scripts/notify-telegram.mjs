@@ -50,12 +50,16 @@ export const inStaleWindow = (now) => now.getHours() >= STALE_WINDOW[0] && now.g
 
 const failKey = (f) => `${f.file}\n${f.reason}`;
 
-export function ingestedText({ ingested, newest, liveLog }) {
+export function ingestedText({ ingested, newest, liveLog, coachChats }) {
   const n = ingested.length;
   const head = n === 1 ? '📦 Pouch Down backup filed' : `📦 ${n} Pouch Down backups filed`;
   const asOf = newest ? ` — data as of ${fmtWhen(newest.exportedAt)}.` : '.';
   const streak = newest?.streak ? ` Streak ${newest.streak.current} (best ${newest.streak.best}).` : '';
-  return `${head}${asOf}${streak} ${liveLog?.changed ? 'Live Log updated.' : 'Live Log already up to date.'}`;
+  // A new chat may hold a request for a change, so it rides on the filed message
+  // rather than being left for James to find in the vault.
+  const k = coachChats?.fresh?.length ?? 0;
+  const chats = k ? ` · ${k} new coach chat${k === 1 ? '' : 's'}` : '';
+  return `${head}${asOf}${streak} ${liveLog?.changed ? 'Live Log updated.' : 'Live Log already up to date.'}${chats}`;
 }
 
 export function blockedText(blocked, nodePath, home = os.homedir()) {

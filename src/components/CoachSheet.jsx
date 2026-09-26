@@ -9,12 +9,15 @@ import { hasProxy, getDeviceToken, subscribe as subscribeToken } from '../proxyC
 const QUICK = ['I want one right now', 'How am I doing?', 'Remind me why'];
 
 export default function CoachSheet({ onClose, openSettings }) {
-  const { state } = useApp();
+  const { state, api } = useApp();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const scrollRef = useRef(null);
+  // One saved chat per opening of the sheet: null until the first reply lands,
+  // then the id appendChatTurn handed back, so later turns join the same chat.
+  const chatIdRef = useRef(null);
   // The key is held for the session, so the sheet follows it: add one in
   // Settings and the coach opens here without a reload.
   const [apiKey, setApiKey] = useState(getKey);
@@ -42,6 +45,8 @@ export default function CoachSheet({ onClose, openSettings }) {
     try {
       const reply = await askCoach(state, next, getKey());
       setMessages((m) => [...m, { role: 'assistant', text: reply }]);
+      // Saved only once the coach answered: a failed request leaves no trace.
+      chatIdRef.current = api.appendChatTurn(chatIdRef.current, { user: text.trim(), assistant: reply }) ?? chatIdRef.current;
     } catch (e) {
       // Each of these names the one thing that fixes it: retyping a key does
       // nothing when it's the device token the proxy turned down.

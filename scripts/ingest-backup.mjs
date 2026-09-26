@@ -5,8 +5,8 @@
 // ~/Downloads) or Save to Files → iCloud Drive → PouchDown. This picks up every
 // `pouch-down-backup-*.json|.txt` there, copies each valid new one into
 // $POUCH_BACKUP_DIR/Backups/, moves Downloads originals into Backups/_ingested/
-// (iCloud copies stay put), and writes $POUCH_BACKUP_DIR/Live Log.md from the
-// newest backup. It never deletes a file and never overwrites a different one.
+// (iCloud copies stay put), and writes $POUCH_BACKUP_DIR/Live Log.md and
+// Coach Chats.md from the newest backup. It never deletes a file and never overwrites a different one.
 //
 // It trusts sources, not filenames. The iCloud folder is trusted by location;
 // ~/Downloads is shared with everything else on the Mac, so a file there is
@@ -31,7 +31,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { parseBackup, renderLiveLog, liveAttempt, backupAgeDays, isStale, atExport } from '../src/ingest.js';
+import { parseBackup, renderLiveLog, renderCoachChats, chatsOf, liveAttempt, backupAgeDays, isStale, atExport } from '../src/ingest.js';
 import { streaks } from '../src/store.js';
 import { wellFormed } from '../src/root.js';
 import { planMessages, nextState, isDue, errorText, statePath, loadState, saveState, notify } from './notify-telegram.mjs';
@@ -164,7 +164,7 @@ function newestArchived(backupDir, now = new Date()) {
   return best;
 }
 
-// → { dryRun, ingested, duplicates, rejected, failed, blocked, waiting, readableDirs, newest, liveLog }
+// → { dryRun, ingested, duplicates, rejected, failed, blocked, waiting, readableDirs, newest, liveLog, coachChats }
 // `provenance` and `trusted` are injectable so tests never consult the real
 // extended attributes of a real file.
 export function ingest(opts = {}) {
@@ -175,7 +175,7 @@ export function ingest(opts = {}) {
   const archiveDir = path.join(backupDir, 'Backups');
   const movedDir = path.join(archiveDir, '_ingested');
   const say = (line) => log(dryRun ? `[dry run] ${line}` : line);
-  const result = { dryRun, ingested: [], duplicates: [], rejected: [], failed: [], blocked: [], waiting: [], readableDirs: 0, newest: null, liveLog: null };
+  const result = { dryRun, ingested: [], duplicates: [], rejected: [], failed: [], blocked: [], waiting: [], readableDirs: 0, newest: null, liveLog: null, coachChats: null };
   // A refused file is named with its reason and nothing else, and is left alone.
   const reject = (file, reason) => {
     result.rejected.push({ file, reason });
@@ -222,6 +222,11 @@ export function ingest(opts = {}) {
     }
   }
   candidates.sort((a, b) => b.mtimeMs - a.mtimeMs); // newest first
+
+  // What the vault already knew before this run files anything: the coach chats
+  // it holds are the ones James has seen, so only chats beyond them are "new".
+  // Taken before step 2, which is what adds to the folder.
+  const before = newestArchived(backupDir, now);
 
   // 2. File each one: parse, dedupe by content, copy into Backups/, move the
   //    Downloads original aside. Anything that fails stays exactly where it is.
@@ -284,8 +289,9 @@ export function ingest(opts = {}) {
   }
 
   // 3. Render the newest backup we know of — new or already archived. Every run
-  //    re-renders, so the staleness warning stays current.
-  let newest = newestArchived(backupDir, now);
+  //    re-renders, so the staleness warning stays current. Everything step 2
+  //    added to the folder is in `parsed`, so `before` plus `parsed` is the lot.
+  let newest = before;
   for (const p of parsed) if (!newest || Date.parse(p.exportedAt) > Date.parse(newest.exportedAt)) newest = p;
   if (newest) {
     const attempt = liveAttempt(newest.root);
@@ -300,18 +306,33 @@ export function ingest(opts = {}) {
       // As of the export, like the Live Log — this is the streak the Telegram ping reports.
       streak: attempt ? atExport(newest.exportedAt, () => streaks(attempt)) : null,
     };
-    const md = renderLiveLog(newest.root, { exportedAt: newest.exportedAt, now });
-    const target = path.join(backupDir, 'Live Log.md');
-    let current = null;
-    try { current = fs.readFileSync(target, 'utf8'); } catch { /* first run */ }
-    const changed = current !== md;
-    if (changed && !dryRun) {
-      fs.mkdirSync(backupDir, { recursive: true });
-      fs.writeFileSync(target, md);
-    }
-    result.liveLog = { path: target, changed };
+    result.liveLog = writeNote(path.join(backupDir, 'Live Log.md'), renderLiveLog(newest.root, { exportedAt: newest.exportedAt, now }), { backupDir, dryRun });
+
+    const ids = (b) => chatsOf(b.root).map(({ chat }) => chat.id);
+    const had = new Set(before && candidates.length ? ids(before) : []);
+    const chats = ids(newest);
+    result.coachChats = {
+      ...writeNote(path.join(backupDir, 'Coach Chats.md'), renderCoachChats(newest.root, { exportedAt: newest.exportedAt, now }), { backupDir, dryRun }),
+      total: chats.length,
+      // With no earlier backup there is nothing to be new against: the first
+      // ingest would otherwise call every chat ever had "new".
+      fresh: before && candidates.length ? chats.filter((id) => !had.has(id)) : [],
+    };
   }
   return result;
+}
+
+// Writes a rendered note only when its text changed, so an unchanged run
+// leaves the vault's git history alone. → { path, changed }
+function writeNote(target, md, { backupDir, dryRun }) {
+  let current = null;
+  try { current = fs.readFileSync(target, 'utf8'); } catch { /* first run */ }
+  const changed = current !== md;
+  if (changed && !dryRun) {
+    fs.mkdirSync(backupDir, { recursive: true });
+    fs.writeFileSync(target, md);
+  }
+  return { path: target, changed };
 }
 
 const fmtLocal = (iso) => {
@@ -320,7 +341,8 @@ const fmtLocal = (iso) => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 
-// The 3-line summary: files ingested, data as of, current streak.
+// The summary: files ingested, data as of, current streak, and the coach
+// chats when the newest backup has any.
 export function summaryLines(r) {
   const extra = [
     r.duplicates.length && `${r.duplicates.length} already filed`,
@@ -342,13 +364,15 @@ export function summaryLines(r) {
   const streak = newest.streak ? `${newest.streak.current} (best ${newest.streak.best}), attempt ${newest.attemptId}${newest.attemptStatus === 'archived' ? ' (archived)' : ''}` : '— (no attempt yet)';
   const logState = r.dryRun ? (liveLog.changed ? 'would update' : 'unchanged') : liveLog.changed ? 'updated' : 'unchanged';
   lines.push(`Streak: ${streak} · Live Log ${logState}: ${liveLog.path}`);
+  if (r.coachChats?.total) lines.push(`Coach chats: ${r.coachChats.total} (${r.coachChats.fresh.length} new)`);
   return lines;
 }
 
 const USAGE = `Usage: pouch-ingest [--dry-run] [--notify]
 
 Files Pouch Down backups (pouch-down-backup-*.json|.txt) from ~/Downloads and
-iCloud Drive/PouchDown into the vault, then re-renders "Live Log.md".
+iCloud Drive/PouchDown into the vault, then re-renders "Live Log.md" and
+"Coach Chats.md".
 
 A file in ~/Downloads is only read if macOS says AirDrop put it there, which is
 how the phone sends them; the iCloud folder is trusted by location. Anything
