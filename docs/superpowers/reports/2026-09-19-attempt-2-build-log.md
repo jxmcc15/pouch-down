@@ -832,3 +832,120 @@ Small follow-ups ride along: one `isLive(state)` helper, a de-duplicated
 share → clipboard → file path, and a recovery dump that can tell blocked
 storage from absent. Spec first (brainstorming, then writing-plans), then a
 session prompt shaped like C's.
+
+## Session D — security hardening (Thu 2026-09-25, evening)
+
+Worked the private review of the Attempt 2 release into decisions James made
+and fixes built on `feat/security-hardening`. The review itself stays in the
+vault, because it describes weaknesses of a public app; this section says what
+was hardened, never how anything could be abused. Seven commits, 33 files,
++2318 / −251. Nothing pushed.
+
+### Up-front answers from James
+
+- **Keep all six Remote Control hosts, and keep auto mode.** Picking a project
+  from the phone is worth real risk to him; tighten around it instead. Rules
+  mirror the desktop — one set for both, no phone-specific restrictions.
+- **No allow-list trim**, for the same reason. Added three **ask** rules
+  instead (`git push`, `gh auth`, `curl`), which beat allow rules, so nothing
+  lost capability and the deploy path always stops for a tap.
+- **Terminal sessions stop publishing themselves to the phone**
+  (`remoteControlAtStartup: false`), and the keep-awake agent is off: he sleeps
+  the Mac deliberately and wants "asleep = no remote access" as a boundary he
+  can see.
+- **Separate GitHub identity: yes, by fine-grained token, later** — both his
+  accounts sit in this Mac's keyring, so the powerful token has to leave the
+  Mac for the separation to be real. A separate macOS user was rejected because
+  it would need its own Claude subscription.
+- **The sandbox is wanted but deferred** — it is the only real fence rather
+  than a speed bump, and it needs a session of testing.
+- **The API key is never at rest on the phone**, filled from a password manager
+  instead. A proxy holding it server-side (Cloudflare Worker) is the agreed end
+  state, deferred to the Firebase work. Browser-side encryption was rejected.
+- **No Shortcut, no `?checkin=` deep link** — removed rather than hardened.
+- **AirDrop only** is how backups travel, so that is what `~/Downloads` trusts.
+- **Timestamp literals replaced in the working tree; history not rewritten.**
+
+### What was built
+
+- **Ingest trusts sources, not filenames.** iCloud by location; `~/Downloads`
+  only for files macOS says arrived by AirDrop. Size cap before the read, a
+  refusal for an export time ahead of the clock, and the app's own `wellFormed`
+  before anything is filed or rendered from. Every backup-derived string passes
+  through `safeText` before it reaches a vault note, headings included.
+  **Refusals are reported** — summary, watcher log, and Telegram — because a
+  file James believed he sent, silently ignored, is the same shape as scoring
+  silence as success.
+- **A Content Security Policy, injected at build only** (dev needs inline
+  script and a websocket), pinned by `csp.test.js`. Inter is served from
+  `src/fonts/` as two variable `woff2` files, which closed `style-src` and
+  `font-src` to `'self'` and removed the service worker's third-party runtime
+  cache. No npm dependency added.
+- **The key stopped living on the device** (`src/sessionKey.js`): held for the
+  session, carried across a reload in `sessionStorage` (per-tab), filled from a
+  password manager into a password field. Every root that comes out of storage
+  hands an inherited key to the session and comes back blank — including one
+  migrated from v1 on this boot, which was the last path that could persist one.
+  `pouch-down-v1` is still read-only, so rotating the key in the console remains
+  the only way to retire the copy frozen there.
+- **Hostile stored data can no longer brick the app.** `wellFormed` now checks
+  what the readers actually index into, all the way down; a root that passes but
+  cannot render lands on recovery instead of a crash that reloads into itself.
+  `ErrorBoundary` remembers a boot crash and offers the existing recovery path
+  on a second one. `rawStorageDump` redacts its finished output.
+- **Housekeeping:** Dependabot for Actions and npm, the five actions pinned to
+  the exact commits their floating majors already point at (each verified
+  against its tag), eight real timestamps replaced with invented ones.
+
+### Three bugs the hardening found that nothing had noticed
+
+1. **A parseable-but-unreadable backup crashed the whole ingest run** (exit 1,
+   nothing rendered), and it was archived first, so every later run re-selected
+   it and the Live Log stayed frozen until the file was deleted by hand.
+2. **A refusal was completely silent** — the CLI said "nothing new" and the
+   watcher log printed nothing at all.
+3. **Settings advertised a Shortcut URL** that the deep-link removal had just
+   made inert, with a copy button. Copying it would have silently done nothing.
+
+### Verified
+
+`npm test` **407 passed / 1 skipped** (345 before the last package; 277 at the
+session's start) · with `POUCH_BACKUP_DIR` set, 407 passed / 0 skipped · lint at
+the 2 baseline warnings · build clean · math harness passed · **`npm run e2e`
+5/5 walks, 1,002 checks, 0 failures, 0 console errors** (migration 180 · setup
+157 · backfill 192 · awards 92 · recovery 381) — a CSP violation surfaces as a
+console error, so the walks are the real gate on the policy.
+
+**Proved against reality, not just fixtures:** the tightened `wellFormed` was
+run over every v2 root in the vault (6 pass, 0 rejected), and at 7:35 PM James
+AirDropped a fresh backup mid-session. The watcher runs straight out of the
+working tree, so tonight's code filed it: quarantine agent `sharingd`, filed,
+original moved aside, Live Log regenerated, nothing refused. The one
+irregularity was a Telegram send failing (`fetch failed`) with the macOS
+notification fallback doing its job — first occurrence in the whole log.
+
+### Deferred, with reasons
+
+- **Component-level `String()` guards** in `TodayLog`, `HistoryTimeline` and
+  `PlanView`. `wellFormed` now gates every route that reaches them, so these are
+  belt to existing braces; display code is the wrong thing to change late with
+  no failing test driving it.
+- **The v1→v2 migration path is still not gated by `wellFormed`**, on purpose:
+  gating it could turn attempt 1 into `migration-failed`, which must never
+  happen. A v1 missing a settings field would now land on recovery on the next
+  boot rather than crashing. The clean fix is filling `DEFAULT_SETTINGS` gaps in
+  `migrate.js`.
+- **One literal recovery component** for both the crash screen and the recovery
+  screen: `RecoveryScreen` calls `useApp()` and `ErrorBoundary` is mounted
+  outside the provider, so sharing it means moving the boundary inside.
+- **A notify-only Telegram bot** (the notifier still borrows the conversational
+  bot's token; disabling the plugin does not affect sending), **the
+  fine-grained token**, **sandbox testing**, and **the Cloudflare Worker proxy**.
+- **A custom domain** stays blocked behind an import path: storage does not
+  follow a change of web address, and backups are export-only today.
+
+### For the next session
+
+Nothing here changed a domain rule. The plan, the scoring, the event shape and
+the append-only guarantee are untouched, and `pouch-down-v1` was never written.
+The branch is unmerged and unpushed; James merges and pushes.
