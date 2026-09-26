@@ -3,17 +3,22 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, SendHorizontal } from 'lucide-react';
 import { useApp } from '../state.jsx';
 import { askCoach } from '../coach.js';
+import { getKey, subscribe } from '../sessionKey.js';
 
 const QUICK = ['I want one right now', 'How am I doing?', 'Remind me why'];
 
 export default function CoachSheet({ onClose, openSettings }) {
-  const { state, device } = useApp();
+  const { state } = useApp();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const scrollRef = useRef(null);
-  const hasKey = Boolean(device.apiKey?.trim());
+  // The key is held for the session, so the sheet follows it: add one in
+  // Settings and the coach opens here without a reload.
+  const [apiKey, setApiKey] = useState(getKey);
+  useEffect(() => subscribe(setApiKey), []);
+  const hasKey = Boolean(apiKey.trim());
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 99999, behavior: 'smooth' });
@@ -27,7 +32,7 @@ export default function CoachSheet({ onClose, openSettings }) {
     setInput('');
     setBusy(true);
     try {
-      const reply = await askCoach(state, next, device.apiKey);
+      const reply = await askCoach(state, next, getKey());
       setMessages((m) => [...m, { role: 'assistant', text: reply }]);
     } catch (e) {
       if (e.message === 'bad-key') setError('That API key was rejected — double-check it in Settings.');
@@ -70,8 +75,9 @@ export default function CoachSheet({ onClose, openSettings }) {
           <div className="card" style={{ textAlign: 'center', padding: 28 }}>
             <Sparkles size={22} color="var(--accent-bright)" />
             <p className="muted small" style={{ margin: '10px 0 16px' }}>
-              The coach runs on your own Claude API key — it lives only on this
-              phone and costs pennies a day. Add it once in Settings.
+              The coach runs on your own Claude API key — it's kept for this
+              session only and costs pennies a day. Add it in Settings; your
+              password manager can fill it in next time.
             </p>
             <button className="btn btn-accent" onClick={openSettings}>
               Open Settings

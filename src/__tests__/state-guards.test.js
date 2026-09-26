@@ -49,10 +49,11 @@ vi.mock('react', async (importOriginal) => ({
 
 const { AppStateProvider } = await import('../state.jsx');
 const { UNDO_WINDOW_MS, TAG_WINDOW_MS } = await import('../justLogged.js');
-const { CheckinDeepLink, AppContent } = await import('../App.jsx');
+const AppModule = await import('../App.jsx');
+const { default: App, AppContent } = AppModule;
 const { KEY_V2, DEFAULT_SETTINGS, freshRoot, startAttempt, archiveActive, updateAttempt } = await import('../root.js');
 const { generatePlan } = await import('../planGenerator.js');
-const { todayKey } = await import('../store.js');
+const { todayKey, checkinForDay } = await import('../store.js');
 const { localOffsetMin, dayKeyAt } = await import('../time.js');
 
 // 30-day plan: day 1 = 2026-09-01, quit day (day 30) = 2026-09-30.
@@ -174,33 +175,57 @@ function setUrl(search) {
   vi.stubGlobal('window', { location: loc, history });
   return loc;
 }
-function openLink() {
-  fake.provide(app());
-  fake.render(CheckinDeepLink);
-}
 const checkins = () => events().filter((e) => e.type === 'checkin');
 
-describe('?checkin= deep link', () => {
-  it('records one shortcut check-in and strips the param', () => {
+// Boot the real top level: render App, then every component element it mounts,
+// the way React would. A URL can only become an event through one of these, so
+// this is where "the URL is not an input" has to be proved.
+function boot() {
+  fake.provide(app());
+  const mounted = [];
+  // Third-party wrappers in the tree reach for hooks this tiny runtime does not
+  // fake and warn about it. Expected here, and not what the test is about.
+  const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const walk = (node) => {
+    if (Array.isArray(node)) { node.forEach(walk); return; }
+    if (!node || typeof node !== 'object') return;
+    if (typeof node.type === 'function' && node.type !== App) {
+      mounted.push(node.type.name);
+      try { fake.render(node.type, { ...node.props, children: null }); } catch { /* a leaf that wants a real DOM; its boot effects still ran */ }
+    }
+    walk(node.props?.children);
+  };
+  try { walk(fake.render(App)); } finally { quiet.mockRestore(); }
+  return mounted;
+}
+
+describe('?checkin= is no longer an input', () => {
+  it('the app module exposes no deep-link component at all', () => {
+    expect(Object.keys(AppModule)).not.toContain('CheckinDeepLink');
+  });
+
+  it('booting with ?checkin= in the URL logs nothing and rewrites nothing', () => {
     seed(withActive());
     const loc = setUrl('?static&checkin=hours:7.4,workout:1');
-    openLink();
-    expect(checkins()).toMatchObject([{ source: 'shortcut', sleepHours: 7.4, workout: true }]);
-    const left = new URLSearchParams(loc.search);
-    expect([left.has('checkin'), left.has('static')]).toEqual([false, true]);
+    const mounted = boot();
+    expect(mounted.length).toBeGreaterThan(2); // the walk really did mount the shell
+    expect(events()).toEqual([]);
+    expect(loc.search).toBe('?static&checkin=hours:7.4,workout:1');
+    expect(window.history.replaceState).not.toHaveBeenCalled();
   });
 
-  it('with no active attempt: strips the param anyway and records nothing', () => {
-    const loc = setUrl('?checkin=hours:7');
-    openLink();
-    expect(loc.search).toBe('');
-    expect(app().root.attempts).toHaveLength(0);
+  it('the manual check-in path still writes one checkin event', () => {
+    seed(withActive());
+    setUrl('');
+    app().api.logCheckin({ source: 'manual', sleepQuality: 4, sleepHours: 7.4, workout: true });
+    expect(checkins()).toMatchObject([{ source: 'manual', sleepQuality: 4, sleepHours: 7.4, workout: true }]);
   });
 
-  it('dedupes on the day the check-in was stamped with, not today’s zone', () => {
-    // A shortcut check-in stamped today, but logged somewhere so far away that
-    // reading its timestamp in this device's zone lands on another day. The
-    // offset is exaggerated so the test holds in any device zone.
+  it('a check-in stored with source "shortcut" is still read, and still wins its day', () => {
+    // Stamped today, but logged somewhere so far away that reading its
+    // timestamp in this device's zone lands on another day. The offset is
+    // exaggerated so the test holds in any device zone. History is append-only:
+    // dropping the entry point never rewrites what was already logged.
     const ts = T0 - 28 * 3600000;
     const tzOffsetMin = localOffsetMin(new Date(T0)) + 28 * 60;
     const today = todayKey();
@@ -208,8 +233,9 @@ describe('?checkin= deep link', () => {
     const prior = { id: 'c1', type: 'checkin', trigger: null, source: 'shortcut', sleepHours: 6, ts: new Date(ts).toISOString(), tzOffsetMin, day: today };
     seed(updateAttempt(withActive(), 'a1', (a) => ({ ...a, events: [prior] })));
     setUrl('?checkin=hours:7');
-    openLink();
+    boot();
     expect(checkins().map((e) => e.id)).toEqual(['c1']);
+    expect(checkinForDay(app().state, today)).toMatchObject({ id: 'c1', source: 'shortcut', sleepHours: 6 });
   });
 });
 

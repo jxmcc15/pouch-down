@@ -1,6 +1,6 @@
 // Turns "5-pack at the gas station for $23.99 plus tax" into numbers. Same
-// on-device key and direct-browser call as coach.js — the key lives only in
-// this device's localStorage (root.device.apiKey) and never ships in the repo.
+// key and direct-browser call as coach.js — the key is held for the session
+// only (sessionKey.js), is never stored on the device, and never ships
 //
 // Deliberately isolated: the future public build proxies this through a
 // backend, and when it does, this is the only file that changes.

@@ -363,8 +363,9 @@ function restoredCheck(rec, L, stored) {
   rec.check(L('Attempt 1 has every v1 event, unchanged'), same('events'), `${a?.events?.length} of ${want.events.length}`);
   rec.check(L('Attempt 1 keeps the legacy plan, settings, celebrations'), same('plan') && same('settings') && same('celebratedStages'));
   rec.check(L(`archived on today's app day (${APP_DAY})`), a?.archivedDay === APP_DAY, a?.archivedDay);
-  // The key stays on the phone — it just never leaves it in a download.
-  rec.check(L('the API key came back on the device'), root?.device?.apiKey === FAKE_KEY);
+  // The key is held for the session only now: v1 still has its own frozen copy,
+  // but nothing copies it forward into v2 storage again.
+  rec.check(L('the API key is not written back to the device'), root?.device?.apiKey === '', JSON.stringify(root?.device));
 }
 
 async function walkContext(browser, base, C, rec) {

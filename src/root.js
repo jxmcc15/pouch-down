@@ -3,6 +3,7 @@
 
 import { migrateV1, localDayOf } from './migrate.js';
 import { LEGACY_PLAN } from './legacyPlan.js';
+import { setKey } from './sessionKey.js';
 
 export const KEY_V1 = 'pouch-down-v1';
 export const KEY_V2 = 'pouch-down-v2';
@@ -32,13 +33,18 @@ export function wellFormed(root) {
 }
 
 // In memory only — loadRoot never writes. Repairs the things that can't hide
-// any history: a missing device, missing celebration lists (they only record
-// which celebrations already played), and an active id that doesn't lead to
-// an active attempt. Left dangling, that id hides the Front door, makes
+// any history: a missing device, an API key inherited from when the key was
+// kept on the device, missing celebration lists (they only record which
+// celebrations already played), and an active id that doesn't lead to an
+// active attempt. Left dangling, that id hides the Front door, makes
 // startAttempt refuse, and gives Exit nothing to exit.
+//
+// The key no longer lives in storage (sessionKey.js): an inherited one is
+// handed to the session and comes back blank here, so the app's next ordinary
+// save is what persists the blank. Nothing is written from this function, and a
+// root with no key never clears a key typed in during this session.
 function settle(stored) {
-  const root = { ...freshRoot(), ...stored };
-  if (!isObj(root.device)) root.device = { apiKey: '' };
+  const root = takeInheritedKey({ ...freshRoot(), ...stored });
   root.attempts = root.attempts.map((a) => (Array.isArray(a.celebratedStages) && Array.isArray(a.celebratedAwards) ? a : {
     ...a,
     celebratedStages: Array.isArray(a.celebratedStages) ? a.celebratedStages : [],
@@ -46,6 +52,18 @@ function settle(stored) {
   }));
   if (root.activeAttemptId !== null && attemptById(root, root.activeAttemptId)?.status !== 'active') root.activeAttemptId = null;
   return root;
+}
+
+// Hands any key found on a root to the session and returns the root with the
+// slot blank, so no path can persist a key again. Used on every root that comes
+// out of storage: a stored v2 (settle), and a v1 blob migrated on this boot —
+// v1 still holds the original key for good, and this is where it stops being
+// copied forward. Reads only; the caller decides whether to save.
+function takeInheritedKey(root) {
+  if (!isObj(root.device)) return { ...root, device: { apiKey: '' } };
+  const inherited = typeof root.device.apiKey === 'string' ? root.device.apiKey : '';
+  if (inherited.trim()) setKey(inherited);
+  return root.device.apiKey === '' ? root : { ...root, device: { ...root.device, apiKey: '' } };
 }
 
 // The v1 blob as a v2 root, or null if it won't migrate. migrateV1 trusts its
@@ -75,7 +93,7 @@ export function loadRoot(storage = localStorage, now = new Date().toISOString())
   const rawV1 = storage.getItem(KEY_V1);
   if (rawV1 !== null) {
     const root = migrateRawV1(rawV1, now);
-    return root ? { root, problem: null } : { root: freshRoot(), problem: 'migration-failed' };
+    return root ? { root: takeInheritedKey(root), problem: null } : { root: freshRoot(), problem: 'migration-failed' };
   }
   return { root: freshRoot(), problem: null };
 }
@@ -88,7 +106,8 @@ export function loadRoot(storage = localStorage, now = new Date().toISOString())
 export function freshStartRoot(storage = localStorage, now = new Date().toISOString()) {
   const rawV1 = storage.getItem(KEY_V1);
   if (rawV1 === null) return freshRoot();
-  return migrateRawV1(rawV1, now) ?? { ...freshRoot(), legacyV1: 'unread' };
+  const migrated = migrateRawV1(rawV1, now);
+  return migrated ? takeInheritedKey(migrated) : { ...freshRoot(), legacyV1: 'unread' };
 }
 
 export function saveRoot(root, storage = localStorage) {

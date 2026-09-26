@@ -65,8 +65,11 @@ export function AppStateProvider({ children }) {
         return ev.id;
       },
       logResisted(trigger = null) { const ev = makeEvent('resisted', trigger); append(ev); return ev.id; },
-      logCheckin({ sleepQuality, sleepScore, sleepHours, workout, source = 'manual' } = {}) {
-        const ev = { ...makeEvent('checkin'), source };
+      // Always 'manual': the app is the only way to write a check-in now that the
+      // URL entry point is gone. Check-ins stored as 'shortcut' still read and
+      // score exactly as they did — history is append-only.
+      logCheckin({ sleepQuality, sleepScore, sleepHours, workout } = {}) {
+        const ev = { ...makeEvent('checkin'), source: 'manual' };
         if (sleepQuality != null) ev.sleepQuality = sleepQuality;
         if (sleepScore != null) ev.sleepScore = sleepScore;
         if (sleepHours != null) ev.sleepHours = sleepHours;

@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 import { Sparkles, Settings, TriangleAlert } from 'lucide-react';
 import { AppStateProvider, useApp } from './state.jsx';
-import { todayKey } from './store.js';
-import { dayKeyOf } from './time.js';
 import Aurora from './components/Aurora.jsx';
 import BottomNav from './components/BottomNav.jsx';
 import TodayView from './components/TodayView.jsx';
@@ -21,43 +19,11 @@ import SetupFlow from './components/onboarding/SetupFlow.jsx';
 
 const VIEWS = { today: TodayView, calendar: CalendarView, stats: StatsView, plan: PlanView };
 
-// iOS Shortcut bridge: ?checkin=hours:7.4,workout:1,quality:4,score:82
-// (all fields optional). Appends one shortcut check-in for today, then strips
-// the param from the URL. Coexists with ?static; re-opens are idempotent.
-export function CheckinDeepLink() {
-  const { state, api } = useApp();
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const raw = params.get('checkin');
-    if (raw == null) return;
-    // Strip first, whatever happens next: a param left in the URL would be
-    // replayed by a later reload as a check-in for the wrong morning.
-    params.delete('checkin');
-    const qs = params.toString();
-    window.history.replaceState(null, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
-    if (!state) return; // no active attempt — nothing to record into, so the link is dropped
-    // The day each check-in was stamped with, not its timestamp re-read in
-    // today's zone — after a trip, those can disagree and let a duplicate in.
-    const today = todayKey();
-    const already = state.events.some(
-      (e) => e.type === 'checkin' && e.source === 'shortcut' && dayKeyOf(e) === today
-    );
-    if (!already) {
-      const data = {};
-      for (const part of raw.split(',')) {
-        const [k, v] = part.split(':');
-        const num = Number(v);
-        if (!Number.isFinite(num)) continue;
-        if (k === 'hours') data.sleepHours = Math.min(14, Math.max(0, num));
-        else if (k === 'quality') data.sleepQuality = Math.min(5, Math.max(1, Math.round(num)));
-        else if (k === 'score') data.sleepScore = Math.min(100, Math.max(0, Math.round(num)));
-        else if (k === 'workout') data.workout = num !== 0;
-      }
-      if (Object.keys(data).length) api.logCheckin({ ...data, source: 'shortcut' });
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  return null;
-}
+// There used to be a `?checkin=` deep link here, so an iOS Shortcut could open
+// the app with a morning check-in in the URL. It is gone: James logs check-ins
+// in the app, and nothing written into the address bar should be able to append
+// an event. Check-ins already stored with `source: 'shortcut'` are read and
+// scored exactly as before — history is append-only.
 
 // A failed localStorage write is otherwise completely silent. Deliberately not
 // dismissible and never auto-dismissed: it stands until a save succeeds, which
@@ -224,7 +190,6 @@ export default function App() {
   return (
     <MotionConfig reducedMotion="user">
       <AppStateProvider>
-        <CheckinDeepLink />
         <Aurora />
         <AppContent />
         {/* Top level, beside the save toast, rather than inside a tab: an

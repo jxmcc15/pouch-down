@@ -10,6 +10,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, Loader2, Check, RotateCcw } from 'lucide-react';
 import { useApp } from '../../state.jsx';
 import { priceFromText } from '../../priceHelp.js';
+import { getKey } from '../../sessionKey.js';
 
 const EXAMPLE = 'e.g. 5-pack at the gas station for $23.99 plus tax';
 
@@ -31,7 +32,7 @@ function errorCopy(err, inSetup) {
 }
 
 export default function PriceHelpSheet({ onClose, onUse }) {
-  const { state, device } = useApp();
+  const { state } = useApp();
   // Setup is the only screen that shows before an attempt exists (App.jsx).
   const inSetup = !state;
   const [text, setText] = useState('');
@@ -45,7 +46,8 @@ export default function PriceHelpSheet({ onClose, onUse }) {
     setError(null);
     setResult(null);
     try {
-      setResult(await priceFromText(text.trim(), device.apiKey));
+      // The key is held for the session (sessionKey.js), never on the device.
+      setResult(await priceFromText(text.trim(), getKey()));
     } catch (e) {
       setError(errorCopy(e, inSetup));
     } finally {

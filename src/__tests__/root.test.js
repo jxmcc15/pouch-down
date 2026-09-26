@@ -1,10 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { KEY_V1, KEY_V2, DEFAULT_SETTINGS, freshRoot, loadRoot, saveRoot, startAttempt, archiveActive, updateAttempt, attemptById, lastSettings, preserveCorruptV2, freshStartRoot } from '../root.js';
+import { getKey, setKey, clearKey } from '../sessionKey.js';
 import { todayKey } from '../store.js';
 
 const mem = (init = {}) => { const m = new Map(Object.entries(init)); return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, v), _m: m }; };
 const NOW = '2026-09-20T18:00:00.000Z';
-const V1 = JSON.stringify({ version: 1, settings: { ...DEFAULT_SETTINGS, apiKey: 'sk-ant-TEST' }, events: [{ id: 'e1', ts: '2026-07-08T11:33:12.569Z', type: 'pouch', trigger: null }], celebratedStages: [1], checkinDismissedFor: null });
+const V1 = JSON.stringify({ version: 1, settings: { ...DEFAULT_SETTINGS, apiKey: 'sk-ant-TEST' }, events: [{ id: 'e1', ts: '2026-07-08T11:42:07.123Z', type: 'pouch', trigger: null }], celebratedStages: [1], checkinDismissedFor: null });
 const attemptShape = (id) => ({ id, status: 'archived', createdAt: NOW, archivedAt: NOW, settings: DEFAULT_SETTINGS, plan: { generator: 'gen-1', startDate: '2026-09-21', quitDate: '2026-12-19', totalDays: 90, baseline: { pouchesPerDay: 9, mg: 9 }, stages: [] }, events: [], celebratedStages: [], celebratedAwards: [], checkinDismissedFor: null });
 const plan = { generator: 'gen-1', startDate: '2026-09-21', quitDate: '2026-12-19', totalDays: 90, baseline: { pouchesPerDay: 9, mg: 9 }, stages: [] };
 
@@ -14,7 +15,20 @@ describe('loadRoot', () => {
     const { root, problem } = loadRoot(mem({ [KEY_V1]: V1 }), NOW);
     expect(problem).toBeNull();
     expect(root.attempts.map((a) => [a.id, a.status])).toEqual([['a1', 'archived']]);
-    expect(root.device.apiKey).toBe('sk-ant-TEST');
+    // The key v1 froze comes out into the session, never back into storage.
+    expect(root.device.apiKey).toBe('');
+    expect(getKey()).toBe('sk-ant-TEST');
+  });
+  it('a key migrated out of v1 is never written to storage', () => {
+    const s = mem({ [KEY_V1]: V1 });
+    saveRoot(loadRoot(s, NOW).root, s);
+    expect(s.getItem(KEY_V2)).not.toContain('sk-ant-TEST');
+    expect(s.getItem(KEY_V1)).toBe(V1); // and v1 keeps its own copy, untouched
+  });
+  it('"Start fresh" from v1 leaves the key in the session, not on the root', () => {
+    const root = freshStartRoot(mem({ [KEY_V1]: V1 }), NOW);
+    expect(root.device.apiKey).toBe('');
+    expect(getKey()).toBe('sk-ant-TEST');
   });
   it('NEVER touches the v1 key', () => {
     const s = mem({ [KEY_V1]: V1 });
@@ -304,5 +318,79 @@ describe('freshStartRoot', () => {
     expect(problem).toBeNull();
     expect(root.legacyV1).toBe('unread');
     expect(s.getItem(KEY_V1)).toBe('{nope');
+  });
+});
+
+// The API key used to live in storage under the v2 root. It doesn't need to be
+// at rest — a password manager can fill it on demand — so a root that arrives
+// carrying one hands it to the session and comes back blank. loadRoot still
+// writes nothing; the blank is persisted by the app's next ordinary save.
+describe('an inherited API key moves into the session, never back to storage', () => {
+  const FAKE = 'sk-ant-test-not-a-real-key';
+  const withKey = () => JSON.stringify({ version: 2, device: { apiKey: FAKE }, activeAttemptId: null, attempts: [attemptShape('a1')] });
+
+  beforeEach(() => { clearKey(); delete globalThis.sessionStorage; });
+  afterEach(() => { clearKey(); delete globalThis.sessionStorage; });
+
+  it('loadRoot hands the key to the session and returns a blank one, writing nothing', () => {
+    const calls = [];
+    const raw = withKey();
+    const s = { getItem: (k) => (k === KEY_V2 ? raw : null), setItem: (k) => calls.push(k) };
+    const { root, problem } = loadRoot(s, NOW);
+    expect(problem).toBeNull();
+    expect(root.device.apiKey).toBe('');
+    expect(getKey()).toBe(FAKE);
+    expect(calls).toEqual([]);
+  });
+
+  it('the next ordinary save stores the blank, and v1 is byte-identical before and after', () => {
+    const s = mem({ [KEY_V1]: V1, [KEY_V2]: withKey() });
+    const v1Before = s.getItem(KEY_V1);
+    const { root } = loadRoot(s, NOW);
+    saveRoot(root, s);
+    expect(JSON.parse(s.getItem(KEY_V2)).device.apiKey).toBe('');
+    expect(s.getItem(KEY_V1)).toBe(v1Before);
+    expect(s.getItem(KEY_V1)).toBe(V1);
+  });
+
+  // The whole point: after a save there is no value anywhere in storage that
+  // contains the key — not the root it was inherited from, not one typed in.
+  it('no value under any storage key contains the key after a save', () => {
+    const s = mem({ [KEY_V1]: V1, [KEY_V2]: withKey() });
+    const { root } = loadRoot(s, NOW);
+    saveRoot(root, s);
+    setKey(FAKE); // and a key typed in by hand this session
+    saveRoot(loadRoot(s, NOW).root, s);
+    for (const [key, value] of s._m) expect(value, key).not.toContain(FAKE);
+  });
+
+  it('a stored root with no key leaves a key typed in this session alone', () => {
+    const s = mem({ [KEY_V2]: JSON.stringify({ version: 2, device: { apiKey: '' }, activeAttemptId: null, attempts: [attemptShape('a1')] }) });
+    setKey(FAKE);
+    expect(loadRoot(s, NOW).root.device.apiKey).toBe('');
+    expect(getKey()).toBe(FAKE);
+  });
+
+  it('a blank-but-whitespace stored key is no key at all', () => {
+    const s = mem({ [KEY_V2]: JSON.stringify({ version: 2, device: { apiKey: '   ' }, activeAttemptId: null, attempts: [attemptShape('a1')] }) });
+    expect(loadRoot(s, NOW).root.device.apiKey).toBe('');
+    expect(getKey()).toBe('');
+  });
+
+  it('a non-string stored key is dropped rather than carried anywhere', () => {
+    for (const apiKey of [42, { k: FAKE }, ['x'], null]) {
+      clearKey();
+      const s = mem({ [KEY_V2]: JSON.stringify({ version: 2, device: { apiKey }, activeAttemptId: null, attempts: [attemptShape('a1')] }) });
+      expect(loadRoot(s, NOW).root.device.apiKey, String(apiKey)).toBe('');
+      expect(getKey(), String(apiKey)).toBe('');
+    }
+  });
+
+  it('a device that is not an object still loads, and nothing leaks into the session', () => {
+    const s = mem({ [KEY_V2]: JSON.stringify({ version: 2, device: FAKE, activeAttemptId: null, attempts: [attemptShape('a1')] }) });
+    const { root, problem } = loadRoot(s, NOW);
+    expect(problem).toBeNull();
+    expect(root.device).toEqual({ apiKey: '' });
+    expect(getKey()).toBe('');
   });
 });

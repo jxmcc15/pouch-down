@@ -1,16 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Eye, EyeOff, ClipboardCopy, Check, Download, Sparkles, History } from 'lucide-react';
+import { ClipboardCopy, Check, Download, Sparkles, History } from 'lucide-react';
 import { useApp } from '../state.jsx';
 import { markdownSummary, fullBackup, todayKey, isLogged, dateForDayNumber } from '../store.js';
 import { moneyStats } from '../money.js';
+import { getKey, setKey, subscribe } from '../sessionKey.js';
 import PriceHelpSheet from './onboarding/PriceHelpSheet.jsx';
-
-const SHORTCUT_URL = 'https://jxmcc15.github.io/pouch-down/?checkin=hours:[Duration]';
-
-// "Simulate import" writes a real, permanent check-in into the active attempt
-// (history is append-only), so it's a developer tool: shown only with ?dev.
-const DEV = new URLSearchParams(window.location.search).has('dev');
 
 const fmtShort = (dateStr) =>
   new Date(`${dateStr}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -24,11 +19,13 @@ const loggedDaysIn = (attempt) => {
 };
 
 export default function SettingsSheet({ onClose }) {
-  const { state, root, device, api, readOnly } = useApp();
+  const { state, root, api, readOnly } = useApp();
   const s = state.settings;
-  const [showKey, setShowKey] = useState(false);
+  // The key is held by sessionKey.js, not by the root — so the field follows
+  // the session, including a key another sheet or a reload put there.
+  const [apiKey, setApiKey] = useState(getKey);
+  useEffect(() => subscribe(setApiKey), []);
   const [copied, setCopied] = useState(false);
-  const [copiedUrl, setCopiedUrl] = useState(false);
   const [backedUp, setBackedUp] = useState(null); // 'shared' | 'copied'
   const [priceHelp, setPriceHelp] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
@@ -65,16 +62,6 @@ export default function SettingsSheet({ onClose }) {
 
   const setMeal = (meal, value) =>
     api.updateSettings({ mealTimes: { ...s.mealTimes, [meal]: value } });
-
-  const copyShortcutUrl = async () => {
-    try {
-      await navigator.clipboard.writeText(SHORTCUT_URL);
-      setCopiedUrl(true);
-      setTimeout(() => setCopiedUrl(false), 2500);
-    } catch {
-      // clipboard can fail outside secure contexts; the button just won't confirm
-    }
-  };
 
   const copyExport = async () => {
     try {
@@ -195,76 +182,27 @@ export default function SettingsSheet({ onClose }) {
           </button>
         )}
 
+        {/* A plain password field, named and marked up the way iOS expects, so
+            a password manager can offer the key instead of you typing it. */}
         <label htmlFor="apikey">Claude API key (for the coach)</label>
-        <div className="row" style={{ gap: 8 }}>
-          <input
-            id="apikey"
-            type={showKey ? 'text' : 'password'}
-            autoComplete="off"
-            placeholder="sk-ant-…"
-            disabled={readOnly}
-            value={device.apiKey}
-            onChange={(e) => api.updateDevice({ apiKey: e.target.value })}
-            style={{ flex: 1 }}
-          />
-          <button
-            className="btn btn-ghost"
-            style={{ minWidth: 52, padding: 0 }}
-            onClick={() => setShowKey((v) => !v)}
-            aria-label={showKey ? 'Hide key' : 'Show key'}
-          >
-            {showKey ? <EyeOff size={18} /> : <Eye size={18} />}
-          </button>
-        </div>
+        <input
+          id="apikey"
+          name="anthropic-api-key"
+          type="password"
+          autoComplete="current-password"
+          spellCheck={false}
+          autoCapitalize="none"
+          placeholder="sk-ant-…"
+          disabled={readOnly}
+          value={apiKey}
+          onChange={(e) => setKey(e.target.value)}
+        />
         <p className="small faint" style={{ margin: '6px 0 0' }}>
-          Stored only in this phone's browser storage. Get one at
-          console.anthropic.com → API keys.
+          Kept for this session only, never saved on this phone — your password
+          manager can fill it back in. Get one at console.anthropic.com → API
+          keys.
         </p>
 
-        <label>Apple Watch / Health import</label>
-        <p className="small muted" style={{ margin: 0 }}>
-          iOS doesn't let web apps read HealthKit — but a Shortcut can send
-          last night's sleep here every morning:
-        </p>
-        <ol className="small muted" style={{ margin: '8px 0 0', paddingLeft: 20, lineHeight: 1.6 }}>
-          <li>Shortcuts app → Automation → New → Time of Day, daily 8:30 AM</li>
-          <li>Add action: <em>Find Health Samples</em> where Type is Sleep</li>
-          <li>Add action: <em>Calculate Statistics</em> → Duration in hours</li>
-          <li>Add action: <em>Open URL</em> with:</li>
-        </ol>
-        <div
-          className="small num"
-          style={{
-            marginTop: 8,
-            padding: '8px 10px',
-            borderRadius: 10,
-            border: '1px solid var(--border)',
-            background: 'rgba(255,255,255,0.04)',
-            wordBreak: 'break-all',
-            color: 'var(--fg-muted)',
-          }}
-        >
-          {SHORTCUT_URL}
-        </div>
-        <div className="row" style={{ gap: 8, marginTop: 8 }}>
-          <button className="btn btn-ghost small" style={{ flex: 1 }} onClick={copyShortcutUrl}>
-            {copiedUrl ? <Check size={15} color="var(--green)" /> : <ClipboardCopy size={15} />}
-            {copiedUrl ? 'Copied' : 'Copy URL template'}
-          </button>
-          {DEV && (
-            <a
-              className="btn btn-ghost small"
-              style={{ flex: 1, textDecoration: 'none' }}
-              href="?dev&checkin=hours:7.4,workout:1,quality:4"
-            >
-              Simulate import
-            </a>
-          )}
-        </div>
-        <p className="small faint" style={{ margin: '6px 0 0' }}>
-          Replace [Duration] with the Shortcut's duration variable.
-          {DEV && ' Simulate writes a real 7.4h check-in into your current attempt — dev only.'}
-        </p>
 
         <label>Attempts</label>
         <p className="small muted" style={{ margin: 0 }}>
