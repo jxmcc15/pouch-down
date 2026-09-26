@@ -22,10 +22,20 @@ const fmtShort = (dateStr) =>
 
 // The calendar date an event was entered on, in the zone it was entered in —
 // never the reader's zone (time.js rule).
+// A ts that doesn't parse gives null, so the caller leaves the date out.
 function enteredOn(ev) {
   const ms = Date.parse(ev.ts);
+  if (!Number.isFinite(ms)) return null;
   const off = ev.tzOffsetMin ?? -new Date(ms).getTimezoneOffset();
-  return new Date(ms + off * 60000).toISOString().slice(0, 10);
+  const shifted = new Date(ms + (Number.isFinite(off) ? off : 0) * 60000);
+  return Number.isFinite(shifted.getTime()) ? shifted.toISOString().slice(0, 10) : null;
+}
+
+// A stored note is only shown or edited when it really is text.
+const noteText = (r) => (typeof r?.note === 'string' ? r.note : '');
+// Shown when the api refuses a save (returns null), until the next change.
+function SaveFailed({ text }) {
+  return <p role="alert" className="small faint" style={{ margin: '8px 0 0' }}>{text}</p>;
 }
 
 const PILL = {
@@ -50,23 +60,31 @@ function StatusPill({ status }) {
 
 // "Actual total" for a logged past day. Starts at pouchesForDay (so an
 // existing correction shows); can't go below what was logged with a time.
+// The field holds what was typed as text and is clamped only on blur and on
+// Save — clamping each keystroke turned "12" into 4 then 40.
 function CorrectionForm({ state, day, cap }) {
   const { api } = useApp();
   const timed = timedPouchesForDay(state, day);
   const current = pouchesForDay(state, day);
   const correction = correctionForDay(state, day);
   const max = Math.max(STEP_MAX, current);
-  const [total, setTotal] = useState(current);
+  const [text, setText] = useState(String(current));
+  const [failed, setFailed] = useState(false);
   const clamp = (n) => Math.min(max, Math.max(timed, Math.round(n)));
+  const parsed = text.trim() === '' ? NaN : Number(text);
+  const valid = Number.isFinite(parsed);
+  const total = valid ? clamp(parsed) : current;
   const over = total > cap;
-  const dirty = total !== current;
+  const dirty = valid && total !== current;
+  const edit = (next) => { setText(next); setFailed(false); };
+  const enteredDate = correction ? enteredOn(correction) : null;
 
   const stepBtn = (delta, label, Icon) => {
     const disabled = delta < 0 ? total <= timed : total >= max;
     return (
       <motion.button
         className="btn"
-        onClick={() => setTotal((t) => clamp(t + delta))}
+        onClick={() => edit(String(clamp(total + delta)))}
         disabled={disabled}
         aria-label={label}
         whileTap={disabled ? undefined : { scale: 0.94 }}
@@ -92,13 +110,11 @@ function CorrectionForm({ state, day, cap }) {
             type="number"
             inputMode="numeric"
             aria-label="Actual total"
-            value={total}
+            value={text}
             min={timed}
             max={max}
-            onChange={(e) => {
-              const n = Number(e.target.value);
-              if (Number.isFinite(n)) setTotal(clamp(n));
-            }}
+            onChange={(e) => edit(e.target.value)}
+            onBlur={() => setText(String(total))}
             style={{ width: '100%', textAlign: 'center', fontSize: 36, fontWeight: 700, lineHeight: 1.1, background: 'transparent', border: 'none', color: 'var(--fg)', padding: 0 }}
           />
           <div className="small faint" style={{ marginTop: 2 }}>{total === 1 ? 'pouch' : 'pouches'}</div>
@@ -113,7 +129,7 @@ function CorrectionForm({ state, day, cap }) {
       </p>
       {correction && (
         <p className="small faint" style={{ margin: '6px 0 0' }}>
-          Corrected {fmtShort(enteredOn(correction))} · was {timed}
+          Corrected{enteredDate ? ` ${fmtShort(enteredDate)}` : ''} · was {timed}
         </p>
       )}
       <p className="small faint" style={{ margin: '10px 0 0' }}>
@@ -124,11 +140,15 @@ function CorrectionForm({ state, day, cap }) {
         className="btn btn-accent"
         disabled={!dirty}
         whileTap={dirty ? { scale: 0.98 } : undefined}
-        onClick={() => api.logCorrection({ day, count: total })}
+        onClick={() => {
+          setText(String(total));
+          if (!api.logCorrection({ day, count: total })) setFailed(true);
+        }}
         style={{ width: '100%', marginTop: 14, opacity: dirty ? 1 : 0.45 }}
       >
         Save total
       </motion.button>
+      {failed && <SaveFailed text="That didn’t save — check the number and try again." />}
     </div>
   );
 }
@@ -139,9 +159,13 @@ function ReasonEditor({ state, ev, onDone }) {
   const { api } = useApp();
   const existing = reasonFor(state, ev);
   const [picked, setPicked] = useState(() => triggersFor(state, ev).filter((t) => TRIGGERS.includes(t)));
-  const [note, setNote] = useState(existing?.note ?? '');
+  const [note, setNote] = useState(() => noteText(existing));
+  const [failed, setFailed] = useState(false);
   const canSave = picked.length > 0 || note.trim() !== '';
-  const toggle = (t) => setPicked((p) => (p.includes(t) ? p.filter((x) => x !== t) : [...p, t]));
+  const toggle = (t) => {
+    setPicked((p) => (p.includes(t) ? p.filter((x) => x !== t) : [...p, t]));
+    setFailed(false);
+  };
   const chipStyle = { minHeight: 36, padding: '6px 13px', fontSize: 13 };
 
   return (
@@ -174,7 +198,7 @@ function ReasonEditor({ state, ev, onDone }) {
           placeholder="anything else?"
           maxLength={NOTE_MAX}
           value={note}
-          onChange={(e) => setNote(e.target.value)}
+          onChange={(e) => { setNote(e.target.value); setFailed(false); }}
           style={{ width: '100%', marginTop: 10, padding: '10px 12px', borderRadius: 12, border: '1px solid var(--border-strong)', background: 'var(--surface)', color: 'var(--fg)', fontSize: 16 }}
         />
         <div className="row" style={{ gap: 10, marginTop: 10 }}>
@@ -186,12 +210,13 @@ function ReasonEditor({ state, ev, onDone }) {
             type="button"
             disabled={!canSave}
             whileTap={canSave ? { scale: 0.98 } : undefined}
-            onClick={() => { if (api.logReason({ target: ev.id, triggers: picked, note })) onDone(); }}
+            onClick={() => { if (api.logReason({ target: ev.id, triggers: picked, note })) onDone(); else setFailed(true); }}
             style={{ flex: 1, opacity: canSave ? 1 : 0.45 }}
           >
             Save reasons
           </motion.button>
         </div>
+        {failed && <SaveFailed text="That didn’t save — try again." />}
       </div>
     </motion.div>
   );
@@ -214,7 +239,7 @@ function PouchList({ state, day }) {
           {pouches.map((ev, i) => {
             const v = pouchVerdict(state, ev);
             const tags = triggersFor(state, ev);
-            const note = reasonFor(state, ev)?.note;
+            const note = noteText(reasonFor(state, ev));
             const open = editing === ev.id;
             return (
               <div key={ev.id} style={{ borderTop: i === 0 ? 'none' : '1px solid var(--border)' }}>

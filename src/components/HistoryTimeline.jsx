@@ -63,7 +63,9 @@ function EventRow({ state, ev }) {
       ...(ev.ctx?.slotLabel ? [<span key="s" className="muted">{ev.ctx.slotLabel}</span>] : []),
       <span key="v" style={{ color: v.color, fontWeight: 500 }}>{v.text}</span>,
       ...(triggersFor(state, ev).length ? [<span key="g" className="faint">{triggersFor(state, ev).join(', ')}</span>] : []),
-      ...(reasonFor(state, ev)?.note ? [<span key="n" className="faint" style={{ fontStyle: 'italic' }}>{reasonFor(state, ev).note}</span>] : []),
+      ...(typeof reasonFor(state, ev)?.note === 'string' && reasonFor(state, ev).note
+        ? [<span key="n" className="faint" style={{ fontStyle: 'italic' }}>{reasonFor(state, ev).note}</span>]
+        : []),
     ];
   } else if (ev.type === 'resisted') {
     icon = <ShieldCheck size={15} color="var(--green)" />;
@@ -91,11 +93,15 @@ function EventRow({ state, ev }) {
     ];
   } else if (ev.type === 'correction') {
     // The real total entered later. Timed count shown beside it so the log
-    // stays readable: what was tapped vs. what it really was.
-    const c = Number.isInteger(ev.count) && ev.count >= 0 ? ev.count : 0;
+    // stays readable: what was tapped vs. what it really was. A count that
+    // isn't a whole number ≥ 0, or is below the timed count (pouchesForDay
+    // ignores it), shows nothing rather than a number that isn't used.
+    const c = ev.count;
+    const timed = timedPouchesForDay(state, ev.day);
+    if (!Number.isInteger(c) || c < 0 || c < timed) return null;
     icon = <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--fg-muted)', display: 'block', opacity: 0.85 }} />;
     segs = [
-      <span key="c" className="muted num">Corrected total: {c} ({timedPouchesForDay(state, ev.day)} timed)</span>,
+      <span key="c" className="muted num">Corrected total: {c} ({timed} timed)</span>,
     ];
   } else {
     // `reason` events never render as lines — they show on their pouch via
