@@ -949,3 +949,52 @@ notification fallback doing its job — first occurrence in the whole log.
 Nothing here changed a domain rule. The plan, the scoring, the event shape and
 the append-only guarantee are untouched, and `pouch-down-v1` was never written.
 The branch is unmerged and unpushed; James merges and pushes.
+
+### Handoff — Session D → the coach-proxy session (written Thu 2026-09-25, evening)
+
+**Why there is another session:** the key is off the device but James has to enter it
+once per session, and he won't accept that — correctly. So the key leaves the phone
+entirely: a Cloudflare Worker he owns holds it, and the app authenticates with a
+low-value device token pasted once per device. Zero per-session friction, and the key
+stops being reachable from anything running on the shared web origin.
+
+**The contract both halves are built to** (do not redesign it): `POST
+<proxy>/v1/messages`, `content-type: application/json`, header `x-pd-device: <token>`,
+body exactly what the app sends today (`{ model, max_tokens, system, messages }`).
+Success is the Claude API's JSON unchanged; errors are `{ error: { message } }` with 401
+(device token), 403 (origin), 400 (rejected body), 502 (upstream). The Worker holds
+`ANTHROPIC_API_KEY` as a secret, allowlists `claude-haiku-4-5-20251001` only, caps
+`max_tokens` at 400 and the body at 16 KB, compares the token timing-safely, and rejects
+any body field outside those four. The session-key fallback must keep working whenever
+`COACH_PROXY` is empty.
+
+**State at handoff:** `workers/coach-proxy/` built (Worker, pure `guard.js`, tests, and a
+beginner-level README that is James's deploy script). The app-side wiring
+(`src/proxyConfig.js`, `coach.js`, `priceHelp.js`, the three sheets, the CSP
+`connect-src`) was still mid-edit — **check `git status` and the suite before trusting
+it, and rebuild rather than patch around anything half-done.**
+
+**Decisions already made, so the session need not ask:**
+- **Worker address: the one thing to ask James**, at the keyboard. Build against the
+  placeholder in `src/proxyConfig.js` and do everything else first. He runs
+  `wrangler login`, `secret put` and `deploy`; Claude never sees a key or a token and
+  never asks him to paste one into a chat.
+- **Push authorized for that session only:** merge and push once *every* gate is green
+  (suite, lint at the 2 baseline warnings, build, math harness, e2e 5/5 with zero console
+  errors run on the merge commit, then live verification). Any gate red → do not push.
+  The standing never-push rule is unchanged everywhere else.
+- **A design-first pass on Settings**, which has grown into one long scroll. Inside
+  Modern Dark Cinema, no new dependencies, phone-first at 390px, 44px targets, reduced
+  motion respected, and `?static` must still disable animation or the walks break.
+- **Three deferred items to finish:** the `String()` guards in `TodayLog`,
+  `HistoryTimeline` and `PlanView`; filling `DEFAULT_SETTINGS` gaps in `migrate.js` (the
+  most load-bearing code in the app — give it its own outside review); and pointing the
+  ingest notifier at a notify-only Telegram bot through `POUCH_TELEGRAM_ENV`.
+
+**Pending from a parallel session (`pouch-down-0d`):** a capability-boundary paragraph in
+`systemPrompt()` plus a `coach.test.js` case, to diagnose the coach over-promising. It is
+holding until this branch's `coach.js` is committed, lands **after** the push, and only
+with James's go-ahead. It keeps the same four request fields, the same model and
+`max_tokens: 400`, and will verify the total body against the Worker's 16 KB cap with the
+7-day log at its largest. The stale comment at the top of `coach.js` belongs to this
+session, not that one.
