@@ -40,7 +40,12 @@ export function safeText(value, max = SAFE_TEXT_MAX) {
     .replace(/[\u0000-\u001f\u007f]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-    .replace(/[`~<>|[\]]/g, (c) => NEUTRAL[c]);
+    .replace(/[`~<>|[\]]/g, (c) => NEUTRAL[c])
+    // Two more that are live in Obsidian once free prose (chat text) reaches a
+    // note: `%%` opens a comment that hides the rest of the note, and `#word`
+    // becomes a real vault tag.
+    .replace(/%%/g, '% %')
+    .replace(/#/g, '\\#');
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
 

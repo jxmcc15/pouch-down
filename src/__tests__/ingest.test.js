@@ -151,6 +151,12 @@ describe('coach chats', () => {
     expect(md).not.toMatch(/\[\[Secret/);
     expect(md).not.toMatch(/<script>/);
   });
+  it('escapes Obsidian comments and tags: %% and #word stay words', () => {
+    const md = renderCoachChats(withChats([chat('c1', '2026-09-25', '15:00', [msg('user', 'hide %% this and tag #craving')])]), { exportedAt, now: new Date() });
+    const line = md.split('\n').find((l) => l.startsWith('- **You:**'));
+    expect(line).toBe('- **You:** hide % % this and tag \\#craving');
+    expect(md).not.toMatch(/%%/);
+  });
   it('caps a long message at 2000 characters', () => {
     const md = renderCoachChats(withChats([chat('c1', '2026-09-25', '15:00', [msg('user', 'x'.repeat(3000))])]), { exportedAt, now: new Date() });
     const line = md.split('\n').find((l) => l.startsWith('- **You:**'));
