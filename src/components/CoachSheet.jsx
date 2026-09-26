@@ -46,7 +46,13 @@ export default function CoachSheet({ onClose, openSettings }) {
       const reply = await askCoach(state, next, getKey());
       setMessages((m) => [...m, { role: 'assistant', text: reply }]);
       // Saved only once the coach answered: a failed request leaves no trace.
-      chatIdRef.current = api.appendChatTurn(chatIdRef.current, { user: text.trim(), assistant: reply }) ?? chatIdRef.current;
+      // A storage failure here must not undo a reply that did arrive: keep it on
+      // screen and carry on — the next turn simply tries to save again.
+      try {
+        chatIdRef.current = api.appendChatTurn(chatIdRef.current, { user: text.trim(), assistant: reply }) ?? chatIdRef.current;
+      } catch {
+        // nothing: the reply stays, no error is shown
+      }
     } catch (e) {
       // Each of these names the one thing that fixes it: retyping a key does
       // nothing when it's the device token the proxy turned down.
@@ -85,7 +91,7 @@ export default function CoachSheet({ onClose, openSettings }) {
         <div className="row" style={{ gap: 8, marginBottom: 12 }}>
           <Sparkles size={18} color="var(--accent-bright)" />
           <h3 style={{ fontSize: 16 }}>Coach</h3>
-          <span className="small faint">knows your plan & your log</span>
+          <span className="small faint">knows your plan & your log · can't change them</span>
         </div>
 
         {!canRun ? (

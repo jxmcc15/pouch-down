@@ -79,6 +79,53 @@ describe('coach prompt — facts come from the log, not the calendar', () => {
   });
 });
 
+// ── what the coach can and can't do ─────────────────────────────────────────
+//
+// The coach can only talk. It is told so, and told where the real fix lives,
+// and the prompt has to stay small enough that the proxy's 16 KB body cap
+// still leaves room for the conversation.
+describe('coach prompt — honest about what it can do', () => {
+  it('says it cannot make changes and never claims one was made', async () => {
+    const plan = generatePlan({ pouchesPerDay: 9, mg: 6, lengthDays: 30, startDate: '2026-09-19', mealTimes });
+    const r = startAttempt(freshRoot(), { plan, settings: { ...DEFAULT_SETTINGS }, now: '2026-09-18T12:00:00Z' });
+    const system = await systemFor(attemptById(r, 'a1'));
+    expect(system).toContain('cannot add, change, backfill or tag');
+    expect(system).toContain('Never claim a change was made');
+    expect(system).toContain('Fix this day');
+    expect(system).not.toMatch(/\byour\b/i);
+  });
+
+  it('a week of fully logged days keeps the system prompt under 8 KB', async () => {
+    // 30-day plan, day 1 = Sep 15, so today (Sep 21) is day 7 and the log
+    // window holds seven days. Every day is as heavy as the data model allows:
+    // ten tagged pouches, a reason on each, and a correction raising the total.
+    const plan = generatePlan({ pouchesPerDay: 9, mg: 6, lengthDays: 30, startDate: '2026-09-15', mealTimes });
+    let r = startAttempt(freshRoot(), { plan, settings: { ...DEFAULT_SETTINGS }, now: '2026-09-14T12:00:00Z' });
+    const days = ['2026-09-15', '2026-09-16', '2026-09-17', '2026-09-18', '2026-09-19', '2026-09-20', '2026-09-21'];
+    const TAGS = ['after-meal', 'coffee', 'driving', 'stress', 'boredom', 'social'];
+    const events = [];
+    days.forEach((day, i) => {
+      // Sep 20 and today have 4 timed pouches corrected to 10; the rest have 10 corrected to 12.
+      const light = day === '2026-09-20' || day === '2026-09-21';
+      const timed = light ? 4 : 10;
+      for (let k = 0; k < timed; k++) {
+        // 13:00Z onward = 08:00 Chicago onward, 25 minutes apart, all on `day`.
+        const at = new Date(Date.parse(`${day}T13:00:00Z`) + k * 25 * 60000);
+        const p = makeEvent('pouch', TAGS[(i + k) % TAGS.length], at);
+        events.push(p);
+        const later = new Date(at.getTime() + 60000);
+        events.push({ ...makeEvent('reason', null, later), day, target: p.id, triggers: [TAGS[k % TAGS.length], TAGS[(k + 2) % TAGS.length]], note: 'a note about why this one happened' });
+      }
+      events.push({ ...makeEvent('correction', null, new Date(`${day}T16:59:00Z`)), day, count: light ? 10 : 12 });
+    });
+    r = updateAttempt(r, 'a1', (a) => ({ ...a, events }));
+    const system = await systemFor(attemptById(r, 'a1'));
+    expect(system.length).toBeLessThan(8000);
+    expect(system).toMatch(/\| 2026-09-20 \| \d+ \| 10\* \(4\) \|/);
+    expect(system).toContain(`Today: 10 pouches used (cap ${capForDay(plan, 7)})`);
+  });
+});
+
 // ── through the proxy ───────────────────────────────────────────────────────
 //
 // coach.js asks proxyConfig which transport to use, so proxy mode is exercised
