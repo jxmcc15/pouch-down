@@ -46,7 +46,9 @@ Rules (they outlive the build):
   computed once, in integer cents (`money.js` `moneyCents`).
 - **The recovery dump and every backup blank `apiKey`** — v1 still holds the
   old key in its settings, forever. Revoking the key at console.anthropic.com
-  is the only real kill switch.
+  is the only real kill switch. The key belongs on a dedicated Console
+  workspace with a monthly spend cap — that cap is what bounds the loss if a
+  key ever leaks, since nothing in the app can stop misuse through the API.
 - **E2E**: `npm run e2e` runs the five Playwright walks in `scripts/e2e/`
   (migration, setup, backfill, awards, recovery) on one private build.
   `lib.mjs` is the harness: clocks are pinned (`phoneContext({ now })`),
@@ -91,9 +93,10 @@ status colors. All motion is Framer springs; `MotionConfig reducedMotion="user"`
 - **Event types**: `pouch` (carries a `ctx` snapshot of slot/cap/nth facts
   stamped at log time; verdicts always derive at read time via
   `classifyPouch`), `resisted`, and `checkin` (morning sleep/workout;
-  append-only, latest check-in per day wins at read time; `source:
-  'manual' | 'shortcut'`, shortcut arriving via the `?checkin=` deep link
-  parsed in App.jsx), and `backfill` (`{ day, count, streak: 'keep' |
+  append-only, latest check-in per day wins at read time; `source` is always
+  `'manual'` — the `?checkin=` URL entry point was removed 2026-09-25, and the
+  app is the only writer. Check-ins stored as `'shortcut'` still read and score
+  the same; history is append-only), and `backfill` (`{ day, count, streak: 'keep' |
   'break' }` for a missed day, entered later; `day` is the day filled in; one
   per day; a new event, never an edit). Undo and `tagEvent` windows are
   enforced by the api itself (`src/justLogged.js`), not only by the toast.
@@ -102,9 +105,25 @@ status colors. All motion is Framer springs; `MotionConfig reducedMotion="user"`
 - **Days run 4am→4am** (`DAY_CUTOFF_HOURS` in time.js) so late nights count
   against the right day.
 - **The AI coach** (`src/coach.js`) calls the Claude API directly from the
-  browser (so does `src/priceHelp.js`); the key lives only in `device.apiKey`
-  in the v2 root and is blanked from every backup and dump. NEVER commit a
-  key, and never move it into the repo or build.
+  browser (so does `src/priceHelp.js`). **The key is never at rest**
+  (`src/sessionKey.js`, 2026-09-25): it is held for the session, carried across
+  a reload in `sessionStorage` (per-tab, so another page on this origin never
+  sees it), and filled from a password manager into a password field. Every
+  root that comes out of storage hands an inherited key to the session and
+  comes back with `device.apiKey: ''`, so no path persists one again. NEVER
+  commit a key, never move it into the repo or build, and never reintroduce a
+  saved key field. The agreed end state is a proxy holding the key server-side.
+- **The ingest pipeline trusts sources, not filenames** (2026-09-25): the
+  iCloud `PouchDown` folder by location, and `~/Downloads` only for files whose
+  macOS quarantine attribute says they arrived by AirDrop. A backup is validated
+  with `wellFormed` *before* it is filed, is size-capped, cannot claim a future
+  export time, and every backup-derived string is escaped before it reaches a
+  vault note.
+- **The Content Security Policy is injected at build only** (`vite.config.js`,
+  pinned by `csp.test.js`). Dev mode needs inline script and a websocket, so the
+  policy must never be present there. Inter is served from `src/fonts/`; nothing
+  the app loads comes from another origin. Widening a directive means changing
+  the test too, on purpose.
 - Honesty tone throughout: warm, direct, zero shame, zero toxic positivity.
 
 ## Related
