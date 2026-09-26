@@ -24,7 +24,8 @@ const isObj = (x) => !!x && typeof x === 'object' && !Array.isArray(x);
 // Enough shape that the app can render it without crashing. A v2 that parses
 // but fails this is unreadable stored data like any other — the recovery
 // screen, never a white screen. Only what every screen leans on is checked.
-function wellFormed(root) {
+// Exported for the ingest pipeline, which validates a backup before filing it.
+export function wellFormed(root) {
   return isObj(root) && root.version === 2 && Array.isArray(root.attempts)
     && root.attempts.every((a) => isObj(a) && isObj(a.plan) && Array.isArray(a.plan.stages) && isObj(a.settings)
       && Array.isArray(a.events) && a.events.every(isObj));
