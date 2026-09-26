@@ -18,14 +18,24 @@ const EXAMPLE = 'e.g. 5-pack at the gas station for $23.99 plus tax';
 // as a plain string and is rendered as a React text child, so it is escaped
 // like any other text — never HTML.
 //
-// No key: say where one goes, truthfully. During setup there is no attempt yet,
-// so Settings can't be opened — the key comes later and the price comes now.
+// Nothing to call with: say what's missing, truthfully, and name the right fix —
+// a device token when a proxy is configured, a key when there isn't one. During
+// setup there is no attempt yet, so Settings can't be opened: whichever it is
+// comes later and the price comes now.
 function errorCopy(err, inSetup) {
   const code = String(err?.message ?? '');
   if (code === 'no-key') {
     return inSetup
       ? "You can add a Claude key in Settings once you've started. For now, enter the price by hand."
       : 'Add a Claude key in Settings to use this — or enter the price by hand.';
+  }
+  if (code === 'no-device-token') {
+    return inSetup
+      ? "You can paste this device's token in Settings once you've started. For now, enter the price by hand."
+      : "Paste this device's token in Settings to use this — or enter the price by hand.";
+  }
+  if (code === 'bad-device-token') {
+    return 'That device token was turned down — paste a fresh one in Settings, or enter the price by hand.';
   }
   if (code.startsWith('unclear:')) return code.slice('unclear:'.length);
   return "Couldn't work that out — enter it by hand.";
@@ -47,6 +57,7 @@ export default function PriceHelpSheet({ onClose, onUse }) {
     setResult(null);
     try {
       // The key is held for the session (sessionKey.js), never on the device.
+      // It is only used when no proxy is configured — priceHelp.js decides.
       setResult(await priceFromText(text.trim(), getKey()));
     } catch (e) {
       setError(errorCopy(e, inSetup));

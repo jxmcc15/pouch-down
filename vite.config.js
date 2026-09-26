@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { proxyOrigin } from './src/proxyConfig.js'
 
 // What the page is allowed to load, and who it is allowed to talk to. Every
 // directive is a closed door with the app's own origin as the only key; the one
@@ -19,7 +20,11 @@ const POLICY = [
   "style-src 'self'",
   "font-src 'self'",
   "img-src 'self'",
-  "connect-src 'self' https://api.anthropic.com",
+  // The Claude API for the direct call with a session key, plus the coach proxy
+  // when one is configured — its origin comes from src/proxyConfig.js, so the
+  // URL is written once and the policy can't drift from the code. No proxy
+  // configured (how the repo ships) leaves this line exactly as it was.
+  `connect-src 'self' https://api.anthropic.com${proxyOrigin() ? ` ${proxyOrigin()}` : ''}`,
   "worker-src 'self' blob:",
   "manifest-src 'self'",
   "base-uri 'self'",
@@ -56,7 +61,9 @@ export default defineConfig({
   // Fixtures are written in Central time (James's zone: noon CT, 4am-cutoff
   // days), so the suite pins it rather than inheriting the machine's zone.
   // Zone independence is tested on purpose, in zones.test.js.
-  test: { environment: 'node', include: ['src/**/*.test.js'], env: { TZ: 'America/Chicago' } },
+  // `workers/` is in here so the coach proxy's guard tests run in `npm test` like
+  // everything else — a gate nobody remembers to run is not a gate.
+  test: { environment: 'node', include: ['src/**/*.test.js', 'workers/**/*.test.js'], env: { TZ: 'America/Chicago' } },
   plugins: [
     react(),
     csp(),

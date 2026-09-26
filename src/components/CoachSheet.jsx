@@ -4,6 +4,7 @@ import { Sparkles, SendHorizontal } from 'lucide-react';
 import { useApp } from '../state.jsx';
 import { askCoach } from '../coach.js';
 import { getKey, subscribe } from '../sessionKey.js';
+import { hasProxy, getDeviceToken, subscribe as subscribeToken } from '../proxyConfig.js';
 
 const QUICK = ['I want one right now', 'How am I doing?', 'Remind me why'];
 
@@ -18,7 +19,14 @@ export default function CoachSheet({ onClose, openSettings }) {
   // Settings and the coach opens here without a reload.
   const [apiKey, setApiKey] = useState(getKey);
   useEffect(() => subscribe(setApiKey), []);
-  const hasKey = Boolean(apiKey.trim());
+  // The other way in: a proxy holding the key, unlocked by a token that stays on
+  // this device. Either one is enough to open the chat, and both are watched so
+  // filling one in Settings opens the coach here without a reload.
+  const [deviceToken, setDeviceToken] = useState(getDeviceToken);
+  useEffect(() => subscribeToken(setDeviceToken), []);
+  const proxyOn = hasProxy();
+  const viaProxy = proxyOn && Boolean(deviceToken.trim());
+  const canRun = viaProxy || Boolean(apiKey.trim());
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 99999, behavior: 'smooth' });
@@ -35,8 +43,12 @@ export default function CoachSheet({ onClose, openSettings }) {
       const reply = await askCoach(state, next, getKey());
       setMessages((m) => [...m, { role: 'assistant', text: reply }]);
     } catch (e) {
+      // Each of these names the one thing that fixes it: retyping a key does
+      // nothing when it's the device token the proxy turned down.
       if (e.message === 'bad-key') setError('That API key was rejected — double-check it in Settings.');
       else if (e.message === 'no-key') setError('Add your API key in Settings first.');
+      else if (e.message === 'no-device-token') setError('Paste your device token in Settings to turn the coach on.');
+      else if (e.message === 'bad-device-token') setError('That device token was turned down — paste a fresh one in Settings.');
       else setError(`Couldn't reach the coach: ${e.message}`);
       setMessages(messages); // roll back the optimistic user message
       setInput(text);
@@ -71,13 +83,23 @@ export default function CoachSheet({ onClose, openSettings }) {
           <span className="small faint">knows your plan & your log</span>
         </div>
 
-        {!hasKey ? (
+        {!canRun ? (
           <div className="card" style={{ textAlign: 'center', padding: 28 }}>
             <Sparkles size={22} color="var(--accent-bright)" />
             <p className="muted small" style={{ margin: '10px 0 16px' }}>
-              The coach runs on your own Claude API key — it's kept for this
-              session only and costs pennies a day. Add it in Settings; your
-              password manager can fill it in next time.
+              {proxyOn ? (
+                <>
+                  The coach runs through your own proxy — paste this device's
+                  token in Settings once and it's on. Once per device, not once
+                  per session.
+                </>
+              ) : (
+                <>
+                  The coach runs on your own Claude API key — it's kept for this
+                  session only and costs pennies a day. Add it in Settings; your
+                  password manager can fill it in next time.
+                </>
+              )}
             </p>
             <button className="btn btn-accent" onClick={openSettings}>
               Open Settings

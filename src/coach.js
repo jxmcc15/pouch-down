@@ -1,9 +1,14 @@
-// AI coach — direct browser calls to the Claude API. The key lives only in
-// this device's localStorage (settings). Never ships in the repo.
+// AI coach — one POST per message, either through the proxy this person owns
+// (which holds the API key server-side, so the phone holds nothing) or, when no
+// proxy is configured, straight to the Claude API with the session key. The
+// choice is made at call time by proxyConfig.js; the body is identical either
+// way, so nothing below this line has to know which one it got. No key or token
+// ever ships in the repo.
 
 import { markdownSummary, asOfDay, dayNumberFor, isLogged, pouchesForDay, resistedForDay, currentStreak } from './store.js';
 import { stageForDay, capForDay } from './plan.js';
 import { moneyStats } from './money.js';
+import { coachTransport, authErrorFor } from './proxyConfig.js';
 
 const MODEL = 'claude-haiku-4-5-20251001';
 
@@ -62,18 +67,17 @@ In the log, "early" means before the pacing slot unlocked and "over" means beyon
 Coaching style: direct, warm, zero shame, zero toxic positivity. Cravings are waves; delay beats willpower. Reference the user's actual numbers when relevant. If the user went over, normalize it fast and refocus on the next slot, not the miss. 2-4 sentences per reply — this is a phone chat, not an essay. Never give medical advice; suggest a doctor for anything clinical.`;
 }
 
+// Thrown error names the sheet maps to copy: 'no-key' (no proxy and no key),
+// 'no-device-token' (a proxy is configured, this device hasn't been connected),
+// 'bad-key' / 'bad-device-token' (401 — whichever credential was actually sent),
+// and anything else is the message the far end gave, or `API error <status>`.
+// `apiKey` is only ever read when the proxy isn't in play.
 export async function askCoach(state, messages, apiKey) {
-  const key = apiKey?.trim();
-  if (!key) throw new Error('no-key');
+  const { url, headers, mode } = coachTransport(apiKey);
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
-    },
+    headers,
     body: JSON.stringify({
       model: MODEL,
       max_tokens: 400,
@@ -84,7 +88,7 @@ export async function askCoach(state, messages, apiKey) {
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    if (res.status === 401) throw new Error('bad-key');
+    if (res.status === 401) throw new Error(authErrorFor(mode));
     throw new Error(body?.error?.message || `API error ${res.status}`);
   }
   const data = await res.json();

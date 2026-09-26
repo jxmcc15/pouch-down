@@ -15,14 +15,24 @@
 // `font-src 'self'`, which is only honest if Inter is actually ours. These
 // tests fail if the remote @import ever comes back, in the CSS or in the
 // service worker's runtime cache.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import config from '../../vite.config.js';
+import { COACH_PROXY } from '../proxyConfig.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (p) => readFileSync(join(REPO, p), 'utf8');
+
+// connect-src is the one directive with a moving part: the coach posts either to
+// the Claude API with a session key, or to a proxy that holds the key instead.
+// The origin is derived here from COACH_PROXY, independently of how the config
+// derives it, so the URL is still written in exactly one place and a mismatch is
+// still a failure. Empty proxy → the policy is exactly what it was before any of
+// this existed. A configured one adds its origin and nothing else.
+const PROXY_ORIGIN = COACH_PROXY ? new URL(COACH_PROXY).origin : '';
+const CONNECT = `connect-src 'self' https://api.anthropic.com${PROXY_ORIGIN ? ` ${PROXY_ORIGIN}` : ''}`;
 
 // The policy, spelled out. Written here independently of the config on
 // purpose: if the two ever disagree, one of them is a mistake.
@@ -32,7 +42,7 @@ const EXPECTED =
   "style-src 'self'; " +
   "font-src 'self'; " +
   "img-src 'self'; " +
-  "connect-src 'self' https://api.anthropic.com; " +
+  `${CONNECT}; ` +
   "worker-src 'self' blob:; " +
   "manifest-src 'self'; " +
   "base-uri 'self'; " +
@@ -103,17 +113,47 @@ describe('the CSP plugin', () => {
       "form-action 'self'",
       "frame-src 'none'",
       "manifest-src 'self'",
-      "connect-src 'self' https://api.anthropic.com",
+      CONNECT,
       "worker-src 'self' blob:",
     ]) {
       expect(policy, `missing ${directive}`).toContain(directive);
     }
   });
 
-  it('allows api.anthropic.com and nothing else off-origin', () => {
+  it('allows the Claude API, the configured proxy if there is one, and nothing else off-origin', () => {
     const policy = policyIn(runTransform(MINIMAL));
     const hosts = policy.match(/https?:\/\/[^\s;']+/g) ?? [];
-    expect(hosts).toEqual(['https://api.anthropic.com']);
+    expect(hosts).toEqual(
+      PROXY_ORIGIN ? ['https://api.anthropic.com', PROXY_ORIGIN] : ['https://api.anthropic.com'],
+    );
+  });
+
+  // Both halves of the moving part, in one test. With COACH_PROXY empty (how the
+  // repo ships) the policy above is already the no-proxy case; this is the other
+  // one — the config is loaded again with a proxy configured, and the only
+  // difference allowed anywhere in the policy is that origin on connect-src.
+  it('widens connect-src to a configured proxy origin, and changes nothing else', async () => {
+    const ORIGIN = 'https://coach.example.workers.dev';
+    vi.resetModules();
+    vi.doMock('../proxyConfig.js', async (importOriginal) => {
+      const actual = await importOriginal();
+      return { ...actual, COACH_PROXY: `${ORIGIN}/`, proxyOrigin: () => ORIGIN };
+    });
+    try {
+      const withProxy = (await import('../../vite.config.js')).default;
+      const plugin = (withProxy.plugins ?? []).flat(Infinity).filter(Boolean).find((p) => p.name === 'csp');
+      const hook = plugin.transformIndexHtml;
+      const fn = typeof hook === 'function' ? hook : hook.handler;
+      const out = fn.call({}, MINIMAL, { path: '/index.html', filename: 'index.html' });
+      const policy = policyIn(typeof out === 'string' ? out : out.html);
+      expect(policy).toContain(`connect-src 'self' https://api.anthropic.com ${ORIGIN};`);
+      // Everything else is untouched: strip the added origin and the whole
+      // policy has to be byte-for-byte the no-proxy one.
+      expect(policy.replace(` ${ORIGIN}`, '')).toBe(EXPECTED.replace(CONNECT, "connect-src 'self' https://api.anthropic.com"));
+    } finally {
+      vi.doUnmock('../proxyConfig.js');
+      vi.resetModules();
+    }
   });
 
   it('names no Google font origin', () => {

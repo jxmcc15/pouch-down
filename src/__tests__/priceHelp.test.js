@@ -124,3 +124,58 @@ describe('priceFromText error taxonomy', () => {
     await expect(priceFromText('x', 'test-key-not-real')).rejects.toThrow('unreadable');
   });
 });
+
+// ── through the proxy ───────────────────────────────────────────────────────
+//
+// priceHelp.js asks proxyConfig which transport to use, so proxy mode is
+// exercised by replacing that one answer. The parsing, the taxonomy, and the
+// body are the real module. Both credentials are obviously fake.
+const PROXY = 'https://coach.example.workers.dev';
+const DEVICE = 'pd-device-test-token';
+const FAKE_KEY = 'sk-ant-test-not-a-real-key';
+
+async function priceVia({ proxy = PROXY, token = DEVICE } = {}) {
+  vi.resetModules();
+  vi.doMock('../proxyConfig.js', async (importOriginal) => {
+    const actual = await importOriginal();
+    return { ...actual, coachTransport: (apiKey) => actual.pickTransport({ proxy, token, apiKey }) };
+  });
+  return (await import('../priceHelp.js')).priceFromText;
+}
+
+describe('price help through the proxy', () => {
+  afterEach(() => {
+    vi.doUnmock('../proxyConfig.js');
+    vi.resetModules();
+  });
+
+  it('posts to the proxy with the device token and no key anywhere', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: good }] }),
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    const ask = await priceVia();
+    await expect(ask('a 5-pack for $23.99 plus tax', FAKE_KEY)).resolves.toMatchObject({ pricePerTin: 4.8 });
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe(`${PROXY}/v1/messages`);
+    expect(url).not.toContain(DEVICE);
+    expect(init.headers['x-pd-device']).toBe(DEVICE);
+    expect(init.headers['x-api-key']).toBeUndefined();
+    expect(init.body).not.toContain(DEVICE);
+    expect(init.body).not.toContain(FAKE_KEY);
+  });
+
+  it('maps the proxy 401 to bad-device-token, and everything else to api', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401 }));
+    await expect((await priceVia())('x', '')).rejects.toThrow('bad-device-token');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 502 }));
+    await expect((await priceVia())('x', '')).rejects.toThrow('api');
+  });
+
+  it('a configured proxy with no token throws no-device-token before the network', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    await expect((await priceVia({ token: '' }))('x', '')).rejects.toThrow('no-device-token');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
