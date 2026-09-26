@@ -104,9 +104,10 @@ export function wellFormed(root) {
 // In memory only — loadRoot never writes. Repairs the things that can't hide
 // any history: a missing device, an API key inherited from when the key was
 // kept on the device, missing celebration lists (they only record which
-// celebrations already played), a missing chat list (attempts older than
-// chats), and an active id that doesn't lead to an
-// active attempt. Left dangling, that id hides the Front door, makes
+// celebrations already played), and an active id that doesn't lead to an
+// active attempt. Not a missing chat list: every reader treats absent as
+// empty, and filling it in would rewrite an archived attempt on the next save
+// (attempt 1 must stay byte-identical to what the migration produced). Left dangling, that id hides the Front door, makes
 // startAttempt refuse, and gives Exit nothing to exit.
 //
 // The key no longer lives in storage (sessionKey.js): an inherited one is
@@ -115,11 +116,10 @@ export function wellFormed(root) {
 // root with no key never clears a key typed in during this session.
 function settle(stored) {
   const root = takeInheritedKey({ ...freshRoot(), ...stored });
-  root.attempts = root.attempts.map((a) => (Array.isArray(a.celebratedStages) && Array.isArray(a.celebratedAwards) && Array.isArray(a.chats) ? a : {
+  root.attempts = root.attempts.map((a) => (Array.isArray(a.celebratedStages) && Array.isArray(a.celebratedAwards) ? a : {
     ...a,
     celebratedStages: Array.isArray(a.celebratedStages) ? a.celebratedStages : [],
     celebratedAwards: Array.isArray(a.celebratedAwards) ? a.celebratedAwards : [],
-    chats: Array.isArray(a.chats) ? a.chats : [],
   }));
   if (root.activeAttemptId !== null && attemptById(root, root.activeAttemptId)?.status !== 'active') root.activeAttemptId = null;
   return root;

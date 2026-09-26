@@ -226,12 +226,14 @@ describe('loadRoot on a v2 that parses and passes the outer shape but cannot ren
     expect(loadRoot(mem({ [KEY_V2]: JSON.stringify(rootWith(a)) }), NOW).problem).toBeNull();
   });
 
-  it('an attempt with no chats key loads, and settle gives it an empty list', () => {
+  it('an attempt with no chats key loads, and settle leaves the key absent', () => {
+    // Filling it in would rewrite an archived attempt on the next save; every
+    // reader treats an absent list as empty instead.
     const a = renderable();
     delete a.chats;
     const { root, problem } = loadRoot(mem({ [KEY_V2]: JSON.stringify(rootWith(a)) }), NOW);
     expect(problem).toBeNull();
-    expect(root.attempts[0].chats).toEqual([]);
+    expect('chats' in root.attempts[0]).toBe(false);
   });
 
   it('an attempt with chats keeps them through load', () => {
