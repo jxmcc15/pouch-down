@@ -385,7 +385,7 @@ import { KEY_V1, KEY_V2, DEFAULT_SETTINGS, freshRoot, loadRoot, saveRoot, startA
 
 const mem = (init = {}) => { const m = new Map(Object.entries(init)); return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, v), _m: m }; };
 const NOW = '2026-09-20T18:00:00.000Z';
-const V1 = JSON.stringify({ version: 1, settings: { ...DEFAULT_SETTINGS, apiKey: 'sk-ant-TEST' }, events: [{ id: 'e1', ts: '2026-07-08T11:33:12.569Z', type: 'pouch', trigger: null }], celebratedStages: [1], checkinDismissedFor: null });
+const V1 = JSON.stringify({ version: 1, settings: { ...DEFAULT_SETTINGS, apiKey: 'sk-ant-TEST' }, events: [{ id: 'e1', ts: '2026-07-08T11:42:07.123Z', type: 'pouch', trigger: null }], celebratedStages: [1], checkinDismissedFor: null });
 const plan = { generator: 'gen-1', startDate: '2026-09-21', quitDate: '2026-12-19', totalDays: 90, baseline: { pouchesPerDay: 9, mg: 9 }, stages: [] };
 
 describe('loadRoot', () => {
@@ -929,7 +929,7 @@ const plan = generatePlan({ pouchesPerDay: 9, mg: 9, strengths: [6, 3], lengthDa
 const ev = (type, day, extra = {}) => ({ id: `${type}-${day}-${Math.random()}`, ts: `${day}T17:00:00.000Z`, tzOffsetMin: -300, day, type, trigger: null, ...extra });
 const a2 = { id: 'a2', status: 'active', createdAt: '2026-09-21T12:00:00Z', archivedAt: null, settings, plan, events: [...Array.from({ length: 8 }, () => ev('pouch', '2026-09-21')), ev('backfill', '2026-09-23', { count: 7, streak: 'keep' })], celebratedStages: [], celebratedAwards: [], checkinDismissedFor: null };
 const v2 = JSON.stringify({ app: 'pouch-down', format: 2, exportedAt: '2026-09-25T17:00:00.000Z', root: { version: 2, device: { apiKey: '' }, activeAttemptId: 'a2', attempts: [a2] } });
-const v1 = JSON.stringify({ app: 'pouch-down', exportedAt: '2026-09-19T02:01:37.910Z', plan: {}, state: { version: 1, settings: { ...settings, apiKey: '' }, events: [{ id: 'e1', ts: '2026-07-08T11:33:12.569Z', type: 'pouch', trigger: null }], celebratedStages: [], checkinDismissedFor: null } });
+const v1 = JSON.stringify({ app: 'pouch-down', exportedAt: '2026-09-19T02:14:52.406Z', plan: {}, state: { version: 1, settings: { ...settings, apiKey: '' }, events: [{ id: 'e1', ts: '2026-07-08T11:42:07.123Z', type: 'pouch', trigger: null }], celebratedStages: [], checkinDismissedFor: null } });
 
 describe('parseBackup', () => {
   it('reads a v2 backup', () => expect(parseBackup(v2)).toMatchObject({ format: 2, exportedAt: '2026-09-25T17:00:00.000Z', root: { activeAttemptId: 'a2' } }));

@@ -1,0 +1,17 @@
+version: 2
+
+# The workflow pins its actions to exact commits, so a new release is only
+# picked up when a PR here says so. Same for npm: the deploy builds from the
+# lockfile, and this is how the lockfile moves.
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

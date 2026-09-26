@@ -9,9 +9,9 @@ const v1 = () => ({
   version: 1,
   settings: { mealTimes: { breakfast: '08:00', lunch: '12:30', dinner: '18:30' }, costPerTin: 5, pouchesPerTin: 20, apiKey: 'sk-ant-TEST', wakeTime: '07:00', sleepTime: '23:00' },
   events: [
-    { id: 'e1', ts: '2026-07-08T11:33:12.569Z', type: 'pouch', trigger: 'stress' },
+    { id: 'e1', ts: '2026-07-08T11:42:07.123Z', type: 'pouch', trigger: 'stress' },
     { id: 'e2', ts: '2026-07-10T07:30:00.000Z', type: 'pouch', trigger: null, ctx: { nth: 9, cap: 8 } }, // 3:30am EDT → Jul 9
-    { id: 'e3', ts: '2026-07-10T12:53:31.428Z', type: 'checkin', trigger: null, source: 'manual', sleepQuality: 3 },
+    { id: 'e3', ts: '2026-07-10T13:08:45.321Z', type: 'checkin', trigger: null, source: 'manual', sleepQuality: 3 },
   ],
   celebratedStages: [1, 2],
   checkinDismissedFor: '2026-07-10',
@@ -24,7 +24,7 @@ describe('migrateV1', () => {
     expect(root.version).toBe(2);
     expect(root.activeAttemptId).toBeNull();
     expect(root.attempts).toHaveLength(1);
-    expect(root.attempts[0]).toMatchObject({ id: 'a1', status: 'archived', archivedAt: opts.now, createdAt: '2026-07-08T11:33:12.569Z', plan: LEGACY_PLAN, celebratedStages: [1, 2], celebratedAwards: [] });
+    expect(root.attempts[0]).toMatchObject({ id: 'a1', status: 'archived', archivedAt: opts.now, createdAt: '2026-07-08T11:42:07.123Z', plan: LEGACY_PLAN, celebratedStages: [1, 2], celebratedAwards: [] });
   });
 
   it('keeps every event and every original field untouched', () => {

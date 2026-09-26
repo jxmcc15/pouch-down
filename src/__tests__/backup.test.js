@@ -37,7 +37,7 @@ const FAKE = 'sk-ant-api03-FAKE_test-KEY-0123456789';
 describe('fullBackup carries what migration and Start fresh keep aside', () => {
   it('unreadable v1 entries ride along verbatim', () => {
     const bad = [null, { id: 'no-ts', type: 'pouch' }, { id: 'num', ts: 1720000000000 }];
-    const v1 = { version: 1, settings: { apiKey: FAKE }, events: [{ id: 'e1', ts: '2026-07-08T11:33:12.569Z', type: 'pouch', trigger: null }, ...bad] };
+    const v1 = { version: 1, settings: { apiKey: FAKE }, events: [{ id: 'e1', ts: '2026-07-08T11:42:07.123Z', type: 'pouch', trigger: null }, ...bad] };
     const { root } = loadRoot(mem({ [KEY_V1]: JSON.stringify(v1) }), NOW);
     const out = fullBackup(root);
     expect(JSON.parse(out).root.attempts[0].unreadableEvents).toEqual(bad);
@@ -52,7 +52,7 @@ describe('fullBackup carries what migration and Start fresh keep aside', () => {
 // text. v1 is never rewritten and kept the key in settings.apiKey, so without
 // this every recovery download would carry the key into an AirDropped file.
 describe('rawStorageDump', () => {
-  const v1 = JSON.stringify({ version: 1, settings: { costPerTin: 5, apiKey: FAKE }, events: [{ id: 'e1', ts: '2026-07-08T11:33:12.569Z', type: 'pouch', trigger: null }] });
+  const v1 = JSON.stringify({ version: 1, settings: { costPerTin: 5, apiKey: FAKE }, events: [{ id: 'e1', ts: '2026-07-08T11:42:07.123Z', type: 'pouch', trigger: null }] });
   const v2 = JSON.stringify({ version: 2, device: { apiKey: FAKE }, activeAttemptId: null, attempts: [] });
   const dumpOf = (init) => JSON.parse(rawStorageDump(mem(init), NOW));
   const cases = {
