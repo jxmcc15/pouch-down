@@ -272,4 +272,12 @@ describe('telegramConfig reads a self-contained env file', () => {
     expect(telegramConfig({ POUCH_TELEGRAM_ENV: path.join(dir, 'telegram.env') })).toEqual({ problem: 'no Telegram chat to send to' });
     fs.rmSync(dir, { recursive: true });
   });
+  it('a blank TELEGRAM_CHAT_ID= line never swallows the next line as the chat id', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pouch-notify-'));
+    fs.writeFileSync(path.join(dir, 'telegram.env'), 'TELEGRAM_CHAT_ID=\nTELEGRAM_BOT_TOKEN=123456:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef\n');
+    // The token is still read (otherwise the problem would be the missing token),
+    // and the chat id falls through instead of becoming the token line.
+    expect(telegramConfig({ POUCH_TELEGRAM_ENV: path.join(dir, 'telegram.env') })).toEqual({ problem: 'no Telegram chat to send to' });
+    fs.rmSync(dir, { recursive: true });
+  });
 });

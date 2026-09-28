@@ -184,7 +184,7 @@ export function telegramConfig(env = process.env) {
   let chatId = env.POUCH_TELEGRAM_CHAT || null;
   try {
     const text = fs.readFileSync(envFile, 'utf8');
-    const val = (name) => new RegExp(`^\\s*(?:export\\s+)?${name}\\s*=\\s*["']?([^"'\\s]+)`, 'm').exec(text)?.[1] ?? null;
+    const val = (name) => new RegExp(`^\\s*(?:export\\s+)?${name}[ \\t]*=[ \\t]*["']?([^"'\\s]+)`, 'm').exec(text)?.[1] ?? null;
     token = val('TELEGRAM_BOT_TOKEN');
     // A notify-only bot's file carries its own chat id, so nothing has to sit
     // beside it. The plugin's folder has no such line and falls through to
