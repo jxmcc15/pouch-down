@@ -13,6 +13,7 @@ import {
   fmtDuration,
   triggersFor,
 } from '../store.js';
+import { asText } from '../text.js';
 
 const spring = { type: 'spring', damping: 24, stiffness: 180 };
 
@@ -30,7 +31,7 @@ function pouchVerdict(v) {
 }
 
 function LogRow({ state, ev }) {
-  const tags = triggersFor(state, ev);
+  const tags = triggersFor(state, ev).map(asText).filter(Boolean);
   if (ev.type === 'resisted') {
     return (
       <div className="row small">
@@ -63,7 +64,7 @@ function LogRow({ state, ev }) {
   // pouch. classifyPouch derives ctx for old events that lack it;
   // the display slot label reads straight off the stamp, omitted when absent.
   const verdict = pouchVerdict(classifyPouch(state, ev));
-  const slotLabel = ev.ctx?.slotLabel;
+  const slotLabel = asText(ev.ctx?.slotLabel);
   return (
     <div className="row small">
       <span style={lead}>

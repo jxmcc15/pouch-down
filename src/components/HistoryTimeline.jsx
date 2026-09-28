@@ -8,6 +8,7 @@ import {
 } from '../store.js';
 import { capForDay } from '../plan.js';
 import { pouchVerdict } from '../pouchVerdict.js';
+import { asText } from '../text.js';
 
 const spring = { type: 'spring', damping: 24, stiffness: 180 };
 // A gentle tween reads smoother than a spring on animated `height: auto`.
@@ -55,24 +56,29 @@ function EventRow({ state, ev }) {
   let icon = null;
   let segs = null;
 
+  // Stored strings pass through asText, so one that became an object drops
+  // out of the line instead of printing "[object Object]" or throwing.
+  const tags = triggersFor(state, ev).map(asText).filter(Boolean);
+  const tagSeg = tags.length ? [<span key="g" className="faint">{tags.join(', ')}</span>] : [];
+
   if (ev.type === 'pouch') {
     const v = pouchVerdict(state, ev);
+    const slotLabel = asText(ev.ctx?.slotLabel);
+    const note = asText(reasonFor(state, ev)?.note);
     icon = <span style={{ width: 8, height: 8, borderRadius: '50%', background: v.color, display: 'block', opacity: 0.85 }} />;
     segs = [
       <span key="t" className="muted num">{fmtTime(ev)}</span>,
-      ...(ev.ctx?.slotLabel ? [<span key="s" className="muted">{ev.ctx.slotLabel}</span>] : []),
+      ...(slotLabel ? [<span key="s" className="muted">{slotLabel}</span>] : []),
       <span key="v" style={{ color: v.color, fontWeight: 500 }}>{v.text}</span>,
-      ...(triggersFor(state, ev).length ? [<span key="g" className="faint">{triggersFor(state, ev).join(', ')}</span>] : []),
-      ...(typeof reasonFor(state, ev)?.note === 'string' && reasonFor(state, ev).note
-        ? [<span key="n" className="faint" style={{ fontStyle: 'italic' }}>{reasonFor(state, ev).note}</span>]
-        : []),
+      ...tagSeg,
+      ...(note ? [<span key="n" className="faint" style={{ fontStyle: 'italic' }}>{note}</span>] : []),
     ];
   } else if (ev.type === 'resisted') {
     icon = <ShieldCheck size={15} color="var(--green)" />;
     segs = [
       <span key="t" className="muted num">{fmtTime(ev)}</span>,
       <span key="r" style={{ color: 'var(--green)', fontWeight: 500 }}>resisted</span>,
-      ...(triggersFor(state, ev).length ? [<span key="g" className="faint">{triggersFor(state, ev).join(', ')}</span>] : []),
+      ...tagSeg,
     ];
   } else if (ev.type === 'checkin') {
     icon = <Moon size={15} color="var(--accent-bright)" />;
@@ -80,8 +86,10 @@ function EventRow({ state, ev }) {
       <span key="t" className="muted num">{fmtTime(ev)}</span>,
       <span key="c" className="muted">check-in</span>,
     ];
-    if (ev.sleepQuality != null) segs.push(<span key="q" className="muted num">quality {ev.sleepQuality}/5</span>);
-    if (ev.sleepHours != null) segs.push(<span key="h" className="muted num">{fmtHours(ev.sleepHours)}h sleep</span>);
+    // Finite numbers only: a stored object would throw inside React, and a
+    // string or NaN would print "quality NaN/5" or "NaNh".
+    if (Number.isFinite(ev.sleepQuality)) segs.push(<span key="q" className="muted num">quality {ev.sleepQuality}/5</span>);
+    if (Number.isFinite(ev.sleepHours)) segs.push(<span key="h" className="muted num">{fmtHours(ev.sleepHours)}h sleep</span>);
     if (ev.workout === true) segs.push(<span key="w" className="muted">workout</span>);
   } else if (ev.type === 'backfill') {
     // Backfills carry a count but no timing — they were entered after the fact.
