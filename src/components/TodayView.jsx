@@ -183,6 +183,28 @@ export default function TodayView({ openSettings, openTrophies }) {
         prePlan={prePlan}
       />
 
+      {!readOnly && (
+        <motion.button
+          className="btn"
+          style={{
+            width: '100%',
+            marginTop: 10,
+            minHeight: 56,
+            fontSize: 17,
+            background: 'rgba(248,113,113,0.10)',
+            border: '1px solid rgba(248,113,113,0.35)',
+            color: 'var(--red)',
+          }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => setSosOpen(true)}
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ ...spring, delay: 0.1 }}
+        >
+          Craving? SOS — ride it out
+        </motion.button>
+      )}
+
       <AnimatePresence>
         {toastLive && (
           <LogToast
@@ -225,28 +247,6 @@ export default function TodayView({ openSettings, openTrophies }) {
       <div style={{ marginTop: 14 }}>
         <MoneyCard onOpenSettings={openSettings} />
       </div>
-
-      {!readOnly && (
-        <motion.button
-          className="btn"
-          style={{
-            width: '100%',
-            marginTop: 14,
-            minHeight: 56,
-            fontSize: 17,
-            background: 'rgba(248,113,113,0.10)',
-            border: '1px solid rgba(248,113,113,0.35)',
-            color: 'var(--red)',
-          }}
-          whileTap={{ scale: 0.98 }}
-          onClick={() => setSosOpen(true)}
-          initial={{ opacity: 0, y: 14 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ ...spring, delay: 0.15 }}
-        >
-          Craving? SOS — ride it out
-        </motion.button>
-      )}
 
       {!prePlan && dayNum >= 1 && (
         <motion.p
