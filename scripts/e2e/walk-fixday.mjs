@@ -280,6 +280,14 @@ async function tab(page, name) {
   await page.waitForTimeout(600);
 }
 
+// History is the second segment of Stats (design pass, 2026-09-28); Stats
+// opens on Overview, so every visit taps through to it.
+async function openHistory(page) {
+  await tab(page, 'Stats');
+  await page.getByRole('tab', { name: 'History', exact: true }).click();
+  await page.waitForTimeout(450);
+}
+
 // The sheet is open, and for the day we meant.
 async function checkSheetFor(rec, page, L) {
   const sheet = sheetLoc(page);
@@ -356,7 +364,7 @@ async function walk(browser, base, rec) {
 
   // Door 1: the History pencil on Stats.
   rec.section('History pencil → correct the total');
-  await tab(page, 'Stats');
+  await openHistory(page);
   const pencil = page.getByRole('button', { name: `Fix ${FIX_LABEL}`, exact: true });
   const hasPencil = await pencil.count().then((n) => n === 1);
   rec.check(`${L} History shows the pencil "Fix ${FIX_LABEL}"`, hasPencil);
@@ -466,7 +474,7 @@ async function walk(browser, base, rec) {
   rec.check(`${L} after reload the correction and reason are still stored (seeding did not re-run)`,
     JSON.stringify(storedA2(await storedRoot(page))?.events) === before);
 
-  await tab(page, 'Stats');
+  await openHistory(page);
   const hist = await historyRows(page);
   rec.check(`${L} History: "Corrected total: ${TOTAL} (4 timed)"`, hist.includes(`Corrected total: ${TOTAL} (4 timed)`),
     hist.match(/Corrected[^\n]*/)?.[0] ?? 'no corrected line');

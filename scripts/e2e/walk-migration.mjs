@@ -395,6 +395,9 @@ async function walkContext(browser, base, C, rec, shared) {
     const loggedCard = squash(await page.locator('.card').filter({ hasText: /of \d+ days/i }).first().innerText().catch(() => ''));
     rec.check(L(`Stats: ${X.loggedDays} of 60 days logged`), new RegExp(`^${X.loggedDays} of 60 days logged$`, 'i').test(loggedCard), `"${loggedCard}"`);
 
+    // History is the second segment of Stats now (design pass, 2026-09-28).
+    await page.getByRole('tab', { name: /^history$/i }).click();
+    await page.waitForTimeout(450);
     // History: all 60 days, newest first, each with its count or "no log".
     const history = page.locator('.card').filter({ has: page.getByText(/^history$/i) }).last();
     const hasHistory = await visible(history, 2000);

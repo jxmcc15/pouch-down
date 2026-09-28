@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useApp } from '../state.jsx';
 import {
@@ -14,8 +15,7 @@ import RhythmChart from './RhythmChart.jsx';
 import GapsCard from './GapsCard.jsx';
 import CorrelationCard from './CorrelationCard.jsx';
 import HistoryTimeline from './HistoryTimeline.jsx';
-import MoneyCard from './MoneyCard.jsx';
-import TrophyCase from './awards/TrophyCase.jsx';
+import { TrophyStrip } from './awards/TrophyCase.jsx';
 
 const W = 440;
 const H = 180;
@@ -198,7 +198,47 @@ function TriggerBars({ state }) {
   );
 }
 
-export default function StatsView({ openSettings, onFixDay }) {
+const SEGMENTS = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'history', label: 'History' },
+];
+
+// Two views over the same data. The pill is one shared layoutId, so it slides
+// between tabs instead of blinking; MotionConfig's reduced-motion setting and
+// ?static both land it in place without the slide.
+function Segments({ value, onChange }) {
+  return (
+    <div className="seg" role="tablist" aria-label="Stats sections">
+      {SEGMENTS.map((s) => (
+        <button
+          key={s.id}
+          type="button"
+          role="tab"
+          id={`stats-tab-${s.id}`}
+          aria-selected={value === s.id}
+          aria-controls={`stats-panel-${s.id}`}
+          className="seg-item"
+          onClick={() => onChange(s.id)}
+        >
+          {value === s.id && (
+            <motion.span
+              className="seg-pill"
+              layoutId="stats-seg-pill"
+              transition={{ type: 'spring', damping: 28, stiffness: 320 }}
+            />
+          )}
+          {s.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const SectionHead = ({ children }) => <div className="section-head">{children}</div>;
+
+export default function StatsView({ openTrophies, onFixDay }) {
+  // App remounts the view on every tab change, so Stats always opens on Overview.
+  const [seg, setSeg] = useState('overview');
   const { state } = useApp();
   const { totalDays, baseline, quitDate } = state.plan;
   const money = moneyStats(state);
@@ -229,79 +269,86 @@ export default function StatsView({ openSettings, onFixDay }) {
 
   return (
     <div>
-      <h2 style={{ fontSize: 20, margin: '4px 0 14px' }}>The story so far</h2>
+      <h2 style={{ fontSize: 20, margin: '4px 0 12px' }}>The story so far</h2>
+      <Segments value={seg} onChange={setSeg} />
 
-      <motion.div className="card" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={spring}>
-        <div className="tiny muted" style={{ marginBottom: 8 }}>Daily nicotine (mg)</div>
-        <MgChart state={state} />
-      </motion.div>
+      {seg === 'overview' ? (
+        <div role="tabpanel" id="stats-panel-overview" aria-labelledby="stats-tab-overview">
+          <motion.div className="card" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={spring}>
+            <div className="tiny muted" style={{ marginBottom: 8 }}>Daily nicotine (mg)</div>
+            <MgChart state={state} />
+          </motion.div>
 
-      <div style={{ marginTop: 14 }}>
-        <MoneyCard onOpenSettings={openSettings} />
-      </div>
+          <motion.div
+            className="row"
+            style={{ marginTop: 14, gap: 14, alignItems: 'stretch' }}
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ ...spring, delay: 0.08 }}
+          >
+            {finished ? (
+              <div className="card" style={{ flex: 1, textAlign: 'center' }}>
+                <div style={{ fontSize: 26, fontWeight: 800 }} className="num">
+                  {money.loggedDays}
+                </div>
+                <div className="tiny faint">of {totalDays} days</div>
+                <div className="small muted" style={{ marginTop: 4 }}>
+                  logged
+                </div>
+              </div>
+            ) : (
+              <div className="card" style={{ flex: 1, textAlign: 'center' }}>
+                <div style={{ fontSize: 26, fontWeight: 800 }} className="num">
+                  ${projected.toFixed(0)}
+                </div>
+                <div className="tiny faint">by {fmtShort(quitDate)}</div>
+                <div className="small muted" style={{ marginTop: 4 }}>
+                  if you follow the plan
+                </div>
+              </div>
+            )}
+            <div className="card" style={{ flex: 1, textAlign: 'center' }}>
+              <div style={{ fontSize: 26, fontWeight: 800 }} className="num">
+                <AnimatedNumber value={avoided} />
+              </div>
+              <div className="tiny faint">pouches not used</div>
+              <div className="small muted" style={{ marginTop: 4 }}>
+                on logged days
+              </div>
+              <div className="small faint num" style={{ marginTop: 2 }}>
+                {resistedTotal} cravings beaten
+              </div>
+            </div>
+          </motion.div>
 
-      <motion.div
-        className="row"
-        style={{ marginTop: 14, gap: 14, alignItems: 'stretch' }}
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ ...spring, delay: 0.08 }}
-      >
-        {finished ? (
-          <div className="card" style={{ flex: 1, textAlign: 'center' }}>
-            <div style={{ fontSize: 26, fontWeight: 800 }} className="num">
-              {money.loggedDays}
-            </div>
-            <div className="tiny faint">of {totalDays} days</div>
-            <div className="small muted" style={{ marginTop: 4 }}>
-              logged
-            </div>
-          </div>
-        ) : (
-          <div className="card" style={{ flex: 1, textAlign: 'center' }}>
-            <div style={{ fontSize: 26, fontWeight: 800 }} className="num">
-              ${projected.toFixed(0)}
-            </div>
-            <div className="tiny faint">by {fmtShort(quitDate)}</div>
-            <div className="small muted" style={{ marginTop: 4 }}>
-              if you follow the plan
-            </div>
-          </div>
-        )}
-        <div className="card" style={{ flex: 1, textAlign: 'center' }}>
-          <div style={{ fontSize: 26, fontWeight: 800 }} className="num">
-            <AnimatedNumber value={avoided} />
-          </div>
-          <div className="tiny faint">pouches not used</div>
-          <div className="small muted" style={{ marginTop: 4 }}>
-            on logged days
-          </div>
-          <div className="small faint num" style={{ marginTop: 2 }}>
-            {resistedTotal} cravings beaten
-          </div>
+          <TrophyStrip onOpen={openTrophies} />
+
+          <SectionHead>Timing</SectionHead>
+          <DisciplineCard />
+          <FirstPouchChart />
+          <RhythmChart />
+          <GapsCard />
+
+          <SectionHead>Body</SectionHead>
+          <CorrelationCard />
+
+          <SectionHead>Triggers</SectionHead>
+          <motion.div
+            className="card"
+            style={{ marginTop: 14 }}
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ ...spring, delay: 0.16 }}
+          >
+            <div className="tiny muted" style={{ marginBottom: 12 }}>Your triggers</div>
+            <TriggerBars state={state} />
+          </motion.div>
         </div>
-      </motion.div>
-
-      <TrophyCase />
-
-      <DisciplineCard />
-      <FirstPouchChart />
-      <RhythmChart />
-      <GapsCard />
-      <CorrelationCard />
-
-      <motion.div
-        className="card"
-        style={{ marginTop: 14 }}
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ ...spring, delay: 0.16 }}
-      >
-        <div className="tiny muted" style={{ marginBottom: 12 }}>Your triggers</div>
-        <TriggerBars state={state} />
-      </motion.div>
-
-      <HistoryTimeline onFixDay={onFixDay} />
+      ) : (
+        <div role="tabpanel" id="stats-panel-history" aria-labelledby="stats-tab-history">
+          <HistoryTimeline onFixDay={onFixDay} />
+        </div>
+      )}
     </div>
   );
 }

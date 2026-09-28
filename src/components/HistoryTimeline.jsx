@@ -18,6 +18,12 @@ const DEFAULT_VISIBLE = 14;
 const fmtShort = (dateStr) =>
   new Date(`${dateStr}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
+// "Thu Sep 25" for the row header. The pencil's label keeps fmtShort.
+const fmtDay = (dateStr) => {
+  const d = new Date(`${dateStr}T12:00:00`);
+  return `${d.toLocaleDateString('en-US', { weekday: 'short' })} ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+};
+
 // Trims float noise: 7 → "7", 7.4 → "7.4", 7.42 → "7.4".
 const fmtHours = (h) => {
   const r = Math.round(h * 10) / 10;
@@ -159,7 +165,7 @@ export default function HistoryTimeline({ onFixDay = null }) {
     return (
       <motion.div
         className="card"
-        style={{ marginTop: 14 }}
+        style={{ marginTop: 0 }}
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ ...spring, delay: 0.2 }}
@@ -182,7 +188,7 @@ export default function HistoryTimeline({ onFixDay = null }) {
   return (
     <motion.div
       className="card"
-      style={{ marginTop: 14 }}
+      style={{ marginTop: 0 }}
       initial={{ opacity: 0, y: 14 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ ...spring, delay: 0.2 }}
@@ -208,7 +214,7 @@ export default function HistoryTimeline({ onFixDay = null }) {
                 <span style={dotStyle(status)} />
                 <span className="small" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   <span style={{ fontWeight: 600 }}>Day {n}</span>
-                  <span className="muted">{` · ${fmtShort(dateStr)} · `}</span>
+                  <span className="muted">{` · ${fmtDay(dateStr)} · `}</span>
                   {status === 'nolog' ? (
                     <span className="num" style={{ color: 'var(--fg-faint)' }}>no log</span>
                   ) : (

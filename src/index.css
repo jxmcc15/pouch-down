@@ -363,3 +363,11 @@ label { display: block; font-size: 13px; color: var(--fg-muted); margin: 16px 0 
 .danger-zone .section-head { color: var(--red); margin-top: 0; }
 .danger-zone .section-head::after { background: linear-gradient(90deg, rgba(248, 113, 113, 0.35), transparent); }
 .btn-danger { background: rgba(248, 113, 113, 0.10); border: 1px solid rgba(248, 113, 113, 0.35); color: var(--red); }
+
+/* ---- segment control ---- */
+.seg { display: flex; padding: 3px; gap: 2px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); margin: 0 0 14px; }
+/* isolation keeps the pill's z-index: -1 inside its own tab, under the label but
+   above everything behind the control — without it the pill sinks under the page. */
+.seg-item { position: relative; isolation: isolate; flex: 1; min-height: 40px; border-radius: 11px; font-size: 14px; font-weight: 600; color: var(--fg-muted); }
+.seg-item[aria-selected="true"] { color: var(--fg); }
+.seg-pill { position: absolute; inset: 0; border-radius: 11px; background: var(--surface-strong); border: 1px solid var(--border-strong); z-index: -1; }
