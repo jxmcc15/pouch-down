@@ -3,12 +3,13 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { stripPicks } from '../components/awards/stripPicks.js';
 
 const app = vi.hoisted(() => ({ state: null, readOnly: false, awards: [] }));
 vi.mock('../state.jsx', () => ({ useApp: () => ({ state: app.state, readOnly: app.readOnly }) }));
 vi.mock('../awards.js', () => ({ awardsFor: () => app.awards }));
 
-const { stripPicks, TrophyStrip } = await import('../components/awards/TrophyCase.jsx');
+const { TrophyStrip } = await import('../components/awards/TrophyCase.jsx');
 
 const a = (id, earned, extra = {}) => ({ id, title: id, tier: 'bronze', earned, progress: 0, earnedOn: null, ...extra });
 

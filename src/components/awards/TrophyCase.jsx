@@ -24,6 +24,7 @@ import { awardsFor } from '../../awards.js';
 import { plainMotion } from '../../motion.js';
 import AnimatedNumber from '../AnimatedNumber.jsx';
 import Badge from './Badge.jsx';
+import { stripPicks } from './stripPicks.js';
 import { TIER_LABEL, TIER_RANK, TIER_COLOR, TIER_GLOW, TIER_STOPS } from './tiers.js';
 
 const spring = { type: 'spring', damping: 24, stiffness: 180 };
@@ -446,36 +447,6 @@ export function TrophyTile({ onOpen }) {
 }
 
 /* ----------------------------------------------------------- the strip */
-
-// Earned: newest first, and on the same day the bigger tier first — that's the
-// news. An award kept with no date (see fmtShort) sorts after every dated one.
-function byNewest(x, y) {
-  const d = String(y.earnedOn ?? '').localeCompare(String(x.earnedOn ?? ''));
-  return d || (TIER_RANK[y.tier] ?? -1) - (TIER_RANK[x.tier] ?? -1);
-}
-
-// Locked: closest first, and at equal distance the lower tier first — it's the
-// one actually within reach. Junk progress reads as none rather than NaN, which
-// would make the sort order depend on where the junk happened to sit.
-const reach = (a) => Number(a.progress) || 0;
-function byClosest(x, y) {
-  return reach(y) - reach(x) || (TIER_RANK[x.tier] ?? 99) - (TIER_RANK[y.tier] ?? 99);
-}
-
-// The handful of seals worth a glance on Stats: what you've earned, then the
-// locked ones you're closest to. Pure, so the choice is testable; the sheet
-// shows everything. Anything still tied keeps awardsFor's catalog order (the
-// sort is stable), so the same state always draws the same strip.
-//
-// It lives beside the strip because nothing else picks seals, which costs
-// Fast Refresh a full reload when this file is edited — a dev-only price.
-// oxlint-disable-next-line react/only-export-components
-export function stripPicks(awards, max = 6) {
-  const earned = awards.filter((a) => a.earned).sort(byNewest);
-  const locked = awards.filter((a) => !a.earned).sort(byClosest);
-  const all = [...earned, ...locked];
-  return { shown: all.slice(0, max), more: Math.max(0, all.length - max) };
-}
 
 // One card, one row of seals, one tap into the case. Keeps "Trophy case", the
 // "N of M" and the intro line in its text, which is what the awards walk reads.
