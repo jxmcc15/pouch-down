@@ -199,7 +199,7 @@ export default function TodayView({ openSettings, openTrophies }) {
           onClick={() => setSosOpen(true)}
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ ...spring, delay: 0.1 }}
+          transition={{ ...spring, delay: 0.05 }}
         >
           Craving? SOS — ride it out
         </motion.button>
