@@ -490,7 +490,8 @@ async function walk(browser, base, rec) {
   await tab(page, 'Calendar');
   const c1 = await calendarCell(page);
   await rec.snap(page, 'reload-calendar');
-  rec.check(`${L} calendar cell label "${FIX_LABEL}: ${TOTAL} of ${CAP} pouches"`, c1.aria === `${FIX_LABEL}: ${TOTAL} of ${CAP} pouches`, c1.aria);
+  // The pencil mark is spoken, so the walk proves it: a corrected day says so.
+  rec.check(`${L} calendar cell label "${FIX_LABEL}: ${TOTAL} of ${CAP} pouches, corrected"`, c1.aria === `${FIX_LABEL}: ${TOTAL} of ${CAP} pouches, corrected`, c1.aria);
   rec.check(`${L} calendar cell is amber (cal-yellow), not green`, /\bcal-yellow\b/.test(c1.cls) && !/\bcal-green\b/.test(c1.cls), c1.cls);
   rec.check(`${L} calendar cell text ${TOTAL}/${CAP}`, (await c1.cell.innerText()).includes(`${TOTAL}/${CAP}`));
 

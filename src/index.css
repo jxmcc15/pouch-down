@@ -371,3 +371,12 @@ label { display: block; font-size: 13px; color: var(--fg-muted); margin: 16px 0 
 .seg-item { position: relative; isolation: isolate; flex: 1; min-height: 40px; border-radius: 11px; font-size: 14px; font-weight: 600; color: var(--fg-muted); }
 .seg-item[aria-selected="true"] { color: var(--fg); }
 .seg-pill { position: absolute; inset: 0; border-radius: 11px; background: var(--surface-strong); border: 1px solid var(--border-strong); z-index: -1; }
+
+/* ---- calendar months ---- */
+/* Each month is its own block: name left, plan-day range right. */
+.cal-month { display: flex; align-items: baseline; justify-content: space-between; margin: 18px 0 6px; }
+.cal-section:first-of-type .cal-month { margin-top: 4px; }
+.cal-month b { font-size: 15px; letter-spacing: -0.01em; }
+/* A corrected or backfilled day wears a small glyph in its corner. */
+.cal-cell .mark { position: absolute; top: 3px; right: 4px; color: var(--fg-muted); line-height: 0; }
+.cal-cell.cal-green .mark, .cal-cell.cal-yellow .mark { color: inherit; opacity: 0.8; }
