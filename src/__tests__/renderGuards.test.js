@@ -20,16 +20,22 @@ const DAY = '2026-09-25';
 const hostile = [
   { id: 'p1', ts: `${DAY}T14:00:00.000Z`, tzOffsetMin: -300, day: DAY, type: 'pouch', trigger: null,
     ctx: { nth: 1, cap: 9, slotId: 'x', slotLabel: { evil: true }, slotAt: `${DAY}T13:00:00.000Z`, firstSlotAt: `${DAY}T13:00:00.000Z` } },
-  { id: 'r1', ts: `${DAY}T14:00:05.000Z`, tzOffsetMin: -300, day: DAY, type: 'reason', trigger: null, target: 'p1', triggers: [{ no: 1 }, 'stress'], note: ['not', 'a', 'string'] },
+  { id: 'r1', ts: `${DAY}T14:00:05.000Z`, tzOffsetMin: -300, day: DAY, type: 'reason', trigger: null, target: 'p1', triggers: [{ no: 1 }, 'stress'], note: { evil: true } },
+  { id: 'x1', ts: `${DAY}T15:00:00.000Z`, tzOffsetMin: -300, day: DAY, type: 'resisted', trigger: { evil: true } },
   { id: 'c1', ts: `${DAY}T13:00:00.000Z`, tzOffsetMin: -300, day: DAY, type: 'checkin', trigger: null, source: 'manual', sleepQuality: { deep: true }, sleepHours: 'seven' },
 ];
+// The first stage carries the hostile name/tagline/label; the first stage
+// with a shopping line (still ahead on day 5) carries a hostile `what`.
+const shopAt = plan.stages.findIndex((s) => s.shopBefore);
 const attempt = () => ({
   id: 'a2', status: 'active', archivedAt: null, settings, events: hostile,
   plan: {
     ...plan,
-    stages: plan.stages.map((s, i) => (i === 0
-      ? { ...s, name: { bad: 1 }, tagline: ['x'], slots: s.slots.map((sl, j) => (j === 0 ? { ...sl, label: 42 } : sl)) }
-      : s)),
+    stages: plan.stages.map((s, i) => {
+      if (i === 0) return { ...s, name: { bad: 1 }, tagline: { evil: true }, slots: s.slots.map((sl, j) => (j === 0 ? { ...sl, label: 42 } : sl)) };
+      if (i === shopAt) return { ...s, shopBefore: { ...s.shopBefore, what: { evil: true } } };
+      return s;
+    }),
   },
   celebratedStages: [], celebratedAwards: [], checkinDismissedFor: null,
 });
@@ -58,11 +64,17 @@ describe('display components survive hostile stored strings', () => {
   it('HistoryTimeline renders the day, its rows, and nothing garbled', () => {
     const out = renderToStaticMarkup(createElement(HistoryTimeline));
     expect(out).not.toContain('[object Object]');
+    expect(out).not.toContain('NaN'); // sleepHours: 'seven' never reaches fmtHours
     expect(out).toContain('check-in');
+    expect(out).toContain('resisted');
   });
   it('PlanView renders every stage, with the hostile name and slot label blank', () => {
+    // Meal times only matter to PlanView's footer; the other screens read them
+    // for slot timing, which wellFormed guards on its own.
+    app.state = { ...app.state, settings: { ...settings, mealTimes: { breakfast: { a: 1 }, lunch: { b: 1 }, dinner: { c: 1 } } } };
     const out = renderToStaticMarkup(createElement(PlanView));
     expect(out).not.toContain('[object Object]');
     expect(out).toContain('House rules');
+    expect(out).toContain('Buy'); // the shopping line rendered, its hostile item blank
   });
 });
