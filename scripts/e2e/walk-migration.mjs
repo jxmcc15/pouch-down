@@ -492,17 +492,35 @@ async function walkContext(browser, base, C, rec, shared) {
       const st = await sheet.innerText();
       rec.check(L('Settings: no "Simulate import"'), !/simulate import/i.test(st), clip(st.match(/.*simulate.*/i)?.[0]));
       rec.check(L('Settings: no "This is your first attempt"'), !/this is your first attempt/i.test(st), clip(st.match(/.*first attempt.*/i)?.[0]));
-      const key = sheet.getByLabel(/api key/i);
+      // The key field now lives one tap deeper, on the Coach connection sheet
+      // (design pass, 2026-09-28): open it, check there, close it.
+      await sheet.getByRole('button', { name: /^coach connection$/i }).first().click();
+      const coach = page.locator('[role="dialog"][aria-label="Coach connection"]');
+      rec.check(L('Settings: Coach connection opens'), await visible(coach, 3000));
+      const key = coach.getByLabel(/api key/i);
       const keyN = await key.count();
       const keyOff = keyN > 0 && (await key.first().isDisabled());
       rec.check(L('Settings: the API key field is disabled'), keyOff, keyOff ? '' : keyN ? 'field is editable' : 'no key field found');
+      const coachInputs = await coach.locator('input').evaluateAll((els) => els.filter((e) => !e.disabled).map((e) => e.id || e.type));
+      rec.check(L('Coach connection: every field disabled in the viewer'), coachInputs.length === 0, coachInputs.join(', '));
+      await coach.getByRole('button', { name: /^done$/i }).first().click();
+      await page.waitForTimeout(400);
       const inputs = await sheet.locator('input').evaluateAll((els) => els.map((e) => ({ id: e.id || e.type, disabled: e.disabled })));
       const open = inputs.filter((i) => !i.disabled).map((i) => i.id);
       rec.check(L('Settings: every edit field disabled'), inputs.length > 0 && open.length === 0, open.length ? `editable: ${open.join(', ')}` : `${inputs.length} inputs`);
-      const attempts = sheet.getByText(/^attempts$/i).first();
+      // Past attempts moved to their own sheet behind the Attempts row (design
+      // pass, 2026-09-28). Its Done closes Settings too — both its actions
+      // leave Settings — which the "Settings closes" check below then sees.
+      const attempts = sheet.getByRole('button', { name: /^attempts$/i }).first();
       if (await visible(attempts, 1000)) {
         await attempts.scrollIntoViewIfNeeded().catch(() => {});
-        await rec.snap(page, `${C.id}-viewer-settings-attempts`);
+        await attempts.click();
+        const attemptsSheet = page.locator('[role="dialog"][aria-label="Attempts"]');
+        if (await visible(attemptsSheet, 3000)) {
+          await page.waitForTimeout(350);
+          await rec.snap(page, `${C.id}-viewer-settings-attempts`);
+          await attemptsSheet.getByRole('button', { name: /^done$/i }).first().click();
+        }
       }
       const done = sheet.getByRole('button', { name: /^done$/i });
       if (await visible(done, 1000)) await done.first().click();

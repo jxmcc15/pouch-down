@@ -330,7 +330,9 @@ async function sheetsWithProxy(token) {
         api: { updateSettings() {}, updateDevice() { throw new Error('nothing here writes the root'); }, viewAttempt() {}, archiveActive() {} },
         readOnly: false,
       };
-      return renderToStaticMarkup(createElement(SettingsSheet, { onClose() {} }));
+      // The fields live one tap deep, on the Coach connection sheet, so Settings
+      // is rendered landed on it — the same way the coach's button opens it.
+      return renderToStaticMarkup(createElement(SettingsSheet, { onClose() {}, open: 'coach' }));
     },
     coach: () => {
       app.value = { state: ATTEMPT };
@@ -355,7 +357,7 @@ describe('Settings with a proxy configured', () => {
 
   it('says once per device, not once per session', async () => {
     const html = (await sheetsWithProxy('')).settings();
-    expect(html).toContain('Coach connection');
+    expect(html).toContain('Through your proxy');
     expect(html).toContain('Entered once per device, not once per session');
     expect(html).toContain('no API key has to live on');
     // Nothing is connected yet, so it must not claim it is.

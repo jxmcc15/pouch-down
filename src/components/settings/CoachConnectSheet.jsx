@@ -29,7 +29,7 @@ export default function CoachConnectSheet({ onClose }) {
           nothing to choose between, so the section heading stays away. */}
       {proxyOn && (
         <>
-          <label>Coach connection</label>
+          <label>Through your proxy</label>
           <p className="small muted" style={{ margin: 0 }}>
             The coach goes through your own proxy, so no API key has to live on
             this phone.

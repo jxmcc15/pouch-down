@@ -842,6 +842,9 @@ async function walkA(browser, base, rec) {
     await page.locator('button[aria-label="Settings"]').first().click();
     await page.waitForTimeout(600);
     await rec.snap(page, 'A-settings');
+    // Past attempts moved to the Attempts sheet (design pass, 2026-09-28).
+    await page.getByRole('button', { name: 'Attempts', exact: true }).first().click();
+    await page.waitForTimeout(500);
     const row = page.getByRole('button', { name: /^Attempt 1\b/i }).first();
     await row.scrollIntoViewIfNeeded({ timeout: 4000 });
     await row.click({ timeout: 4000 });

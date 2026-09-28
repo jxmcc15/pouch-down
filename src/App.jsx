@@ -78,7 +78,10 @@ function SaveErrorToast() {
 export function AppContent() {
   const { root, state, readOnly, problem } = useApp();
   const [tab, setTab] = useState('today');
-  const [sheet, setSheet] = useState(null); // null | 'coach' | 'settings' | 'trophies' | { kind: 'fix', day }
+  const [sheet, setSheet] = useState(null); // null | 'coach' | 'trophies' | { kind: 'settings', open } | { kind: 'fix', day }
+  // `open` names a Settings sub-sheet to land on ('coach'); anything else —
+  // including a click event handed straight through — opens the main sheet.
+  const openSettings = (open = null) => setSheet({ kind: 'settings', open: typeof open === 'string' ? open : null });
   const [setupOpen, setSetupOpen] = useState(false);
 
   // Setup is a route, not a sheet. Leaving it open would skip the Front door
@@ -139,7 +142,7 @@ export function AppContent() {
             )}
             <motion.button
               whileTap={{ scale: 0.92 }}
-              onClick={() => setSheet('settings')}
+              onClick={() => openSettings()}
               aria-label="Settings"
               style={{ width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--fg-muted)' }}
             >
@@ -158,7 +161,7 @@ export function AppContent() {
               transition={{ type: 'spring', damping: 26, stiffness: 240 }}
             >
               <View
-                openSettings={() => setSheet('settings')}
+                openSettings={openSettings}
                 openTrophies={() => setSheet('trophies')}
                 onFixDay={(day) => setSheet({ kind: 'fix', day })}
               />
@@ -174,11 +177,11 @@ export function AppContent() {
           <CoachSheet
             key="coach"
             onClose={() => setSheet(null)}
-            openSettings={() => setSheet('settings')}
+            openSettings={() => openSettings('coach')}
           />
         )}
-        {sheet === 'settings' && (
-          <SettingsSheet key="settings" onClose={() => setSheet(null)} />
+        {sheet?.kind === 'settings' && (
+          <SettingsSheet key="settings" open={sheet.open} onClose={() => setSheet(null)} />
         )}
         {sheet?.kind === 'fix' && !readOnly && (
           <FixDaySheet key="fix" day={sheet.day} onClose={() => setSheet(null)} />

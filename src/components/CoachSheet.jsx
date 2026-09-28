@@ -112,7 +112,9 @@ export default function CoachSheet({ onClose, openSettings }) {
                 </>
               )}
             </p>
-            <button className="btn btn-accent" onClick={openSettings}>
+            {/* App hands this in already pointed at Settings' Coach connection
+                sheet; called bare so the click event never rides along. */}
+            <button className="btn btn-accent" onClick={() => openSettings()}>
               Open Settings
             </button>
           </div>
