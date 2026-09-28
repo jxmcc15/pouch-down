@@ -41,14 +41,20 @@ text from the plan, the files it touches (paths, not dumps), the selector
 contract, and the rules above that apply. Every brief that fetches a web
 page states the privacy rule (no email, name or identifiers in any request).
 
-**Models.**
+**Models.** "Sol" is GPT-5.6 Sol, reached through `~/.codex/bin/ask-chatgpt`
+(see `[[Multi-Model CLI Setup]]` in Claude Brain). It runs in a read-only
+sandbox with no file access, so it only ever sees what is pasted to it: the
+diff, never the vault. James is on ChatGPT Plus, so Sol is rationed to **one
+review per project diff**.
 
-| Role | `model` | Why |
+| Role | Who | Why |
 |---|---|---|
-| Implementers (Tasks 1–10) | `sonnet` (Sonnet 5) | fast, disciplined, follows a plan with code in it |
-| Stage reviewers (after each task) | `sonnet` (Sonnet 5) | independent eyes on the diff against the task's contract |
-| The `migrate.js` reviewer (Task 2, Step 5) | `opus` (Opus 5.5) | the most load-bearing code in the app gets the stronger reader |
-| Final whole-branch code review (before the build log) | `opus` (Opus 5.5) | one deep pass over `git diff main...HEAD` for correctness, contract drift and taste |
+| Implementers (Tasks 1–10) | Claude agents, `model: "opus"` (Opus 5.5) | the code is written by the strongest coder available; elegance is the brief |
+| Stage reviewers (after each task) | Claude agents, `model: "opus"` (Opus 5.5) | independent eyes on each diff against the task's selector contract and the rules |
+| The `migrate.js` reviewer (Task 2, Step 5) | a *separate* Opus reviewer with only that diff | the most load-bearing code in the app gets its own reader |
+| Final whole-branch review | **GPT-5.6 Sol**, one call: `~/.codex/bin/ask-chatgpt` with `git diff main...HEAD` pasted (call out `src/migrate.js` and the walk edits) | the adversarial second opinion — verify every claim against the code before acting; log accepted *and* rejected findings with reasons in the build log |
+
+Reasoning effort: max on every agent.
 
 **Budgets.** Coordinator ceiling **350k tokens** for this session; each
 subagent ceiling **300k**. Pace by budget, not by clock. If the coordinator
