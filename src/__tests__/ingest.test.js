@@ -21,6 +21,14 @@ describe('parseBackup', () => {
     expect(b.format).toBe(1);
     expect(b.root.attempts.map((a) => [a.id, a.status])).toEqual([['a1', 'archived']]);
   });
+  it('fills the settings an early v1 backup never had, the same way the phone does', () => {
+    const early = JSON.parse(v1);
+    early.state.settings = { mealTimes: { breakfast: '07:15', lunch: '12:00' }, costPerTin: 9.5, apiKey: '' };
+    expect(parseBackup(JSON.stringify(early)).root.attempts[0].settings).toEqual({
+      mealTimes: { breakfast: '07:15', lunch: '12:00', dinner: '18:30' },
+      costPerTin: 9.5, pouchesPerTin: 20, wakeTime: '07:00', sleepTime: '23:00',
+    });
+  });
   it('rejects anything that is not a Pouch Down backup', () => {
     expect(() => parseBackup('{"app":"other"}')).toThrow(/not a Pouch Down backup/);
     expect(() => parseBackup('nope')).toThrow();

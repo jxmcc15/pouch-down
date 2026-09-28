@@ -16,7 +16,7 @@ import {
 } from './store.js';
 import { moneyStats } from './money.js';
 import { awardsFor } from './awards.js';
-import { wellFormedChat } from './root.js';
+import { DEFAULT_SETTINGS, wellFormedChat } from './root.js';
 
 export const STALE_DAYS = 3;
 const DAY_MS = 86400000;
@@ -70,7 +70,7 @@ export function parseBackup(text) {
   }
   if (j.format != null) throw new Error(`backup format ${j.format} is newer than this tool`);
   if (!j.state || !Array.isArray(j.state.events)) throw new Error('v1 backup without a readable state');
-  return { format: 1, exportedAt: j.exportedAt, root: migrateV1(j.state, { legacyPlan: LEGACY_PLAN, now: j.exportedAt }) };
+  return { format: 1, exportedAt: j.exportedAt, root: migrateV1(j.state, { legacyPlan: LEGACY_PLAN, now: j.exportedAt, defaults: DEFAULT_SETTINGS }) };
 }
 
 // The attempt the Live Log is about: the active one, else the most recent.

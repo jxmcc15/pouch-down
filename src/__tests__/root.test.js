@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { KEY_V1, KEY_V2, DEFAULT_SETTINGS, freshRoot, loadRoot, saveRoot, startAttempt, archiveActive, updateAttempt, attemptById, lastSettings, preserveCorruptV2, freshStartRoot, rawStorageDump, redactSecrets } from '../root.js';
+import { KEY_V1, KEY_V2, DEFAULT_SETTINGS, freshRoot, loadRoot, saveRoot, startAttempt, archiveActive, updateAttempt, attemptById, lastSettings, preserveCorruptV2, freshStartRoot, rawStorageDump, redactSecrets, wellFormed } from '../root.js';
 import { generatePlan } from '../planGenerator.js';
 import { getKey, setKey, clearKey } from '../sessionKey.js';
 import { todayKey } from '../store.js';
@@ -19,6 +19,17 @@ describe('loadRoot', () => {
     // The key v1 froze comes out into the session, never back into storage.
     expect(root.device.apiKey).toBe('');
     expect(getKey()).toBe('sk-ant-TEST');
+  });
+  it('a v1 from before wake, sleep and dinner boots to Today with those filled, nothing else touched', () => {
+    const early = JSON.parse(V1);
+    early.settings = { mealTimes: { breakfast: '07:15', lunch: '12:00' }, costPerTin: 9.5, pouchesPerTin: 15, apiKey: 'sk-ant-TEST' };
+    const { root, problem } = loadRoot(mem({ [KEY_V1]: JSON.stringify(early) }), NOW);
+    expect(problem).toBeNull();
+    expect(wellFormed(root)).toBe(true);
+    expect(root.attempts[0].settings).toEqual({
+      mealTimes: { breakfast: '07:15', lunch: '12:00', dinner: DEFAULT_SETTINGS.mealTimes.dinner },
+      costPerTin: 9.5, pouchesPerTin: 15, wakeTime: DEFAULT_SETTINGS.wakeTime, sleepTime: DEFAULT_SETTINGS.sleepTime,
+    });
   });
   it('a key migrated out of v1 is never written to storage', () => {
     const s = mem({ [KEY_V1]: V1 });

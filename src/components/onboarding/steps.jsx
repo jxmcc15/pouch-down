@@ -384,8 +384,8 @@ export function RhythmStep({ draft, set, error, onTouch }) {
       </div>
       <FieldError>{error}</FieldError>
       <Helper id="setup-sleep-help">
-        Sleep time sets where the evening slot lands. Rough times are fine — you can change
-        them later in Settings.
+        Sleep time sets where the evening pouches land when the plan is built. Rough times are
+        fine — you can change meal times later in Settings.
       </Helper>
     </div>
   );

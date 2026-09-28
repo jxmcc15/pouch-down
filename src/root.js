@@ -143,7 +143,7 @@ function takeInheritedKey(root) {
 function migrateRawV1(raw, now) {
   try {
     const v1 = JSON.parse(raw);
-    return isObj(v1) && Array.isArray(v1.events) ? migrateV1(v1, { legacyPlan: LEGACY_PLAN, now }) : null;
+    return isObj(v1) && Array.isArray(v1.events) ? migrateV1(v1, { legacyPlan: LEGACY_PLAN, now, defaults: DEFAULT_SETTINGS }) : null;
   } catch {
     return null;
   }

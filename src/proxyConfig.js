@@ -151,3 +151,13 @@ export const coachTransport = (apiKey) =>
 // A 401 is about whichever credential was actually sent, and the copy people
 // read has to say so: retyping a key fixes nothing when the token is stale.
 export const authErrorFor = (mode) => (mode === 'proxy' ? 'bad-device-token' : 'bad-key');
+
+// ── what Settings says ──────────────────────────────────────────────────────
+//
+// One word for the coach's state, derived the same way pickTransport picks a
+// transport, so the status line can never disagree with what a call would do.
+export function coachStatus({ proxyOn = false, hasToken = false, hasKey = false } = {}) {
+  if (proxyOn && hasToken) return 'proxy';
+  if (hasKey) return 'key';
+  return 'none';
+}

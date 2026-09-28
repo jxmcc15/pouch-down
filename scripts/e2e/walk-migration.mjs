@@ -395,6 +395,13 @@ async function walkContext(browser, base, C, rec, shared) {
     const loggedCard = squash(await page.locator('.card').filter({ hasText: /of \d+ days/i }).first().innerText().catch(() => ''));
     rec.check(L(`Stats: ${X.loggedDays} of 60 days logged`), new RegExp(`^${X.loggedDays} of 60 days logged$`, 'i').test(loggedCard), `"${loggedCard}"`);
 
+    // History is the second segment of Stats now (design pass, 2026-09-28).
+    await page.getByRole('tab', { name: /^history$/i }).click();
+    await page.waitForTimeout(450);
+    // A past attempt has no live clock on either segment: sweep History as it
+    // first appears, before any day is opened (the sweep below covers it open).
+    await rec.snap(page, `${C.id}-viewer-stats-history`, { fullPage: true });
+    await noLive('Stats · History');
     // History: all 60 days, newest first, each with its count or "no log".
     const history = page.locator('.card').filter({ has: page.getByText(/^history$/i) }).last();
     const hasHistory = await visible(history, 2000);
@@ -492,17 +499,38 @@ async function walkContext(browser, base, C, rec, shared) {
       const st = await sheet.innerText();
       rec.check(L('Settings: no "Simulate import"'), !/simulate import/i.test(st), clip(st.match(/.*simulate.*/i)?.[0]));
       rec.check(L('Settings: no "This is your first attempt"'), !/this is your first attempt/i.test(st), clip(st.match(/.*first attempt.*/i)?.[0]));
-      const key = sheet.getByLabel(/api key/i);
+      // The key field now lives one tap deeper, on the Coach connection sheet
+      // (design pass, 2026-09-28): open it, check there, close it.
+      await sheet.getByRole('button', { name: /^coach connection$/i }).first().click();
+      const coach = page.locator('[role="dialog"][aria-label="Coach connection"]');
+      rec.check(L('Settings: Coach connection opens'), await visible(coach, 3000));
+      const key = coach.getByLabel(/api key/i);
       const keyN = await key.count();
       const keyOff = keyN > 0 && (await key.first().isDisabled());
       rec.check(L('Settings: the API key field is disabled'), keyOff, keyOff ? '' : keyN ? 'field is editable' : 'no key field found');
+      const coachInputs = await coach.locator('input').evaluateAll((els) => els.filter((e) => !e.disabled).map((e) => e.id || e.type));
+      rec.check(L('Coach connection: every field disabled in the viewer'), coachInputs.length === 0, coachInputs.join(', '));
+      await coach.getByRole('button', { name: /^done$/i }).first().click();
+      await page.waitForTimeout(400);
       const inputs = await sheet.locator('input').evaluateAll((els) => els.map((e) => ({ id: e.id || e.type, disabled: e.disabled })));
       const open = inputs.filter((i) => !i.disabled).map((i) => i.id);
       rec.check(L('Settings: every edit field disabled'), inputs.length > 0 && open.length === 0, open.length ? `editable: ${open.join(', ')}` : `${inputs.length} inputs`);
-      const attempts = sheet.getByText(/^attempts$/i).first();
-      if (await visible(attempts, 1000)) {
-        await attempts.scrollIntoViewIfNeeded().catch(() => {});
+      // Past attempts moved to their own sheet behind the Attempts row (design
+      // pass, 2026-09-28). Its Done goes back to Settings, like the Coach
+      // sheet's; only choosing or ending an attempt leaves Settings.
+      const attempts = sheet.getByRole('button', { name: /^attempts$/i }).first();
+      await attempts.scrollIntoViewIfNeeded().catch(() => {});
+      await attempts.click().catch(() => {});
+      const attemptsSheet = page.locator('[role="dialog"][aria-label="Attempts"]');
+      const attemptsUp = await visible(attemptsSheet, 3000);
+      rec.check(L('Settings: the Attempts row opens its sheet'), attemptsUp);
+      if (attemptsUp) {
+        await page.waitForTimeout(350);
         await rec.snap(page, `${C.id}-viewer-settings-attempts`);
+        await attemptsSheet.getByRole('button', { name: /^done$/i }).first().click();
+        const attemptsGone = await attemptsSheet.waitFor({ state: 'hidden', timeout: 3000 }).then(() => true, () => false);
+        const settingsStays = await sheet.isVisible();
+        rec.check(L('Attempts: Done goes back to Settings'), attemptsGone && settingsStays, !attemptsGone ? 'Attempts sheet still open' : settingsStays ? '' : 'Settings closed with it');
       }
       const done = sheet.getByRole('button', { name: /^done$/i });
       if (await visible(done, 1000)) await done.first().click();

@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import { ShoppingCart, Scale, Timer, HeartHandshake } from 'lucide-react';
 import { dateForDayNumber, dayNumberFor, asOfDay, isLogged } from '../store.js';
 import { useApp } from '../state.jsx';
+import { asText } from '../text.js';
 
 function fmtDate(dateStr) {
   return new Date(`${dateStr}T12:00:00`).toLocaleDateString([], { month: 'short', day: 'numeric' });
@@ -87,8 +88,8 @@ export default function PlanView() {
                 {s.pouchesPerDay === 0 ? 'zero' : `${s.pouchesPerDay}/day · ${s.mg}mg`}
               </div>
             </div>
-            <div style={{ fontWeight: 700, margin: '4px 0 2px' }}>{s.name}</div>
-            <div className="small muted">{s.tagline}</div>
+            <div style={{ fontWeight: 700, margin: '4px 0 2px' }}>{asText(s.name)}</div>
+            <div className="small muted">{asText(s.tagline)}</div>
             {s.slots.length > 0 && (
               <div className="row small faint" style={{ marginTop: 8, flexWrap: 'wrap', gap: 6 }}>
                 {s.slots.map((slot, j) => (
@@ -101,7 +102,7 @@ export default function PlanView() {
                       background: slot.anchor !== 'fixed' ? 'rgba(94,106,210,0.12)' : 'var(--surface)',
                     }}
                   >
-                    {slot.label.toLowerCase()}
+                    {asText(slot.label).toLowerCase()}
                   </span>
                 ))}
               </div>
@@ -121,7 +122,7 @@ export default function PlanView() {
                 }}
               >
                 <ShoppingCart size={15} />
-                Buy {s.shopBefore.what} before {fmtDate(s.shopBefore.date)}
+                Buy {asText(s.shopBefore.what)} before {fmtDate(s.shopBefore.date)}
               </div>
             )}
           </motion.div>
@@ -148,8 +149,8 @@ export default function PlanView() {
 
       <p className="small faint" style={{ textAlign: 'center', margin: '18px 0 4px' }}>
         Baseline: ~{plan.baseline.pouchesPerDay}/day @ {plan.baseline.mg}mg (~{plan.baseline.pouchesPerDay * plan.baseline.mg}mg/day) · Day {plan.totalDays} = zero ·{' '}
-        {state.settings.mealTimes.breakfast} / {state.settings.mealTimes.lunch} /{' '}
-        {state.settings.mealTimes.dinner} meals
+        {asText(state.settings.mealTimes.breakfast)} / {asText(state.settings.mealTimes.lunch)} /{' '}
+        {asText(state.settings.mealTimes.dinner)} meals
       </p>
     </div>
   );

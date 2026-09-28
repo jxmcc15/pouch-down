@@ -167,7 +167,9 @@ describe('the sheets read the session key, not the stored root', () => {
     readOnly: false,
   });
 
-  const settingsMarkup = () => { app.value = settingsApp(); return renderToStaticMarkup(createElement(SettingsSheet, { onClose() {} })); };
+  // The key field lives on the Coach connection sheet, so Settings is rendered
+  // landed on it — the way the coach's own "Open Settings" button opens it.
+  const settingsMarkup = () => { app.value = settingsApp(); return renderToStaticMarkup(createElement(SettingsSheet, { onClose() {}, open: 'coach' })); };
   const coachMarkup = () => { app.value = { state: attempt }; return renderToStaticMarkup(createElement(CoachSheet, { onClose() {}, openSettings() {} })); };
 
   beforeEach(() => { clearKey(); delete globalThis.sessionStorage; });
@@ -218,7 +220,7 @@ describe('the sheets read the session key, not the stored root', () => {
   });
 
   it('no sheet reads the key off the root any more', () => {
-    for (const file of ['src/components/SettingsSheet.jsx', 'src/components/CoachSheet.jsx', 'src/components/onboarding/PriceHelpSheet.jsx']) {
+    for (const file of ['src/components/SettingsSheet.jsx', 'src/components/settings/CoachConnectSheet.jsx', 'src/components/CoachSheet.jsx', 'src/components/onboarding/PriceHelpSheet.jsx']) {
       expect(fs.readFileSync(file, 'utf8'), file).not.toMatch(/device\.apiKey/);
     }
   });

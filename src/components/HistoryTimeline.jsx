@@ -8,6 +8,7 @@ import {
 } from '../store.js';
 import { capForDay } from '../plan.js';
 import { pouchVerdict } from '../pouchVerdict.js';
+import { asText } from '../text.js';
 
 const spring = { type: 'spring', damping: 24, stiffness: 180 };
 // A gentle tween reads smoother than a spring on animated `height: auto`.
@@ -16,6 +17,12 @@ const DEFAULT_VISIBLE = 14;
 
 const fmtShort = (dateStr) =>
   new Date(`${dateStr}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+// "Thu Sep 25" for the row header. The pencil's label keeps fmtShort.
+const fmtDay = (dateStr) => {
+  const d = new Date(`${dateStr}T12:00:00`);
+  return `${d.toLocaleDateString('en-US', { weekday: 'short' })} ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+};
 
 // Trims float noise: 7 → "7", 7.4 → "7.4", 7.42 → "7.4".
 const fmtHours = (h) => {
@@ -55,24 +62,29 @@ function EventRow({ state, ev }) {
   let icon = null;
   let segs = null;
 
+  // Stored strings pass through asText, so one that became an object drops
+  // out of the line instead of printing "[object Object]" or throwing.
+  const tags = triggersFor(state, ev).map(asText).filter(Boolean);
+  const tagSeg = tags.length ? [<span key="g" className="faint">{tags.join(', ')}</span>] : [];
+
   if (ev.type === 'pouch') {
     const v = pouchVerdict(state, ev);
+    const slotLabel = asText(ev.ctx?.slotLabel);
+    const note = asText(reasonFor(state, ev)?.note);
     icon = <span style={{ width: 8, height: 8, borderRadius: '50%', background: v.color, display: 'block', opacity: 0.85 }} />;
     segs = [
       <span key="t" className="muted num">{fmtTime(ev)}</span>,
-      ...(ev.ctx?.slotLabel ? [<span key="s" className="muted">{ev.ctx.slotLabel}</span>] : []),
+      ...(slotLabel ? [<span key="s" className="muted">{slotLabel}</span>] : []),
       <span key="v" style={{ color: v.color, fontWeight: 500 }}>{v.text}</span>,
-      ...(triggersFor(state, ev).length ? [<span key="g" className="faint">{triggersFor(state, ev).join(', ')}</span>] : []),
-      ...(typeof reasonFor(state, ev)?.note === 'string' && reasonFor(state, ev).note
-        ? [<span key="n" className="faint" style={{ fontStyle: 'italic' }}>{reasonFor(state, ev).note}</span>]
-        : []),
+      ...tagSeg,
+      ...(note ? [<span key="n" className="faint" style={{ fontStyle: 'italic' }}>{note}</span>] : []),
     ];
   } else if (ev.type === 'resisted') {
     icon = <ShieldCheck size={15} color="var(--green)" />;
     segs = [
       <span key="t" className="muted num">{fmtTime(ev)}</span>,
       <span key="r" style={{ color: 'var(--green)', fontWeight: 500 }}>resisted</span>,
-      ...(triggersFor(state, ev).length ? [<span key="g" className="faint">{triggersFor(state, ev).join(', ')}</span>] : []),
+      ...tagSeg,
     ];
   } else if (ev.type === 'checkin') {
     icon = <Moon size={15} color="var(--accent-bright)" />;
@@ -80,8 +92,10 @@ function EventRow({ state, ev }) {
       <span key="t" className="muted num">{fmtTime(ev)}</span>,
       <span key="c" className="muted">check-in</span>,
     ];
-    if (ev.sleepQuality != null) segs.push(<span key="q" className="muted num">quality {ev.sleepQuality}/5</span>);
-    if (ev.sleepHours != null) segs.push(<span key="h" className="muted num">{fmtHours(ev.sleepHours)}h sleep</span>);
+    // Finite numbers only: a stored object would throw inside React, and a
+    // string or NaN would print "quality NaN/5" or "NaNh".
+    if (Number.isFinite(ev.sleepQuality)) segs.push(<span key="q" className="muted num">quality {ev.sleepQuality}/5</span>);
+    if (Number.isFinite(ev.sleepHours)) segs.push(<span key="h" className="muted num">{fmtHours(ev.sleepHours)}h sleep</span>);
     if (ev.workout === true) segs.push(<span key="w" className="muted">workout</span>);
   } else if (ev.type === 'backfill') {
     // Backfills carry a count but no timing — they were entered after the fact.
@@ -151,7 +165,7 @@ export default function HistoryTimeline({ onFixDay = null }) {
     return (
       <motion.div
         className="card"
-        style={{ marginTop: 14 }}
+        style={{ marginTop: 0 }}
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ ...spring, delay: 0.2 }}
@@ -174,7 +188,7 @@ export default function HistoryTimeline({ onFixDay = null }) {
   return (
     <motion.div
       className="card"
-      style={{ marginTop: 14 }}
+      style={{ marginTop: 0 }}
       initial={{ opacity: 0, y: 14 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ ...spring, delay: 0.2 }}
@@ -200,7 +214,7 @@ export default function HistoryTimeline({ onFixDay = null }) {
                 <span style={dotStyle(status)} />
                 <span className="small" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   <span style={{ fontWeight: 600 }}>Day {n}</span>
-                  <span className="muted">{` · ${fmtShort(dateStr)} · `}</span>
+                  <span className="muted">{` · ${fmtDay(dateStr)} · `}</span>
                   {status === 'nolog' ? (
                     <span className="num" style={{ color: 'var(--fg-faint)' }}>no log</span>
                   ) : (

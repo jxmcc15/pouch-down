@@ -5,7 +5,7 @@
 // Seven flows, seven browser contexts (1+2 share one; 6 runs twice):
 //   1   the unlock plays          (animations ON, captured at three beats)
 //   2   it does NOT replay        (drain the queue, reload twice)
-//   3   the trophy case           (Stats card + both doors from Today; its own
+//   3   the trophy case           (Stats strip + both doors from Today; its own
 //                                  context — see the note at flow 3)
 //   1b  the streak badge alone    (its own batch; the cap pushes it out of 1)
 //   4   THE PLAN'S C1 FLOW 4      (3 green finished days → "3-day streak" →
@@ -521,44 +521,51 @@ async function main() {
   await T.page.getByRole('button', { name: 'Stats', exact: true }).click();
   await T.page.waitForTimeout(900);
 
+  // The full case left Stats for a strip (design pass, 2026-09-28). The
+  // strip keeps the words; the tier sections are checked in the sheet it opens.
   // .last() takes the innermost match, in case a wrapper ever also carries .card.
-  const caseCard = T.page.locator('.card').filter({ hasText: 'Trophy case' }).last();
-  const caseCards = await T.page.locator('.card').filter({ hasText: 'Trophy case' }).count();
-  if (!check('Trophy case card exists in Stats', (await caseCard.count()) === 1, `${caseCards} found`)) {
-    await snap(T.page, 'FAIL-stats-no-trophy-case');
+  const strip = T.page.locator('.card').filter({ hasText: 'Trophy case' }).last();
+  const strips = await T.page.locator('.card').filter({ hasText: 'Trophy case' }).count();
+  if (!check('Trophy strip card exists in Stats', (await strip.count()) === 1, `${strips} found`)) {
+    await snap(T.page, 'FAIL-stats-no-trophy-strip');
   }
-  if (await caseCard.count()) {
-    await caseCard.scrollIntoViewIfNeeded();
+  if (await strip.count()) {
+    await strip.scrollIntoViewIfNeeded();
     await T.page.waitForTimeout(700);
-    await snap(caseCard, 'stats-trophy-case-card');
-
-    // …and scroll it past the viewport in thirds, so a human can see every tier
-    // section the way it actually sits on the phone.
-    const box = await caseCard.boundingBox();
-    const top = await T.page.evaluate(() => window.scrollY);
-    for (let i = 0; i < 3; i++) {
-      await T.page.evaluate((y) => window.scrollTo(0, y), top + i * 520);
-      await T.page.waitForTimeout(450);
-      await snap(T.page, `stats-case-scroll-${i + 1}`);
-    }
-    console.log(`     trophy case card is ${Math.round(box?.height ?? 0)}px tall`);
-
-    // Every label in here is `.tiny`, i.e. text-transform: uppercase, and
+    await snap(strip, 'stats-trophy-strip');
+    // The count sits in a `.tiny` label, painted uppercase ("4 OF 24"), and
     // innerText reports the painted text — so match case-insensitively.
-    const caseText = await caseCard.innerText();
-    for (const tier of ['Bronze', 'Silver', 'Gold', 'Aurora']) {
-      check(`Tier section rendered · ${tier}`, new RegExp(tier, 'i').test(caseText));
+    const stripText = await strip.innerText();
+    const stripCount = stripText.match(/\d+ of \d+/i)?.[0];
+    check('Strip shows an "N of M" count', Boolean(stripCount), stripCount ?? stripText.split('\n')[0]);
+    const box = await strip.boundingBox();
+    check('Strip is a strip, not a wall (under 220px tall)', (box?.height ?? 999) < 220, `${Math.round(box?.height ?? 0)}px`);
+    await strip.click();
+    await T.page.waitForTimeout(700);
+    const caseSheet = T.page.locator('[role="dialog"][aria-label="Trophy case"]');
+    check('Strip opens the trophy case sheet', (await caseSheet.count()) === 1);
+    if (await caseSheet.count()) {
+      // Every label in here is `.tiny`, i.e. text-transform: uppercase, and
+      // innerText reports the painted text — so match case-insensitively.
+      const caseText = await caseSheet.innerText();
+      for (const tier of ['Bronze', 'Silver', 'Gold', 'Aurora']) {
+        check(`Tier section rendered · ${tier}`, new RegExp(tier, 'i').test(caseText));
+      }
+      const counts = caseText.match(/\d+ of \d+/gi) ?? [];
+      check('Each tier section shows an "N of M" count', counts.length >= 5, counts.join(' | '));
+      await overflowCheck(T.page, 'trophy case sheet from stats');
+      await T.page.getByRole('button', { name: 'Done', exact: true }).first().click();
+      await T.page.waitForTimeout(600);
     }
-    const counts = caseText.match(/\d+ of \d+/gi) ?? [];
-    check('Each tier section shows an "N of M" count', counts.length >= 5, counts.join(' | '));
-    await overflowCheck(T.page, 'stats trophy case');
   }
 
   // --- both doors from Today ---
   await T.page.getByRole('button', { name: 'Today', exact: true }).click();
   await T.page.waitForTimeout(800);
 
-  const chip = T.page.getByRole('button', { name: /trophy case/i }).first();
+  // "your trophy case" is the StreakChip's own wording. The Stats strip and
+  // the footer tile both say "the trophy case", so neither can answer here.
+  const chip = T.page.getByRole('button', { name: /open your trophy case/i }).first();
   check('StreakChip is a button into the case', (await chip.count()) > 0);
   const chipLabel = (await chip.count()) ? await chip.getAttribute('aria-label') : '';
   check('StreakChip reports the 3-day streak', /3 day streak/i.test(chipLabel ?? ''), chipLabel ?? '');
@@ -779,8 +786,9 @@ async function main() {
 
   await D.page.getByRole('button', { name: 'Stats', exact: true }).click();
   await D.page.waitForTimeout(900);
+  // The strip carries the intro line, so the archived voice is checked on it.
   const roCase = D.page.locator('.card').filter({ hasText: 'Trophy case' }).last();
-  check('Trophy case renders in the archived attempt', (await roCase.count()) === 1);
+  check('Trophy strip renders in the archived attempt', (await roCase.count()) === 1);
   if (await roCase.count()) {
     await roCase.scrollIntoViewIfNeeded();
     await D.page.waitForTimeout(700);

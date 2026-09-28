@@ -332,3 +332,51 @@ label { display: block; font-size: 13px; color: var(--fg-muted); margin: 16px 0 
 @media (prefers-reduced-motion: reduce) {
   .blob { display: none; }
 }
+
+/* ---- settings ---- */
+/* Section headers borrow the trophy case's tier-header look: small caps in the
+   accent, a hairline that fades out to the right. */
+.section-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin: 22px 0 8px;
+  font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 700;
+  color: var(--accent-bright);
+}
+.section-head::after { content: ''; flex: 1; height: 1px; margin-left: 10px; background: linear-gradient(90deg, var(--accent-glow), transparent); }
+.settings-row {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  min-height: 56px; padding: 10px 14px; text-align: left;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+}
+.settings-row .title { font-weight: 600; font-size: 15px; }
+.settings-row .sub { font-size: 13px; color: var(--fg-muted); margin-top: 2px; }
+.settings-row .chev { margin-left: auto; color: var(--fg-faint); flex-shrink: 0; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--fg-faint); }
+.status-dot.on { background: var(--green); box-shadow: 0 0 8px var(--green-glow); }
+.status-dot.session { background: var(--amber); }
+/* The one red place in Settings: ending an attempt sits behind its own door
+   and inside its own border, so it can't be mistaken for anything routine. */
+.danger-zone {
+  margin-top: 28px; padding: 14px; border-radius: var(--radius);
+  border: 1px solid rgba(248, 113, 113, 0.35); background: rgba(248, 113, 113, 0.06);
+}
+.danger-zone .section-head { color: var(--red); margin-top: 0; }
+.danger-zone .section-head::after { background: linear-gradient(90deg, rgba(248, 113, 113, 0.35), transparent); }
+.btn-danger { background: rgba(248, 113, 113, 0.10); border: 1px solid rgba(248, 113, 113, 0.35); color: var(--red); }
+
+/* ---- segment control ---- */
+.seg { display: flex; padding: 3px; gap: 2px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); margin: 0 0 14px; }
+/* isolation keeps the pill's z-index: -1 inside its own tab, under the label but
+   above everything behind the control — without it the pill sinks under the page. */
+.seg-item { position: relative; isolation: isolate; flex: 1; min-height: 40px; border-radius: 11px; font-size: 14px; font-weight: 600; color: var(--fg-muted); }
+.seg-item[aria-selected="true"] { color: var(--fg); }
+.seg-pill { position: absolute; inset: 0; border-radius: 11px; background: var(--surface-strong); border: 1px solid var(--border-strong); z-index: -1; }
+
+/* ---- calendar months ---- */
+/* Each month is its own block: name left, plan-day range right. */
+.cal-month { display: flex; align-items: baseline; justify-content: space-between; margin: 18px 0 6px; }
+.cal-section:first-of-type .cal-month { margin-top: 4px; }
+.cal-month b { font-size: 15px; letter-spacing: -0.01em; }
+/* A corrected or backfilled day wears a small glyph in its corner. */
+.cal-cell .mark { position: absolute; top: 3px; right: 4px; color: var(--fg-muted); line-height: 0; }
+.cal-cell.cal-green .mark, .cal-cell.cal-yellow .mark { color: inherit; opacity: 0.8; }

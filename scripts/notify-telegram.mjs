@@ -7,10 +7,12 @@
 // read at send time only and is never printed, logged or stored; anything
 // that could echo it goes through redact() first. Never throws.
 //
-// Env: POUCH_TELEGRAM_ENV   the .env holding TELEGRAM_BOT_TOKEN (default:
+// Env: POUCH_TELEGRAM_ENV   the .env holding TELEGRAM_BOT_TOKEN (and optionally
+//                           TELEGRAM_CHAT_ID). Default:
 //                           ~/.claude/channels/telegram/.env; access.json is
-//                           read from the same folder)
-//      POUCH_TELEGRAM_CHAT  chat id to send to (default: access.json allowFrom[0])
+//                           read from the same folder
+//      POUCH_TELEGRAM_CHAT  chat id to send to (default: TELEGRAM_CHAT_ID in
+//                           that .env, then access.json allowFrom[0])
 //      POUCH_INGEST_STATE   dedupe state file (default: ~/.local/state/pouch-ingest/state.json)
 
 import fs from 'node:fs';
@@ -181,7 +183,13 @@ export function telegramConfig(env = process.env) {
   let token = null;
   let chatId = env.POUCH_TELEGRAM_CHAT || null;
   try {
-    token = /^\s*(?:export\s+)?TELEGRAM_BOT_TOKEN\s*=\s*["']?([^"'\s]+)/m.exec(fs.readFileSync(envFile, 'utf8'))?.[1] ?? null;
+    const text = fs.readFileSync(envFile, 'utf8');
+    const val = (name) => new RegExp(`^\\s*(?:export\\s+)?${name}[ \\t]*=[ \\t]*["']?([^"'\\s]+)`, 'm').exec(text)?.[1] ?? null;
+    token = val('TELEGRAM_BOT_TOKEN');
+    // A notify-only bot's file carries its own chat id, so nothing has to sit
+    // beside it. The plugin's folder has no such line and falls through to
+    // access.json exactly as before.
+    if (!chatId) chatId = val('TELEGRAM_CHAT_ID');
   } catch { /* not set up */ }
   if (!chatId) {
     try {
