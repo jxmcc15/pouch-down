@@ -23,8 +23,9 @@ const COACH_COPY = {
   none: { title: 'Not connected', sub: 'Add a key — or a device token if you run a proxy', dot: '' },
 };
 
-// Only a real HH:MM is written: clearing a time field would otherwise store ''
-// and hand the next plan an evening with no end.
+// One save rule for all five time fields: only a real HH:MM is written, and
+// anything else (a cleared field) snaps back. A blank meal would otherwise be
+// read by the store as noon (store.js slotMinutes) — a time nobody chose.
 const HHMM = /^\d{2}:\d{2}$/;
 
 // A label directly under a section header starts flush with it; the rest keep
@@ -92,8 +93,9 @@ export default function SettingsSheet({ onClose, open = null }) {
     onBlur: () => setDrafts(({ [key]: _, ...rest }) => rest),
   });
 
-  const setMeal = (meal, value) =>
-    api.updateSettings({ mealTimes: { ...s.mealTimes, [meal]: value } });
+  const setMeal = (meal, value) => {
+    if (HHMM.test(value)) api.updateSettings({ mealTimes: { ...s.mealTimes, [meal]: value } });
+  };
 
   const setTime = (key, value) => {
     if (HHMM.test(value)) api.updateSettings({ [key]: value });
@@ -265,7 +267,7 @@ export default function SettingsSheet({ onClose, open = null }) {
           ariaLabel="Coach connection"
           icon={<span className={`status-dot ${coach.dot}`} aria-hidden="true" />}
           title={coach.title}
-          subtitle={coach.sub}
+          subtitle={readOnly ? 'Read-only here — exit the viewer to change it.' : coach.sub}
           onClick={() => setSub('coach')}
         />
 
