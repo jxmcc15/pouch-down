@@ -21,8 +21,11 @@ const loggedDaysIn = (attempt, upToN = attempt.plan.totalDays) => {
 };
 
 // The attempt you're on, the ones behind you, and — live only — the way out.
-// Both actions here leave Settings entirely, so `onClose` closes everything.
-export default function AttemptsSheet({ onClose }) {
+// Two ways out, on purpose. Closing the sheet (X, Done, backdrop, Escape) is
+// `onClose` and goes back to Settings, like the Coach sheet one row above.
+// Choosing a past attempt or ending this one is `onLeave`: the app underneath
+// changes, so Settings closes with it.
+export default function AttemptsSheet({ onClose, onLeave }) {
   const { state, root, api, readOnly } = useApp();
   const [confirmEnd, setConfirmEnd] = useState(false);
 
@@ -73,7 +76,7 @@ export default function AttemptsSheet({ onClose }) {
           whileTap={{ scale: 0.98 }}
           onClick={() => {
             api.viewAttempt(a.id);
-            onClose();
+            onLeave();
           }}
         >
           <History size={16} />
@@ -105,7 +108,7 @@ export default function AttemptsSheet({ onClose }) {
                   whileTap={{ scale: 0.98 }}
                   onClick={() => {
                     api.archiveActive();
-                    onClose();
+                    onLeave();
                   }}
                 >
                   End attempt

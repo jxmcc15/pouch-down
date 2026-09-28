@@ -516,18 +516,20 @@ async function walkContext(browser, base, C, rec, shared) {
       const open = inputs.filter((i) => !i.disabled).map((i) => i.id);
       rec.check(L('Settings: every edit field disabled'), inputs.length > 0 && open.length === 0, open.length ? `editable: ${open.join(', ')}` : `${inputs.length} inputs`);
       // Past attempts moved to their own sheet behind the Attempts row (design
-      // pass, 2026-09-28). Its Done closes Settings too — both its actions
-      // leave Settings — which the "Settings closes" check below then sees.
+      // pass, 2026-09-28). Its Done goes back to Settings, like the Coach
+      // sheet's; only choosing or ending an attempt leaves Settings.
       const attempts = sheet.getByRole('button', { name: /^attempts$/i }).first();
-      if (await visible(attempts, 1000)) {
-        await attempts.scrollIntoViewIfNeeded().catch(() => {});
-        await attempts.click();
-        const attemptsSheet = page.locator('[role="dialog"][aria-label="Attempts"]');
-        if (await visible(attemptsSheet, 3000)) {
-          await page.waitForTimeout(350);
-          await rec.snap(page, `${C.id}-viewer-settings-attempts`);
-          await attemptsSheet.getByRole('button', { name: /^done$/i }).first().click();
-        }
+      await attempts.scrollIntoViewIfNeeded().catch(() => {});
+      await attempts.click().catch(() => {});
+      const attemptsSheet = page.locator('[role="dialog"][aria-label="Attempts"]');
+      const attemptsUp = await visible(attemptsSheet, 3000);
+      rec.check(L('Settings: the Attempts row opens its sheet'), attemptsUp);
+      if (attemptsUp) {
+        await page.waitForTimeout(350);
+        await rec.snap(page, `${C.id}-viewer-settings-attempts`);
+        await attemptsSheet.getByRole('button', { name: /^done$/i }).first().click();
+        const attemptsGone = await attemptsSheet.waitFor({ state: 'hidden', timeout: 3000 }).then(() => true, () => false);
+        rec.check(L("Attempts: Done goes back to Settings"), attemptsGone && (await sheet.isVisible()), attemptsGone ? 'Settings closed with it' : 'Attempts sheet still open');
       }
       const done = sheet.getByRole('button', { name: /^done$/i });
       if (await visible(done, 1000)) await done.first().click();

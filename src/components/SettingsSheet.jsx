@@ -327,7 +327,7 @@ export default function SettingsSheet({ onClose, open = null }) {
           />
         )}
         {sub === 'coach' && <CoachConnectSheet key="coach" onClose={() => setSub(null)} />}
-        {sub === 'attempts' && <AttemptsSheet key="attempts" onClose={closeAll} />}
+        {sub === 'attempts' && <AttemptsSheet key="attempts" onClose={() => setSub(null)} onLeave={closeAll} />}
       </AnimatePresence>
     </>
   );

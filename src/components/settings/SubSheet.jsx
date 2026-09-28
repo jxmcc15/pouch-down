@@ -4,13 +4,15 @@ import { X } from 'lucide-react';
 
 // A sheet stacked on top of Settings: backdrop 52, sheet 53, like the trophy
 // detail sheet over the case. Escape closes this one and stops there — the
-// listener runs in the capture phase so it gets to the key before anything
-// listening on the window underneath, and Settings stays put.
+// listener runs in the capture phase on window, so it reaches the key before
+// any bubble-phase listener (Settings' or anyone's), and
+// stopImmediatePropagation also stops any other capture listener on window
+// registered after it. Settings stays put.
 export default function SubSheet({ label, subtitle, onClose, children }) {
   useEffect(() => {
     const onKey = (e) => {
       if (e.key !== 'Escape') return;
-      e.stopPropagation();
+      e.stopImmediatePropagation();
       onClose?.();
     };
     window.addEventListener('keydown', onKey, true);
