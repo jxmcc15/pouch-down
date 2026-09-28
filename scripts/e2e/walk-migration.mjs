@@ -529,7 +529,8 @@ async function walkContext(browser, base, C, rec, shared) {
         await rec.snap(page, `${C.id}-viewer-settings-attempts`);
         await attemptsSheet.getByRole('button', { name: /^done$/i }).first().click();
         const attemptsGone = await attemptsSheet.waitFor({ state: 'hidden', timeout: 3000 }).then(() => true, () => false);
-        rec.check(L("Attempts: Done goes back to Settings"), attemptsGone && (await sheet.isVisible()), attemptsGone ? 'Settings closed with it' : 'Attempts sheet still open');
+        const settingsStays = await sheet.isVisible();
+        rec.check(L('Attempts: Done goes back to Settings'), attemptsGone && settingsStays, !attemptsGone ? 'Attempts sheet still open' : settingsStays ? '' : 'Settings closed with it');
       }
       const done = sheet.getByRole('button', { name: /^done$/i });
       if (await visible(done, 1000)) await done.first().click();
