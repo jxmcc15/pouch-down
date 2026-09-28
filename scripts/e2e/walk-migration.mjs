@@ -398,6 +398,10 @@ async function walkContext(browser, base, C, rec, shared) {
     // History is the second segment of Stats now (design pass, 2026-09-28).
     await page.getByRole('tab', { name: /^history$/i }).click();
     await page.waitForTimeout(450);
+    // A past attempt has no live clock on either segment: sweep History as it
+    // first appears, before any day is opened (the sweep below covers it open).
+    await rec.snap(page, `${C.id}-viewer-stats-history`, { fullPage: true });
+    await noLive('Stats · History');
     // History: all 60 days, newest first, each with its count or "no log".
     const history = page.locator('.card').filter({ has: page.getByText(/^history$/i) }).last();
     const hasHistory = await visible(history, 2000);
