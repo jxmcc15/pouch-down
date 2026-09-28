@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import { migrateV1, LEGACY_TZ } from '../migrate.js';
 import { LEGACY_PLAN } from '../legacyPlan.js';
+import { DEFAULT_SETTINGS } from '../root.js';
 import { dayKeyOf, localHM } from '../time.js';
 import { todayKey } from '../store.js';
 
@@ -67,6 +68,46 @@ describe('migrateV1', () => {
 
   it('an unreadable archive time leaves archivedDay null rather than throwing', () => {
     expect(migrateV1(v1(), { ...opts, now: 'garbage' }).attempts[0].archivedDay).toBeNull();
+  });
+
+  // root.js imports migrate.js, so the defaults come in with the options rather
+  // than by an import back the other way.
+  const filling = { ...opts, defaults: DEFAULT_SETTINGS };
+
+  it('fills settings a v1 never had from DEFAULT_SETTINGS, without replacing a present value', () => {
+    const input = v1();
+    input.settings = { mealTimes: { breakfast: '07:15', lunch: '12:00' }, costPerTin: 9.5, apiKey: 'sk-ant-TEST' };
+    const root = migrateV1(input, filling);
+    const s = root.attempts[0].settings;
+    expect(s).toEqual({
+      mealTimes: { breakfast: '07:15', lunch: '12:00', dinner: '18:30' },
+      costPerTin: 9.5, pouchesPerTin: 20, wakeTime: '07:00', sleepTime: '23:00',
+    });
+    expect(s).not.toHaveProperty('apiKey');
+    expect(root.device.apiKey).toBe('sk-ant-TEST');
+  });
+
+  it('a v1 with no settings at all migrates with the defaults, key blank', () => {
+    const input = v1();
+    delete input.settings;
+    const root = migrateV1(input, filling);
+    expect(root.attempts[0].settings).toEqual(DEFAULT_SETTINGS);
+    expect(root.attempts[0].settings.mealTimes).not.toBe(DEFAULT_SETTINGS.mealTimes);
+    expect(root.device.apiKey).toBe('');
+  });
+
+  it('a present value that would fail the shape check is kept, not repaired', () => {
+    const input = v1();
+    input.settings = { ...input.settings, mealTimes: null, wakeTime: null };
+    const s = migrateV1(input, filling).attempts[0].settings;
+    expect(s.mealTimes).toBeNull();
+    expect(s.wakeTime).toBeNull();
+  });
+
+  it('a complete v1 migrates byte-for-byte as before', () => {
+    const { apiKey: _key, ...expected } = v1().settings;
+    expect(JSON.stringify(migrateV1(v1(), filling).attempts[0].settings)).toBe(JSON.stringify(expected));
+    expect(JSON.stringify(migrateV1(v1(), filling))).toBe(JSON.stringify(migrateV1(v1(), opts)));
   });
 });
 
