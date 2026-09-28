@@ -25,6 +25,7 @@ import {
   pickTransport,
   coachTransport,
   authErrorFor,
+  coachStatus,
 } from '../proxyConfig.js';
 
 const TOKEN = 'pd-device-test-token';
@@ -396,5 +397,20 @@ describe('the coach sheet with a proxy configured', () => {
     expect(html).toContain('Talk to your coach');
     expect(html).not.toContain('Open Settings');
     expect(html).not.toContain(TOKEN); // the token is never on screen in the coach
+  });
+});
+
+describe('coachStatus — the one line Settings shows', () => {
+  it('proxy only when a proxy is configured and this device holds a token', () => {
+    expect(coachStatus({ proxyOn: true, hasToken: true, hasKey: false })).toBe('proxy');
+    expect(coachStatus({ proxyOn: true, hasToken: true, hasKey: true })).toBe('proxy');
+  });
+  it('key when a session key is held and the proxy path is not live', () => {
+    expect(coachStatus({ proxyOn: false, hasToken: false, hasKey: true })).toBe('key');
+    expect(coachStatus({ proxyOn: true, hasToken: false, hasKey: true })).toBe('key');
+  });
+  it('none otherwise', () => {
+    expect(coachStatus({ proxyOn: false, hasToken: true, hasKey: false })).toBe('none');
+    expect(coachStatus({})).toBe('none');
   });
 });

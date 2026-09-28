@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
@@ -55,9 +56,21 @@ const csp = () => ({
   },
 })
 
+// The short commit the build came from, shown on Settings → About so a screen
+// on the phone can be matched to a commit. 'dev' outside a checkout, where git
+// has nothing to say — a build must never fail over a label.
+const buildId = () => {
+  try {
+    return execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() || 'dev'
+  } catch {
+    return 'dev'
+  }
+}
+
 // Served from https://<user>.github.io/pouch-down/
 export default defineConfig({
   base: '/pouch-down/',
+  define: { 'import.meta.env.VITE_BUILD': JSON.stringify(buildId()) },
   // Fixtures are written in Central time (James's zone: noon CT, 4am-cutoff
   // days), so the suite pins it rather than inheriting the machine's zone.
   // Zone independence is tested on purpose, in zones.test.js.
