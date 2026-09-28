@@ -4,8 +4,9 @@
 //   <TrophyCase />                 the card in Stats
 //   <TrophyCaseSheet onClose />    the same case in a bottom sheet
 //   <TrophyTile onOpen />          the "7 of 24 trophies" tile for Today
+//   <TrophyStrip onOpen />         one row of seals on Stats, a door to the sheet
 //
-// All three read their own data — no props carry state in, so a caller can drop
+// All four read their own data — no props carry state in, so a caller can drop
 // any of them anywhere. Nothing here writes: no api calls at all, which is what
 // makes it safe while a past, archived attempt is open for reading.
 //
@@ -17,7 +18,7 @@
 //     preview of something reachable, not a scolding.
 import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trophy, X } from 'lucide-react';
+import { ChevronRight, Trophy, X } from 'lucide-react';
 import { useApp } from '../../state.jsx';
 import { awardsFor } from '../../awards.js';
 import { plainMotion } from '../../motion.js';
@@ -440,6 +441,102 @@ export function TrophyTile({ onOpen }) {
         <AnimatedNumber value={earned} />
       </div>
       <div className="tiny faint num">of {total} trophies</div>
+    </motion.button>
+  );
+}
+
+/* ----------------------------------------------------------- the strip */
+
+// Earned: newest first, and on the same day the bigger tier first — that's the
+// news. An award kept with no date (see fmtShort) sorts after every dated one.
+function byNewest(x, y) {
+  const d = String(y.earnedOn ?? '').localeCompare(String(x.earnedOn ?? ''));
+  return d || (TIER_RANK[y.tier] ?? -1) - (TIER_RANK[x.tier] ?? -1);
+}
+
+// Locked: closest first, and at equal distance the lower tier first — it's the
+// one actually within reach. Junk progress reads as none rather than NaN, which
+// would make the sort order depend on where the junk happened to sit.
+const reach = (a) => Number(a.progress) || 0;
+function byClosest(x, y) {
+  return reach(y) - reach(x) || (TIER_RANK[x.tier] ?? 99) - (TIER_RANK[y.tier] ?? 99);
+}
+
+// The handful of seals worth a glance on Stats: what you've earned, then the
+// locked ones you're closest to. Pure, so the choice is testable; the sheet
+// shows everything. Anything still tied keeps awardsFor's catalog order (the
+// sort is stable), so the same state always draws the same strip.
+//
+// It lives beside the strip because nothing else picks seals, which costs
+// Fast Refresh a full reload when this file is edited — a dev-only price.
+// oxlint-disable-next-line react/only-export-components
+export function stripPicks(awards, max = 6) {
+  const earned = awards.filter((a) => a.earned).sort(byNewest);
+  const locked = awards.filter((a) => !a.earned).sort(byClosest);
+  const all = [...earned, ...locked];
+  return { shown: all.slice(0, max), more: Math.max(0, all.length - max) };
+}
+
+// One card, one row of seals, one tap into the case. Keeps "Trophy case", the
+// "N of M" and the intro line in its text, which is what the awards walk reads.
+//
+// Sized for the narrowest phone that matters: the card is ~297px inside on a
+// 375px screen, and six 36px seals, their gaps and a two-line "+N more" come
+// to ~294. At 40px the count would be the thing that got clipped.
+export function TrophyStrip({ onOpen }) {
+  const { state, readOnly, awards, earned, total } = useAwards();
+  if (!state) return null;
+  const { shown, more } = stripPicks(awards, 6);
+
+  return (
+    <motion.button
+      type="button"
+      className="card"
+      onClick={onOpen}
+      aria-label={`Trophy case: ${earned} of ${total} earned. Open the trophy case.`}
+      whileTap={{ scale: 0.99 }}
+      initial={{ opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={spring}
+      style={{ width: '100%', marginTop: 14, display: 'block', textAlign: 'left' }}
+    >
+      <div className="spread">
+        <span className="tiny muted">Trophy case</span>
+        <span className="row tiny faint num" style={{ gap: 2 }}>
+          {earned} of {total}
+          <ChevronRight size={14} aria-hidden="true" />
+        </span>
+      </div>
+      <div className="row" style={{ gap: 8, marginTop: 12 }}>
+        {/* The button's label already says everything; each seal speaks its
+            own name (role="img"), so they're hidden here or a screen reader
+            would read seven labels for one tap. If a phone is narrower still,
+            the last seal clips — never the count. */}
+        <div className="row" aria-hidden="true" style={{ gap: 8, flex: '1 1 auto', minWidth: 0, overflow: 'hidden' }}>
+          {shown.map((award, i) => (
+            <motion.span
+              key={award.id}
+              initial={{ opacity: 0, scale: 0.84 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ ...tileSpring, delay: tileDelay(i) }}
+              style={{ flexShrink: 0 }}
+            >
+              <Badge award={award} size={36} showRing />
+            </motion.span>
+          ))}
+        </div>
+        {more > 0 && (
+          // min-content breaks it at the space: "+19" over "more", one narrow slot.
+          <span
+            className="small faint num"
+            aria-hidden="true"
+            style={{ flexShrink: 0, width: 'min-content', textAlign: 'center', lineHeight: 1.15 }}
+          >
+            {`+${more} more`}
+          </span>
+        )}
+      </div>
+      <p className="small muted" style={{ margin: '10px 0 0' }}>{introLine(earned, total, readOnly)}</p>
     </motion.button>
   );
 }
