@@ -26,3 +26,6 @@ dist-ssr
 
 # wrangler writes this when the Worker is deployed or run locally
 .wrangler/
+
+# brainstorming visual companion sessions (mockups, never source)
+.superpowers/
