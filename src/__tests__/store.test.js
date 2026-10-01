@@ -388,6 +388,13 @@ describe('an untimed pouch counts everywhere a count is taken and is skipped whe
     expect(d.backfilled).toBe(1);
     expect(d.onTime + d.early + d.overCap).toBe(1);
   });
+  it('on today, stays out of today\'s timing counts while today\'s count includes it', () => {
+    const T = '2026-09-25'; // the fake clock's day
+    const ut = { ...ev('pouch', T), ts: '2026-09-25T17:00:00.000Z', ctx: null, late: true, timeKnown: false, enteredAt: '2026-09-25T17:00:00.000Z' };
+    const s = attempt([ut]);
+    expect(S.disciplineStats(s).today).toMatchObject({ onTime: 0, early: 0, overCap: 0 });
+    expect(S.pouchesForDay(s, T)).toBe(1);
+  });
   it('is skipped by firstPouchTimes, gapStats, hourHistogram and timeSinceLastPouch', () => {
     const s = attempt([u, t]);
     expect(S.firstPouchTimes(s)).toEqual([{ dayNum: 2, date: D, minutesSince4am: (9 * 60 - 4 * 60 + 1440) % 1440 }]); // 14:00Z = 9:00 CDT

@@ -73,3 +73,22 @@ describe('money is counted in whole cents', () => {
     expect(m).toMatchObject({ oldPace: 37.5, spent: 12.5, kept: 25, keptCents: 2500 });
   });
 });
+
+describe('voids and untimed pouches in money', () => {
+  const voidOf = (p) => ({ id: `v${++seq}`, ts: '2026-09-25T17:00:00.000Z', tzOffsetMin: -300, day: p.day, type: 'void', target: p.id, trigger: null });
+  it('a void changes kept money exactly as if the pouch were never logged', () => {
+    const evs = [...pouches('2026-09-21', 6), ...pouches('2026-09-22', 5)];
+    const A = moneyStats(attempt([...evs, voidOf(evs[2])]));
+    const B = moneyStats(attempt(evs.filter((e) => e.id !== evs[2].id)));
+    expect(A).toEqual(B);
+    expect(A.keptCents).toBeGreaterThan(moneyStats(attempt(evs)).keptCents);
+  });
+  it('a day whose only pouch is voided is not a logged day', () => {
+    const p = ev('pouch', '2026-09-22');
+    expect(moneyStats(attempt([...pouches('2026-09-21', 6), p, voidOf(p)]))).toEqual(moneyStats(attempt(pouches('2026-09-21', 6))));
+  });
+  it('an untimed pouch costs the same as a tap', () => {
+    const u = { ...ev('pouch', '2026-09-21'), ts: '2026-09-25T17:00:00.000Z', ctx: null, late: true, timeKnown: false, enteredAt: '2026-09-25T17:00:00.000Z' };
+    expect(moneyStats(attempt([...pouches('2026-09-21', 5), u]))).toEqual(moneyStats(attempt(pouches('2026-09-21', 6))));
+  });
+});
