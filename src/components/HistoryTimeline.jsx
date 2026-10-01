@@ -72,18 +72,19 @@ function EventRow({ state, ev }) {
     const v = pouchVerdict(state, ev);
     const slotLabel = asText(ev.ctx?.slotLabel);
     const note = asText(reasonFor(state, ev)?.note);
-    // A mistake stays on the page, struck and muted — never red. It is history
-    // the user corrected, not a slip.
-    const color = voided ? 'var(--fg-faint)' : v.color;
-    const struck = voided ? { textDecoration: 'line-through' } : undefined;
-    icon = <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, display: 'block', opacity: 0.85 }} />;
+    // A mistake stays on the page — history the user corrected, not a slip.
+    // Its text is muted, not faint, so it stays readable under the strike; the
+    // strike and the faint "mistake" tag carry the meaning. Never red.
+    const dot = voided ? 'var(--fg-faint)' : v.color;
+    const struck = voided ? { color: 'var(--fg-muted)', textDecoration: 'line-through' } : undefined;
+    icon = <span style={{ width: 8, height: 8, borderRadius: '50%', background: dot, display: 'block', opacity: 0.85 }} />;
     segs = [
       // An untimed pouch's ts is when it was entered, not when it happened, so
       // the clock gives way to "time unknown" — which is also its whole
       // verdict, so the verdict segment is not drawn twice.
       <span key="t" className="muted num" style={struck}>{untimed ? 'time unknown' : fmtTime(ev)}</span>,
       ...(slotLabel ? [<span key="s" className="muted" style={struck}>{slotLabel}</span>] : []),
-      ...(untimed ? [] : [<span key="v" style={{ color, fontWeight: 500, ...struck }}>{v.text}</span>]),
+      ...(untimed ? [] : [<span key="v" style={{ color: v.color, fontWeight: 500, ...struck }}>{v.text}</span>]),
       ...(late ? [<span key="l" className="faint">added later</span>] : []),
       ...(voided ? [<span key="x" className="faint">mistake</span>] : []),
       ...tagSeg,

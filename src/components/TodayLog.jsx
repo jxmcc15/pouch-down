@@ -54,23 +54,25 @@ function LogRow({ state, ev }) {
 
   // pouch. pouchVerdict goes through classifyPouch, which derives ctx for old
   // events that lack it; the slot label reads straight off the stamp, omitted
-  // when absent. A mistake stays on the page, struck and muted — never red.
+  // when absent. A mistake stays on the page: its text muted, not faint, so it
+  // stays readable under the strike; the strike and the faint "mistake" tag
+  // carry the meaning. Never red.
   const { voided, late, untimed } = pouchFlags(state, ev);
   const verdict = pouchVerdict(state, ev);
   const slotLabel = asText(ev.ctx?.slotLabel);
-  const color = voided ? 'var(--fg-faint)' : verdict.color;
-  const struck = voided ? { textDecoration: 'line-through' } : undefined;
+  const dot = voided ? 'var(--fg-faint)' : verdict.color;
+  const struck = voided ? { color: 'var(--fg-muted)', textDecoration: 'line-through' } : undefined;
   return (
     <div className="row small">
       <span style={lead}>
-        <span style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
+        <span style={{ width: 8, height: 8, borderRadius: '50%', background: dot }} />
       </span>
       <div>
         {/* An untimed pouch's ts is when it was entered, so "time unknown"
             stands in for the clock — and is its whole verdict, drawn once. */}
         <span className="num" style={struck}>{untimed ? 'time unknown' : fmtTime(ev)}</span>
         {slotLabel && <span className="muted" style={struck}> · {slotLabel}</span>}
-        {!untimed && <span style={{ color, ...struck }}> · {verdict.text}</span>}
+        {!untimed && <span style={{ color: verdict.color, ...struck }}> · {verdict.text}</span>}
         {late && <span className="faint"> · added later</span>}
         {voided && <span className="faint"> · mistake</span>}
         {tags.length > 0 && <span className="faint"> · {tags.join(', ')}</span>}
