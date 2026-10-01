@@ -1,9 +1,10 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { loadRoot, saveRoot, attemptById, updateAttempt, startAttempt, archiveActive } from './root.js';
-import { makeEvent, makeId, pouchCtxForNow, todayKey, isLogged, dayNumberFor, timedPouchesForDay } from './store.js';
+import { makeEvent, makeId, pouchCtxForNow, todayKey, isLogged, dayNumberFor, timedPouchesForDay, isVoided } from './store.js';
 import { dayKeyOf } from './time.js';
 import { TRIGGERS } from './triggers.js';
 import { UNDO_WINDOW_MS, TAG_WINDOW_MS, isJustLogged } from './justLogged.js';
+import { resolveLate } from './latePouch.js';
 
 const SAVE_ERROR = "Couldn't save to this phone. Keep the app open — it retries on your next change.";
 
@@ -23,14 +24,34 @@ function correctionOk(a, { day, count }) {
     && Number.isInteger(count) && count >= timedPouchesForDay(a, day);
 }
 
+// The triggers + note a reason carries, validated the one way. → { triggers,
+// note } (both may be empty), or null when the input won't do.
+function reasonBody({ triggers = [], note = '' }) {
+  if (!Array.isArray(triggers) || !triggers.every((t) => TRIGGERS.includes(t)) || typeof note !== 'string') return null;
+  return { triggers: [...new Set(triggers)], note: note.trim().slice(0, NOTE_MAX) };
+}
+
 // The reason event for a pouch in this attempt, or null if the input won't do.
 function reasonFields(a, { target, triggers = [], note = '' }) {
   const pouch = a.events.find((e) => e.id === target && e.type === 'pouch');
-  if (!pouch || !Array.isArray(triggers) || !triggers.every((t) => TRIGGERS.includes(t)) || typeof note !== 'string') return null;
-  const set = [...new Set(triggers)];
-  const text = note.trim().slice(0, NOTE_MAX);
-  return set.length || text ? { day: dayKeyOf(pouch), target, triggers: set, note: text } : null;
+  const body = pouch && reasonBody({ triggers, note });
+  if (!body) return null;
+  return body.triggers.length || body.note ? { day: dayKeyOf(pouch), target, ...body } : null;
 }
+
+// A remembered pouch may land on any plan day from Day 1 through today — days
+// past quit day included (the coming "still free" check-in must not be
+// blocked) — never on a pre-plan baseline day, never in the future. resolveLate
+// also refuses a day the calendar doesn't have, which DAY_RE alone lets through.
+function latePouchOk(a, { day, time, triggers, note }) {
+  if (typeof day !== 'string' || !DAY_RE.test(day) || day > todayKey()) return false;
+  if (dayNumberFor(a, day) < 1) return false;
+  const r = resolveLate({ day, time });
+  return r.ok && !r.future && reasonBody({ triggers, note }) !== null;
+}
+
+// The pouch a void would name: a pouch of this attempt not already voided.
+const voidable = (a, id) => a.events.some((e) => e.id === id && e.type === 'pouch') && !isVoided(a, { id, type: 'pouch' });
 
 // What's on screen, and may it change? Read-only = viewing an existing attempt,
 // or the attempt that would be mutated isn't active. The render path and every
@@ -152,6 +173,38 @@ export function AppStateProvider({ children }) {
         if (!fields) return null;
         const ev = { ...makeEvent('reason'), ...fields };
         onActive((cur) => (reasonFields(cur, input) ? { ...cur, events: [...cur.events, ev] } : cur));
+        return ev.id;
+      },
+      // A pouch remembered later, with the time it happened or null (unknown).
+      // One state update, two events when triggers or a note were given: the
+      // reason FIRST, then the pouch, so the pouch is the newest and undo takes
+      // only it (a reason whose target is gone is harmless). → pouch id | null.
+      logLatePouch({ day, time = null, triggers = [], note = '' } = {}) {
+        const a = editable();
+        const input = { day, time, triggers, note };
+        if (!a || !latePouchOk(a, input)) return null;
+        const now = new Date();
+        const r = resolveLate({ day, time, now: now.getTime() });
+        const pouch = {
+          id: makeId(now), ts: new Date(r.ms).toISOString(), tzOffsetMin: r.tzOffsetMin, day,
+          type: 'pouch', trigger: null, ctx: null, late: true, enteredAt: now.toISOString(),
+          ...(time === null ? { timeKnown: false } : {}),
+        };
+        const body = reasonBody({ triggers, note });
+        const reason = body.triggers.length || body.note ? { ...makeEvent('reason', null, now), day, target: pouch.id, ...body } : null;
+        onActive((cur) => (latePouchOk(cur, input) ? { ...cur, events: [...cur.events, ...(reason ? [reason] : []), pouch] } : cur));
+        return pouch.id;
+      },
+      // Marks a pouch as a mistake: a new event naming it; the pouch is never
+      // touched. From then on liveEvents drops the pouch from every number.
+      // Undo within the window is the only way back. → void id | null.
+      voidPouch(id) {
+        const a = editable();
+        if (!a || !voidable(a, id)) return null;
+        const pouch = a.events.find((e) => e.id === id);
+        // Filed under the pouch's day, not today's, so it sits beside its pouch.
+        const ev = { ...makeEvent('void'), day: dayKeyOf(pouch), target: id };
+        onActive((cur) => (voidable(cur, id) ? { ...cur, events: [...cur.events, ev] } : cur));
         return ev.id;
       },
       // One coach exchange, saved on the active attempt (not an event: nothing
