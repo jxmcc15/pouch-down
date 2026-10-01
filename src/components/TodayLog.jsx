@@ -5,30 +5,21 @@ import { motion } from 'framer-motion';
 import { ShieldCheck, Moon } from 'lucide-react';
 import { useApp } from '../state.jsx';
 import {
-  eventsForDay,
+  rawEventsForDay,
   todayKey,
-  classifyPouch,
   timeSinceLastPouch,
   fmtTime,
   fmtDuration,
   triggersFor,
+  pouchFlags,
 } from '../store.js';
+import { pouchVerdict } from '../pouchVerdict.js';
 import { asText } from '../text.js';
 
 const spring = { type: 'spring', damping: 24, stiffness: 180 };
 
 // Fixed-width leading column so dot rows and icon rows align their text start.
 const lead = { width: 15, display: 'inline-flex', justifyContent: 'center', flexShrink: 0 };
-
-// Verdict label + color from a pouch's read-time classification. Early and
-// over-cap are plain amber (never alarm-red); on-time / held-out is green.
-function pouchVerdict(v) {
-  if (v.bucket === 'over-cap') return { text: 'over cap', color: 'var(--amber)' };
-  if (v.bucket === 'early') return { text: `${Math.abs(v.deltaMin)}m early`, color: 'var(--amber)' };
-  if (v.bucket === 'baseline') return { text: 'baseline', color: 'var(--fg-muted)' };
-  if (v.deltaMin >= 1) return { text: `on time +${v.deltaMin}m`, color: 'var(--green)' };
-  return { text: 'on time', color: 'var(--green)' };
-}
 
 function LogRow({ state, ev }) {
   const tags = triggersFor(state, ev).map(asText).filter(Boolean);
@@ -57,23 +48,31 @@ function LogRow({ state, ev }) {
     );
   }
 
-  // Corrections and reasons aren't pouches; they show through the pouch they
-  // belong to (triggersFor), never as rows of their own here.
+  // Corrections, reasons and voids aren't pouches; they show through the pouch
+  // they belong to (a reason's tags, a void's strike), never as rows of their own.
   if (ev.type !== 'pouch') return null;
 
-  // pouch. classifyPouch derives ctx for old events that lack it;
-  // the display slot label reads straight off the stamp, omitted when absent.
-  const verdict = pouchVerdict(classifyPouch(state, ev));
+  // pouch. pouchVerdict goes through classifyPouch, which derives ctx for old
+  // events that lack it; the slot label reads straight off the stamp, omitted
+  // when absent. A mistake stays on the page, struck and muted — never red.
+  const { voided, late, untimed } = pouchFlags(state, ev);
+  const verdict = pouchVerdict(state, ev);
   const slotLabel = asText(ev.ctx?.slotLabel);
+  const color = voided ? 'var(--fg-faint)' : verdict.color;
+  const struck = voided ? { textDecoration: 'line-through' } : undefined;
   return (
     <div className="row small">
       <span style={lead}>
-        <span style={{ width: 8, height: 8, borderRadius: '50%', background: verdict.color }} />
+        <span style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
       </span>
       <div>
-        <span className="num">{fmtTime(ev)}</span>
-        {slotLabel && <span className="muted"> · {slotLabel}</span>}
-        <span style={{ color: verdict.color }}> · {verdict.text}</span>
+        {/* An untimed pouch's ts is when it was entered, so "time unknown"
+            stands in for the clock — and is its whole verdict, drawn once. */}
+        <span className="num" style={struck}>{untimed ? 'time unknown' : fmtTime(ev)}</span>
+        {slotLabel && <span className="muted" style={struck}> · {slotLabel}</span>}
+        {!untimed && <span style={{ color, ...struck }}> · {verdict.text}</span>}
+        {late && <span className="faint"> · added later</span>}
+        {voided && <span className="faint"> · mistake</span>}
         {tags.length > 0 && <span className="faint"> · {tags.join(', ')}</span>}
       </div>
     </div>
@@ -83,8 +82,9 @@ function LogRow({ state, ev }) {
 export default function TodayLog() {
   const { state, tick } = useApp();
 
-  // Filter returns a fresh array, so sorting in place never touches state.
-  const events = eventsForDay(state, todayKey()).sort(
+  // Filter returns a fresh array, so sorting in place never touches state. The
+  // raw list, so a pouch marked as a mistake still shows — struck — today.
+  const events = rawEventsForDay(state, todayKey()).sort(
     (a, b) => new Date(a.ts) - new Date(b.ts), // ascending — newest lands last
   );
   const sinceMs = timeSinceLastPouch(state);

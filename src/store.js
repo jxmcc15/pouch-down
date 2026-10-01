@@ -17,7 +17,7 @@ export function makeId(now = new Date()) {
   return `${now.getTime()}-${idCounter++}`;
 }
 
-// type: 'pouch' | 'resisted' | 'checkin' ('backfill', 'correction' and 'reason'
+// type: 'pouch' | 'resisted' | 'checkin' ('backfill', 'correction', 'reason' and 'void'
 // events get their fields set by the caller)
 // trigger: one of TRIGGERS (triggers.js) or null
 export function makeEvent(type, trigger = null, now = new Date()) {
