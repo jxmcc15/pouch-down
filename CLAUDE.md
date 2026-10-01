@@ -89,7 +89,9 @@ status colors. All motion is Framer springs; `MotionConfig reducedMotion="user"`
   just-logged event is the only allowed deletion, and `api.tagEvent` is the
   only allowed mutation: it may set the mood trigger on the *most recent*
   pouch event within 15 seconds of logging — "completing" the log, same
-  spirit as undo. Nothing else, ever.
+  spirit as undo (it refuses a late pouch: that one's reasons ride on its
+  reason event). Nothing else, ever. `api.logLatePouch` and `api.voidPouch`
+  append, like every other write.
 - **Event types**: `pouch` (carries a `ctx` snapshot of slot/cap/nth facts
   stamped at log time; verdicts always derive at read time via
   `classifyPouch`), `resisted`, and `checkin` (morning sleep/workout;
@@ -100,6 +102,17 @@ status colors. All motion is Framer springs; `MotionConfig reducedMotion="user"`
   'break' }` for a missed day, entered later; `day` is the day filled in; one
   per day; a new event, never an edit). Undo and `tagEvent` windows are
   enforced by the api itself (`src/justLogged.js`), not only by the toast.
+- **A pouch may carry `late: true`, `enteredAt` (when it was written) and
+  `timeKnown: false`** (a remembered pouch whose time is unknown: `ts ===
+  enteredAt`, `day` chosen, counted everywhere, clocked nowhere). **`void`
+  events** (`{ day, target }`) name a pouch that was a mistake; the pouch is
+  never touched. **Counts come only from `liveEvents`/`eventsForDay`
+  (`src/liveEvents.js`).** Raw events (`rawEventsForDay`, `state.events`) are
+  for drawing struck rows and for the write guards, nothing else. Accepted
+  drift: adding a pouch between two taps does not renumber the later tap's
+  stamped ctx, so one per-pouch verdict can be off by a slot; counts, caps,
+  streaks, money and awards derive from counts and stay right. `isJustLogged`
+  reads `enteredAt ?? ts`. Undo and `tagEvent` are still the only mutations.
 - **NEVER push without James**: pushing `main` auto-deploys to the live PWA
   on his phone (`.github/workflows/deploy.yml`). Commit locally; he pushes.
 - **Days run 4am→4am** (`DAY_CUTOFF_HOURS` in time.js) so late nights count
