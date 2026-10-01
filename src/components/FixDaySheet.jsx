@@ -281,83 +281,92 @@ function PouchList({ state, day }) {
       ) : (
         <>
           {anyLive && <p className="small faint" style={{ margin: '0 0 6px' }}>Tap one to add why it happened, or to mark a mistake.</p>}
-          {pouches.map((ev, i) => {
-            const { voided, late, untimed } = pouchFlags(state, ev);
-            const v = pouchVerdict(state, ev);
-            // Stored strings pass through asText: one that became an object
-            // drops out instead of taking the sheet down.
-            const tags = triggersFor(state, ev).map(asText).filter(Boolean);
-            const slotLabel = asText(ev.ctx?.slotLabel);
-            const note = noteText(reasonFor(state, ev));
-            const open = editing === ev.id;
-            const clock = untimed ? 'time unknown' : fmtTime(ev);
-            const label = untimed ? 'Pouch, time unknown' : `Pouch at ${fmtTime(ev)}`;
-            const strike = voided ? { textDecoration: 'line-through' } : null;
-            const showMarked = voided && marked?.id === ev.id && Date.now() < marked.until;
-            const facts = (
-              <span className="small" style={{ flex: 1, minWidth: 0, display: 'flex', flexWrap: 'wrap', gap: '2px 7px' }}>
-                <span className="muted num" style={strike}>{clock}</span>
-                {slotLabel && <><span className="faint">·</span><span className="muted" style={strike}>{slotLabel}</span></>}
-                {/* An untimed pouch's verdict is "time unknown" too — already said. */}
-                {!untimed && <><span className="faint">·</span><span style={{ color: voided ? 'var(--fg-muted)' : v.color, fontWeight: 500, ...strike }}>{v.text}</span></>}
-                {late && <><span className="faint">·</span><span className="faint">added later</span></>}
-                {tags.length > 0 && <><span className="faint">·</span><span className="faint">{tags.join(', ')}</span></>}
-                {note && <span className="faint" style={{ flexBasis: '100%', fontStyle: 'italic' }}>{note}</span>}
-              </span>
-            );
-            return (
-              <div key={ev.id} style={{ borderTop: i === 0 ? 'none' : '1px solid var(--border)' }}>
-                {voided ? (
-                  <div role="listitem" aria-label={`${label}, marked as a mistake`} style={{ padding: '10px 2px', minHeight: 44, display: 'flex', alignItems: 'center', gap: 9 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--fg-faint)', flexShrink: 0 }} />
-                    {facts}
-                    {showMarked ? (
-                      <span className="row" style={{ gap: 8, flexShrink: 0 }}>
-                        <span className="small muted">Marked</span>
-                        {isNewest(state, marked.voidId) && (
-                          <UndoChip
-                            label="Undo marking this pouch"
-                            onUndo={() => {
-                              // A frame can outlive the window by up to a tick after an unlock.
-                              if (Date.now() < marked.until) api.undoEvent(marked.voidId);
-                              setMarked(null);
-                            }}
+          {/* One list, one item per pouch, struck or not: a reader hears how
+              many there were, and a mistake is still one of them. */}
+          <div role="list">
+            {pouches.map((ev, i) => {
+              const { voided, late, untimed } = pouchFlags(state, ev);
+              const v = pouchVerdict(state, ev);
+              // Stored strings pass through asText: one that became an object
+              // drops out instead of taking the sheet down.
+              const tags = triggersFor(state, ev).map(asText).filter(Boolean);
+              const slotLabel = asText(ev.ctx?.slotLabel);
+              const note = noteText(reasonFor(state, ev));
+              const open = editing === ev.id;
+              const clock = untimed ? 'time unknown' : fmtTime(ev);
+              const label = untimed ? 'Pouch, time unknown' : `Pouch at ${fmtTime(ev)}`;
+              const strike = voided ? { textDecoration: 'line-through' } : null;
+              const showMarked = voided && marked?.id === ev.id && Date.now() < marked.until;
+              const facts = (
+                <span className="small" style={{ flex: 1, minWidth: 0, display: 'flex', flexWrap: 'wrap', gap: '2px 7px' }}>
+                  <span className="muted num" style={strike}>{clock}</span>
+                  {slotLabel && <><span className="faint">·</span><span className="muted" style={strike}>{slotLabel}</span></>}
+                  {/* An untimed pouch's verdict is "time unknown" too — already said. */}
+                  {!untimed && <><span className="faint">·</span><span style={{ color: voided ? 'var(--fg-muted)' : v.color, fontWeight: 500, ...strike }}>{v.text}</span></>}
+                  {late && <><span className="faint">·</span><span className="faint">added later</span></>}
+                  {tags.length > 0 && <><span className="faint">·</span><span className="faint">{tags.join(', ')}</span></>}
+                  {note && <span className="faint" style={{ flexBasis: '100%', fontStyle: 'italic' }}>{note}</span>}
+                </span>
+              );
+              return (
+                <div
+                  key={ev.id}
+                  role="listitem"
+                  aria-label={voided ? `${label}, marked as a mistake` : undefined}
+                  style={{ borderTop: i === 0 ? 'none' : '1px solid var(--border)' }}
+                >
+                  {voided ? (
+                    <div style={{ padding: '10px 2px', minHeight: 44, display: 'flex', alignItems: 'center', gap: 9 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--fg-faint)', flexShrink: 0 }} />
+                      {facts}
+                      {showMarked ? (
+                        <span className="row" style={{ gap: 8, flexShrink: 0 }}>
+                          <span className="small muted">Marked</span>
+                          {isNewest(state, marked.voidId) && (
+                            <UndoChip
+                              label="Undo marking this pouch"
+                              onUndo={() => {
+                                // A frame can outlive the window by up to a tick after an unlock.
+                                if (Date.now() < marked.until) api.undoEvent(marked.voidId);
+                                setMarked(null);
+                              }}
+                            />
+                          )}
+                        </span>
+                      ) : (
+                        <span className="small faint" style={{ flexShrink: 0 }}>mistake</span>
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        aria-label={label}
+                        aria-expanded={open}
+                        onClick={() => setEditing(open ? null : ev.id)}
+                        style={{ width: '100%', background: 'transparent', padding: '10px 2px', minHeight: 44, textAlign: 'left', display: 'flex', alignItems: 'flex-start', gap: 9 }}
+                      >
+                        <span style={{ width: 8, height: 8, marginTop: 6, borderRadius: '50%', background: v.color, flexShrink: 0, opacity: 0.85 }} />
+                        {facts}
+                        <PencilLine size={14} color="var(--fg-faint)" style={{ flexShrink: 0, marginTop: 3 }} />
+                      </button>
+                      <AnimatePresence initial={false}>
+                        {open && (
+                          <ReasonEditor
+                            key="edit"
+                            state={state}
+                            ev={ev}
+                            onDone={() => setEditing(null)}
+                            onMarked={(voidId) => setMarked({ id: ev.id, voidId, until: Date.now() + UNDO_SHOWN_MS })}
                           />
                         )}
-                      </span>
-                    ) : (
-                      <span className="small faint" style={{ flexShrink: 0 }}>mistake</span>
-                    )}
-                  </div>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      aria-label={label}
-                      aria-expanded={open}
-                      onClick={() => setEditing(open ? null : ev.id)}
-                      style={{ width: '100%', background: 'transparent', padding: '10px 2px', minHeight: 44, textAlign: 'left', display: 'flex', alignItems: 'flex-start', gap: 9 }}
-                    >
-                      <span style={{ width: 8, height: 8, marginTop: 6, borderRadius: '50%', background: v.color, flexShrink: 0, opacity: 0.85 }} />
-                      {facts}
-                      <PencilLine size={14} color="var(--fg-faint)" style={{ flexShrink: 0, marginTop: 3 }} />
-                    </button>
-                    <AnimatePresence initial={false}>
-                      {open && (
-                        <ReasonEditor
-                          key="edit"
-                          state={state}
-                          ev={ev}
-                          onDone={() => setEditing(null)}
-                          onMarked={(voidId) => setMarked({ id: ev.id, voidId, until: Date.now() + UNDO_SHOWN_MS })}
-                        />
-                      )}
-                    </AnimatePresence>
-                  </>
-                )}
-              </div>
-            );
-          })}
+                      </AnimatePresence>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </>
       )}
     </div>
@@ -415,7 +424,7 @@ function AddPouchCard({ day }) {
   };
 
   let line;
-  if (resolved.future) line = `${fmtHM(time)} — that's later than now`;
+  if (resolved.future) line = `${fmtHM(time)} — that’s later than now`;
   else if (!resolved.ok) line = `${fmtHeader(day)} · pick a time`;
   else {
     line = (

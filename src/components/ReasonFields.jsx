@@ -5,7 +5,8 @@ import { motion } from 'framer-motion';
 import { TRIGGERS } from '../triggers.js';
 
 const NOTE_MAX = 140;
-const chipStyle = { minHeight: 36, padding: '6px 13px', fontSize: 13 };
+// 44px: every chip is a tap target, and these are the smallest on the sheet.
+const chipStyle = { minHeight: 44, padding: '6px 13px', fontSize: 13 };
 
 export default function ReasonFields({ picked, note, onToggle, onNote }) {
   return (
