@@ -135,7 +135,8 @@ function dayRow(state, n, { today, exportDay }) {
     const v = classifyPouch(state, e);
     if (v.bucket === 'early') early++;
     if (v.bucket === 'over-cap') over++;
-    if (first == null || Date.parse(e.ts) < Date.parse(first.ts)) first = e;
+    // an untimed pouch has no time to show; its ts is when it was entered
+    if (e.timeKnown !== false && (first == null || Date.parse(e.ts) < Date.parse(first.ts))) first = e;
   }
   const used = pouchesForDay(state, d);
   // A corrected day reads as the coach's table does: the real total, starred,

@@ -345,12 +345,15 @@ function deriveCtx(state, ev, dateStr, n) {
   };
 }
 
-// → { bucket: 'baseline'|'on-time'|'early'|'over-cap', deltaMin: number|null, preFirstSlot: bool }
+// → { bucket: 'baseline'|'untimed'|'on-time'|'early'|'over-cap', deltaMin: number|null, preFirstSlot: bool }
 // deltaMin is signed: negative = minutes early, positive = minutes held past unlock.
 export function classifyPouch(state, ev) {
   const dateStr = dayKeyOf(ev);
   const n = dayNumberFor(state, dateStr);
   if (n < 1) return { bucket: 'baseline', deltaMin: null, preFirstSlot: false };
+  // A pouch whose time is unknown counts; it can't be early, on time or
+  // scored against a slot. Timing readers skip this bucket.
+  if (ev.timeKnown === false) return { bucket: 'untimed', deltaMin: null, preFirstSlot: false };
   const ctx = ev.ctx || deriveCtx(state, ev, dateStr, n);
   const ts = new Date(ev.ts).getTime();
   const preFirstSlot = ctx.firstSlotAt ? ts < new Date(ctx.firstSlotAt).getTime() : false;
@@ -369,7 +372,7 @@ export function disciplineStats(state) {
   const todayCounts = zero();
   let earlySum = 0, earlyN = 0, heldSum = 0, heldN = 0;
   for (const ev of liveEvents(state)) {
-    // backfilled pouches carry no timing, so they get their own bucket
+    // backfilled and untimed pouches carry no timing, so they share a bucket
     if (ev.type === 'backfill') {
       const c = backfillCount(ev);
       if (c != null) totals.backfilled += c;
@@ -377,6 +380,7 @@ export function disciplineStats(state) {
     }
     if (ev.type !== 'pouch') continue;
     const v = classifyPouch(state, ev);
+    if (v.bucket === 'untimed') { totals.backfilled++; continue; }
     if (v.bucket === 'baseline') continue;
     const add = (c) => {
       if (v.bucket === 'on-time') c.onTime++;
@@ -403,12 +407,12 @@ export function disciplineStats(state) {
 
 // First pouch per plan day, as minutes since the 4am day cutoff (so a 1am
 // pouch reads as ~21h into the *previous* day, which is where it belongs).
-// Wall-clock time is the zone the pouch was logged in. Taps only: backfills
-// carry no timing.
+// Wall-clock time is the zone the pouch was logged in. Timed pouches only:
+// backfills and untimed pouches carry no timing.
 export function firstPouchTimes(state) {
   const firstByDay = new Map();
   for (const e of liveEvents(state)) {
-    if (e.type !== 'pouch') continue;
+    if (e.type !== 'pouch' || e.timeKnown === false) continue;
     const k = dayKeyOf(e);
     const prev = firstByDay.get(k);
     if (!prev || Date.parse(e.ts) < Date.parse(prev.ts)) firstByDay.set(k, e);
@@ -424,14 +428,15 @@ export function firstPouchTimes(state) {
   return out.sort((a, b) => a.dayNum - b.dayNum);
 }
 
-// Taps only: backfills carry no timing. `longestGapEnd` is the pouch event that
+// Timed pouches only: backfills and untimed pouches carry no timing (an untimed
+// pouch's ts is when it was entered). `longestGapEnd` is the pouch event that
 // ended the longest gap, for display in the zone it was logged in.
 // `currentGapMs` is a live clock, so it's null unless the attempt is live: a
 // past attempt ended, and "29 days since your last pouch" would be built from
 // silence after it.
 export function gapStats(state) {
   const pouches = liveEvents(state)
-    .filter((e) => e.type === 'pouch')
+    .filter((e) => e.type === 'pouch' && e.timeKnown !== false)
     .map((e) => ({ ev: e, ts: new Date(e.ts).getTime(), dayKey: dayKeyOf(e) }))
     .sort((a, b) => a.ts - b.ts);
   const today = todayKey();
@@ -461,11 +466,12 @@ export function gapStats(state) {
 
 // 24 buckets by local hour (the zone each pouch was logged in): on-time vs
 // everything off-plan (early + over-cap). Baseline-day events carry no verdict
-// and are excluded, same as discipline stats. Taps only.
+// and are excluded, same as discipline stats. Timed pouches only: an untimed
+// one has no hour to land in.
 export function hourHistogram(state) {
   const buckets = Array.from({ length: 24 }, (_, hour) => ({ hour, onTime: 0, off: 0 }));
   for (const e of liveEvents(state)) {
-    if (e.type !== 'pouch') continue;
+    if (e.type !== 'pouch' || e.timeKnown === false) continue;
     const v = classifyPouch(state, e);
     if (v.bucket === 'baseline') continue;
     const { h } = localHM(e);
@@ -527,11 +533,12 @@ export function correlationStats(state) {
   return { totalCheckins: byDay.size, sleep, workout };
 }
 
-// Taps only: a backfill is not a pouch taken at the moment it was entered.
+// Timed pouches only: a backfill or an untimed pouch is not a pouch taken at
+// the moment it was entered.
 export function timeSinceLastPouch(state) {
   let last = null;
   for (const e of liveEvents(state)) {
-    if (e.type !== 'pouch') continue;
+    if (e.type !== 'pouch' || e.timeKnown === false) continue;
     const t = new Date(e.ts).getTime();
     if (last == null || t > last) last = t;
   }
@@ -567,7 +574,8 @@ export function markdownSummary(state, days = 7, kept = null) {
       const v = classifyPouch(state, e);
       if (v.bucket === 'early') early++;
       if (v.bucket === 'over-cap') over++;
-      if (first == null || Date.parse(e.ts) < Date.parse(first.ts)) first = e;
+      // an untimed pouch has no time to show; its ts is when it was entered
+      if (e.timeKnown !== false && (first == null || Date.parse(e.ts) < Date.parse(first.ts))) first = e;
     }
     lines.push(`| ${i} | ${d} | ${capForDay(state.plan, i)} | ${used !== timed ? `${used}* (${timed})` : used} | ${early} | ${over} | ${first != null ? fmtTime(first) : '—'} | ${res} | ${mgForDay(state, d)}mg | ${status.includes('over') || status === 'yellow' ? 'over' : 'on plan'} |`);
   }

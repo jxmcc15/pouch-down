@@ -2,9 +2,10 @@ import { classifyPouch } from './store.js';
 
 // Verdict text + color for a pouch, always via classifyPouch (which reconstructs
 // missing ctx for pre-stamp events). Colors: on-time green, early/over-cap amber,
-// baseline muted — over-cap stays plain amber, never alarm-red.
+// baseline and untimed muted — over-cap stays plain amber, never alarm-red.
 export function pouchVerdict(state, ev) {
   const v = classifyPouch(state, ev);
+  if (v.bucket === 'untimed') return { text: 'time unknown', color: 'var(--fg-muted)' };
   if (v.bucket === 'early') return { text: `${Math.abs(v.deltaMin ?? 0)}m early`, color: 'var(--amber)' };
   if (v.bucket === 'over-cap') return { text: 'over cap', color: 'var(--amber)' };
   if (v.bucket === 'baseline') return { text: 'baseline', color: 'var(--fg-muted)' };

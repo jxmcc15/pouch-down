@@ -30,7 +30,7 @@ import { newlyEarned } from '../../awards.js';
 import { todayKey } from '../../store.js';
 import { tierBurst } from '../../confetti.js';
 import { plainMotion } from '../../motion.js';
-import { UNDO_WINDOW_MS, isJustLogged } from '../../justLogged.js';
+import { UNDO_WINDOW_MS, enteredAtOf, isJustLogged } from '../../justLogged.js';
 import Badge from './Badge.jsx';
 import { TIER_COLOR, TIER_GLOW, TIER_LABEL, TIER_RANK } from './tiers.js';
 
@@ -51,8 +51,10 @@ const LAND_MS = 420;
 const RECHECK_PAD_MS = 250;
 
 // The event types a just-made log can be undone as — the only ones worth
-// waiting out the undo window for.
-const UNDOABLE = new Set(['pouch', 'resisted']);
+// waiting out the undo window for. A void counts: marking a pouch as a mistake
+// can earn an award (a yellow day turns green) while "Marked · Undo" is still
+// showing, so the unlock waits for it exactly as for a tap.
+const UNDOABLE = new Set(['pouch', 'resisted', 'void']);
 
 // The one award where "Nice" reads as cheering the slip rather than the
 // honesty of logging it.
@@ -160,14 +162,16 @@ export default function AwardUnlock() {
     // the newest event is old enough, then come back through this same intake
     // (`recheck`), so every guard above and below still applies. "Just
     // logged" is the api's own test (the event's age, not a UI timer), so this
-    // opens exactly when undo stops being possible. Only a pouch or resisted
-    // log can be taken back; a backfill or check-in can't, so it never waits.
+    // opens exactly when undo stops being possible. Only a pouch, resisted or
+    // void can be taken back; a backfill or check-in can't, so it never waits.
+    // The age is from when the event was written: a late pouch happened hours
+    // before it was entered.
     // Raw on purpose: undo acts on the newest event of all, a void included.
     const events = state.events ?? [];
     const last = events[events.length - 1];
     const now = Date.now();
     if (last && UNDOABLE.has(last.type) && isJustLogged(last, UNDO_WINDOW_MS, now)) {
-      const wait = UNDO_WINDOW_MS - (now - Date.parse(last.ts)) + RECHECK_PAD_MS;
+      const wait = UNDO_WINDOW_MS - (now - Date.parse(enteredAtOf(last))) + RECHECK_PAD_MS;
       const t = setTimeout(() => setRecheck((n) => n + 1), wait);
       return () => clearTimeout(t);
     }

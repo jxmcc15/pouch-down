@@ -368,3 +368,37 @@ describe('markdownSummary with corrections and reasons', () => {
     expect(out).not.toContain('corrected total');
   });
 });
+
+describe('an untimed pouch counts everywhere a count is taken and is skipped wherever a clock is read', () => {
+  const D = '2026-09-22';
+  const u = { ...ev('pouch', D), ts: '2026-09-25T17:00:00.000Z', ctx: null, late: true, timeKnown: false, enteredAt: '2026-09-25T17:00:00.000Z' };
+  const t = { ...ev('pouch', D), ts: `${D}T14:00:00.000Z` };
+  it('classifyPouch returns the untimed bucket', () => {
+    expect(S.classifyPouch(attempt([u]), u)).toEqual({ bucket: 'untimed', deltaMin: null, preFirstSlot: false });
+  });
+  it('counts toward the day', () => {
+    const s = attempt([u, t]);
+    expect(S.pouchesForDay(s, D)).toBe(2);
+    expect(S.timedPouchesForDay(s, D)).toBe(2);
+    expect(S.isLogged(s, D)).toBe(true);
+    expect(S.mgForDay(s, D)).toBe(2 * 9);
+  });
+  it('goes to the "no timing" bucket of disciplineStats', () => {
+    const d = S.disciplineStats(attempt([u, t]));
+    expect(d.backfilled).toBe(1);
+    expect(d.onTime + d.early + d.overCap).toBe(1);
+  });
+  it('is skipped by firstPouchTimes, gapStats, hourHistogram and timeSinceLastPouch', () => {
+    const s = attempt([u, t]);
+    expect(S.firstPouchTimes(s)).toEqual([{ dayNum: 2, date: D, minutesSince4am: (9 * 60 - 4 * 60 + 1440) % 1440 }]); // 14:00Z = 9:00 CDT
+    expect(S.firstPouchTimes(attempt([u]))).toEqual([]); // its ts is the entry time, never a first pouch
+    expect(S.gapStats(s).longestGapMs).toBeNull(); // one timed pouch, no pair
+    expect(S.hourHistogram(s).reduce((n, b) => n + b.onTime + b.off, 0)).toBe(1);
+    expect(S.timeSinceLastPouch(s)).toBe(Date.now() - Date.parse(t.ts));
+    expect(S.timeSinceLastPouch(attempt([u]))).toBeNull();
+  });
+  it('markdownSummary shows — for first pouch on an untimed-only day', () => {
+    const line = S.markdownSummary(attempt([u]), 7).split('\n').find((l) => l.includes(`| ${D} |`));
+    expect(line).toContain('| 1 | 0 | 0 | — |');
+  });
+});
