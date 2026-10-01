@@ -162,6 +162,7 @@ export default function AwardUnlock() {
     // logged" is the api's own test (the event's age, not a UI timer), so this
     // opens exactly when undo stops being possible. Only a pouch or resisted
     // log can be taken back; a backfill or check-in can't, so it never waits.
+    // Raw on purpose: undo acts on the newest event of all, a void included.
     const events = state.events ?? [];
     const last = events[events.length - 1];
     const now = Date.now();

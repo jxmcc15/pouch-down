@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { useApp } from '../state.jsx';
-import { gapStats, fmtDuration, fmtTime } from '../store.js';
+import { gapStats, fmtDuration, fmtTime, liveEvents } from '../store.js';
 import { dayKeyOf } from '../time.js';
 
 const spring = { type: 'spring', damping: 24, stiffness: 180 };
@@ -21,7 +21,7 @@ export default function GapsCard() {
   // no "today" averages. (currentGapMs may be a number or null for a past
   // attempt depending on the store version; either way it isn't shown.)
   const live = state.status !== 'archived';
-  const noPouches = !state.events.some((e) => e.type === 'pouch');
+  const noPouches = !liveEvents(state).some((e) => e.type === 'pouch');
   const showClock = live && currentGapMs != null;
   const hasLongest = longestGapMs != null && longestGapEnd != null;
 

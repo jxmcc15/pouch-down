@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { useApp } from '../state.jsx';
 import {
   dateForDayNumber, mgForDay, asOfDay, dayNumberFor,
-  pouchesForDay, plannedMgForDay, isLogged, triggersFor,
+  pouchesForDay, plannedMgForDay, isLogged, triggersFor, liveEvents,
 } from '../store.js';
 import { capForDay } from '../plan.js';
 import { moneyStats } from '../money.js';
@@ -145,7 +145,7 @@ function MgChart({ state }) {
 function TriggerBars({ state }) {
   const counts = {};
   TRIGGERS.forEach((t) => (counts[t] = { used: 0, resisted: 0 }));
-  state.events.forEach((e) => {
+  liveEvents(state).forEach((e) => {
     for (const t of triggersFor(state, e)) {
       if (!counts[t]) continue;
       if (e.type === 'pouch') counts[t].used++;
@@ -259,7 +259,7 @@ export default function StatsView({ openTrophies, onFixDay }) {
 
   // Logged days only: a day with no log tells us nothing, so it adds nothing.
   let avoided = 0;
-  const resistedTotal = state.events.filter((e) => e.type === 'resisted').length;
+  const resistedTotal = liveEvents(state).filter((e) => e.type === 'resisted').length;
   for (let n = 1; n <= Math.min(asOfN, totalDays); n++) {
     const d = dateForDayNumber(state, n);
     if (isLogged(state, d)) avoided += Math.max(0, baseline.pouchesPerDay - pouchesForDay(state, d));

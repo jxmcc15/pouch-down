@@ -5,6 +5,9 @@
 
 import { stageForDay, capForDay } from './plan.js';
 import { stampNow, dayKeyOf, localHM, DAY_CUTOFF_HOURS } from './time.js';
+import { liveEvents } from './liveEvents.js';
+
+export { liveEvents, isVoided, pouchFlags } from './liveEvents.js';
 
 // ---- events ----------------------------------------------------------------
 
@@ -83,8 +86,16 @@ export function asOfDay(state) {
   return archived < state.plan.quitDate ? archived : state.plan.quitDate;
 }
 
-export function eventsForDay(state, dateStr) {
+// Every event stamped on that day, voided pouches included. For the screens
+// that draw a struck row and nothing else — a count must never come from here.
+export function rawEventsForDay(state, dateStr) {
   return state.events.filter((e) => dayKeyOf(e) === dateStr);
+}
+
+// The day's events that count. Every per-day reader goes through here, so a
+// voided pouch is gone from all of them at once.
+export function eventsForDay(state, dateStr) {
+  return liveEvents(state).filter((e) => dayKeyOf(e) === dateStr);
 }
 
 // Pouches with a log behind them: taps plus anything backfilled afterwards.
@@ -357,7 +368,7 @@ export function disciplineStats(state) {
   const totals = zero();
   const todayCounts = zero();
   let earlySum = 0, earlyN = 0, heldSum = 0, heldN = 0;
-  for (const ev of state.events) {
+  for (const ev of liveEvents(state)) {
     // backfilled pouches carry no timing, so they get their own bucket
     if (ev.type === 'backfill') {
       const c = backfillCount(ev);
@@ -396,7 +407,7 @@ export function disciplineStats(state) {
 // carry no timing.
 export function firstPouchTimes(state) {
   const firstByDay = new Map();
-  for (const e of state.events) {
+  for (const e of liveEvents(state)) {
     if (e.type !== 'pouch') continue;
     const k = dayKeyOf(e);
     const prev = firstByDay.get(k);
@@ -419,7 +430,7 @@ export function firstPouchTimes(state) {
 // past attempt ended, and "29 days since your last pouch" would be built from
 // silence after it.
 export function gapStats(state) {
-  const pouches = state.events
+  const pouches = liveEvents(state)
     .filter((e) => e.type === 'pouch')
     .map((e) => ({ ev: e, ts: new Date(e.ts).getTime(), dayKey: dayKeyOf(e) }))
     .sort((a, b) => a.ts - b.ts);
@@ -453,7 +464,7 @@ export function gapStats(state) {
 // and are excluded, same as discipline stats. Taps only.
 export function hourHistogram(state) {
   const buckets = Array.from({ length: 24 }, (_, hour) => ({ hour, onTime: 0, off: 0 }));
-  for (const e of state.events) {
+  for (const e of liveEvents(state)) {
     if (e.type !== 'pouch') continue;
     const v = classifyPouch(state, e);
     if (v.bucket === 'baseline') continue;
@@ -467,7 +478,7 @@ export function hourHistogram(state) {
 // Latest check-in on a day wins; earlier ones stay in the log but never render.
 export function checkinForDay(state, dateStr) {
   let latest = null;
-  for (const e of state.events) {
+  for (const e of liveEvents(state)) {
     if (e.type !== 'checkin' || dayKeyOf(e) !== dateStr) continue;
     if (!latest || new Date(e.ts) >= new Date(latest.ts)) latest = e;
   }
@@ -480,7 +491,7 @@ export function checkinForDay(state, dateStr) {
 export function correlationStats(state) {
   const today = todayKey();
   const byDay = new Map();
-  for (const e of state.events) {
+  for (const e of liveEvents(state)) {
     if (e.type !== 'checkin') continue;
     const k = dayKeyOf(e);
     if (dayNumberFor(state, k) < 1) continue;
@@ -519,7 +530,7 @@ export function correlationStats(state) {
 // Taps only: a backfill is not a pouch taken at the moment it was entered.
 export function timeSinceLastPouch(state) {
   let last = null;
-  for (const e of state.events) {
+  for (const e of liveEvents(state)) {
     if (e.type !== 'pouch') continue;
     const t = new Date(e.ts).getTime();
     if (last == null || t > last) last = t;
@@ -562,7 +573,7 @@ export function markdownSummary(state, days = 7, kept = null) {
   }
   if (corrected) lines.push('', '* corrected total (timed logs in parentheses)');
   const triggers = {};
-  for (const e of state.events) for (const t of triggersFor(state, e)) triggers[t] = (triggers[t] || 0) + 1;
+  for (const e of liveEvents(state)) for (const t of triggersFor(state, e)) triggers[t] = (triggers[t] || 0) + 1;
   const trigLine = Object.entries(triggers).sort((a, b) => b[1] - a[1]).map(([t, c]) => `${t} (${c})`).join(', ');
   lines.push('', `Streak: ${currentStreak(state)}${kept != null ? ` · Kept: $${kept.toFixed(2)}` : ''}${trigLine ? ` · Triggers: ${trigLine}` : ''}`);
 
