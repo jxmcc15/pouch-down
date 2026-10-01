@@ -236,4 +236,10 @@ describe('voids and untimed pouches', () => {
     expect(get(attempt([tap, held]), 'day-zero').earned).toBe(false);
     expect(get(attempt([tap, held, voidOf(tap)]), 'day-zero')).toMatchObject({ earned: true, earnedOn: Q });
   });
+  it('day-zero: a quit day whose only tap is voided is silence, not zero', () => {
+    vi.setSystemTime(new Date('2026-12-20T18:00:00.000Z'));
+    const tap = ev('pouch', plan.quitDate);
+    // the void leaves nothing live on the day, and silence is never success
+    expect(get(attempt([tap, voidOf(tap)]), 'day-zero').earned).toBe(false);
+  });
 });
