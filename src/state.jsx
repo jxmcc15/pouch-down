@@ -4,13 +4,12 @@ import { makeEvent, makeId, pouchCtxForNow, todayKey, isLogged, dayNumberFor, ti
 import { dayKeyOf } from './time.js';
 import { TRIGGERS } from './triggers.js';
 import { UNDO_WINDOW_MS, TAG_WINDOW_MS, isJustLogged } from './justLogged.js';
-import { resolveLate } from './latePouch.js';
+import { DAY_RE, resolveLate } from './latePouch.js';
 
 const SAVE_ERROR = "Couldn't save to this phone. Keep the app open — it retries on your next change.";
 
 const Ctx = createContext(null);
 
-const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const NOTE_MAX = 140;
 const CHAT_TEXT_MAX = 4000;
 
@@ -237,6 +236,8 @@ export function AppStateProvider({ children }) {
         onActive((a) => {
           const last = a.events[a.events.length - 1];
           if (!last || last.id !== id || last.type !== 'pouch') return a;
+          // A late pouch is not a live tap: its reasons ride on its reason event.
+          if (last.late === true) return a;
           if (!isJustLogged(last, TAG_WINDOW_MS)) return a;
           return { ...a, events: [...a.events.slice(0, -1), { ...last, trigger }] };
         });

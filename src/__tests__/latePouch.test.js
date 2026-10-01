@@ -169,6 +169,13 @@ describe('api.logLatePouch', () => {
     expect(reason).toMatchObject({ type: 'reason', target: id, day: Y, triggers: ['boredom'], note: 'late meeting' });
     expect(triggersFor(app().state, pouch)).toEqual(['boredom']);
   });
+  it('tagEvent cannot stamp a mood on a late pouch: its reasons ride on the reason event', () => {
+    const id = app().api.logLatePouch({ day: Y, time: '16:30', triggers: ['boredom'] });
+    app().api.tagEvent(id, 'stress');
+    const pouch = events().at(-1);
+    expect(pouch).toMatchObject({ id, trigger: null });
+    expect(triggersFor(app().state, pouch)).toEqual(['boredom']);
+  });
   it('no reason event when triggers and note are empty', () => {
     const before = events().length;
     app().api.logLatePouch({ day: Y, time: '16:30' });
@@ -231,6 +238,12 @@ describe('api.voidPouch', () => {
     expect(app().api.voidPouch(r1.id)).toBeNull();
     expect(app().api.voidPouch(p1.id)).toEqual(expect.any(String));
     expect(app().api.voidPouch(p1.id)).toBeNull();
+    expect(events().filter((e) => e.type === 'void')).toHaveLength(1);
+  });
+  it('two calls in one tick, from one rendered api, write exactly one void', () => {
+    const { api } = app();
+    api.voidPouch(p1.id);
+    api.voidPouch(p1.id); // the render-time guard still sees p1 live; the updater refuses
     expect(events().filter((e) => e.type === 'void')).toHaveLength(1);
   });
   it('undo inside the window removes the void; outside it, the void stays', () => {
