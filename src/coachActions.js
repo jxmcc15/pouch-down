@@ -8,7 +8,7 @@
 import { TRIGGERS } from './triggers.js';
 import { TOOLS, TOOL_NAMES, MAX_PROPOSALS, NOTE_MAX, COUNT_MAX, TOOL_INPUT_MAX, RESULT_MAX, livePouchesForPrompt, fmtAppDay } from './coachTools.js';
 import { resolveLate, fmtHM } from './latePouch.js';
-import { todayKey, dayNumberFor } from './store.js';
+import { todayKey, dayNumberFor, isLogged, timedPouchesForDay, rawEventsForDay } from './store.js';
 import { capForDay } from './plan.js';
 
 const isObj = (x) => !!x && typeof x === 'object' && !Array.isArray(x);
@@ -55,9 +55,22 @@ function triggersProblem(list) {
   return null;
 }
 
+// Control characters and bidi overrides could make a note draw as something
+// else on the card — a line break, or text running backwards over the facts.
+const unshowable = (c) => c <= 0x1f || c === 0x7f || (c >= 0x202a && c <= 0x202e) || (c >= 0x2066 && c <= 0x2069);
+
 function noteProblem(note) {
   if (typeof note !== 'string') return 'note must be text';
   if (note.trim().length > NOTE_MAX) return `note is longer than ${NOTE_MAX} characters`;
+  for (let i = 0; i < note.length; i++) if (unshowable(note.charCodeAt(i))) return "note has characters the app can't show";
+  return null;
+}
+
+// The api's own guards for a past day (backfillOk / correctionOk in state.jsx),
+// asked here first so no card offers a Confirm that can only be refused.
+function pastDayProblem(state, day, today) {
+  if (day >= today) return 'day must be before today';
+  if (dayNumberFor(state, day) > state.plan.totalDays) return 'day is after the plan ends';
   return null;
 }
 
@@ -93,7 +106,9 @@ const BUILD = {
     return {
       verb: 'logLatePouch', args: [{ day, time, triggers, note: n }],
       summary: parts('Add a pouch', fmtAppDay(day), clock(time), why),
-      facts: parts(fmtAppDay(day), clock(time), why || 'no reason', n && `“${n}”`, 'added later'),
+      // The note is the user's own words via the model: it rides on its own
+      // line (`note`), never inside the facts the app vouches for.
+      facts: parts(fmtAppDay(day), clock(time), why || 'no reason', 'added later'), note: n,
     };
   },
   mark_mistake(state, { pouch_id }, { pouches: live }) {
@@ -117,13 +132,20 @@ const BUILD = {
     return {
       verb: 'logReason', args: [{ target: pouch_id, triggers, note: n }],
       summary: parts('Add a reason', which, triggers.join(', ') || 'a note'),
-      facts: parts(fmtAppDay(p.day), clock(p.time), triggers.join(', '), n && `“${n}”`),
+      facts: parts(fmtAppDay(p.day), clock(p.time), triggers.join(', ')), note: n,
     };
   },
   fill_missed_day(state, { day, count, streak }, { today }) {
     const bad = dayProblem(state, day, today) ?? countProblem(count);
     if (bad) return bad;
     if (streak !== 'keep' && streak !== 'break') return "streak must be 'keep' or 'break'";
+    const late = pastDayProblem(state, day, today);
+    if (late) return late;
+    if (isLogged(state, day)) return 'that day is already logged';
+    // Tighter than the app's own form, on purpose: the model is the untrusted
+    // party. Voiding every pouch of a heavy day and filling it with 0 would
+    // turn it green; a day that had pouches is fixed by hand, from Calendar.
+    if (rawEventsForDay(state, day).some((e) => e.type === 'pouch')) return 'that day has pouches on it, some marked as mistakes — fill it in from Calendar if it needs fixing';
     // Mirrors BackfillForm: over the day's cap the streak breaks whatever was
     // asked, so the card never promises a kept streak the store won't give.
     const over = count > capForDay(state.plan, dayNumberFor(state, day));
@@ -136,8 +158,10 @@ const BUILD = {
     };
   },
   correct_day_total(state, { day, count }, { today }) {
-    const bad = dayProblem(state, day, today) ?? countProblem(count);
+    const bad = dayProblem(state, day, today) ?? countProblem(count) ?? pastDayProblem(state, day, today);
     if (bad) return bad;
+    if (!isLogged(state, day)) return 'that day has no log to correct';
+    if (count < timedPouchesForDay(state, day)) return 'count is below the pouches already logged that day';
     return {
       verb: 'logCorrection', args: [{ day, count }],
       summary: parts(`Correct ${fmtAppDay(day)}`, `total ${count}`),
@@ -165,9 +189,10 @@ const BUILD = {
 };
 
 // One tool call → { ok: true, action } or { ok: false, toolUseId, name, reason }.
-// `action` = { toolUseId, name, verb, args, summary, facts }: the summary is
+// `action` = { toolUseId, name, verb, args, summary, facts, note? }: the summary is
 // the card's headline and `facts` its second line, both built here from the
 // validated values — the card never shows the model's own words as fact.
+// `note` (add_late_pouch, add_reason) is the trimmed note, for its own line.
 export function validateProposal(state, proposal, now = Date.now()) {
   const toolUseId = typeof proposal?.id === 'string' ? proposal.id : '';
   const name = typeof proposal?.name === 'string' ? proposal.name : '';
@@ -237,7 +262,12 @@ export const resultsFor = (message) => [...(message.cards ?? []).map(outcomeResu
 // card state, never a thrown error.
 export function applyAction(api, action) {
   const fn = VERBS.has(action?.verb) ? api?.[action.verb] : null;
-  const id = typeof fn === 'function' && Array.isArray(action.args) ? fn(...action.args) : null;
+  let id = null;
+  try {
+    if (typeof fn === 'function' && Array.isArray(action.args)) id = fn(...action.args);
+  } catch {
+    // A throw inside the api (storage full, say) wrote nothing: refused.
+  }
   return typeof id === 'string' && id ? { outcome: 'saved', eventId: id } : { outcome: 'refused', reason: REFUSED };
 }
 

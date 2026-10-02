@@ -68,14 +68,25 @@ describe('add_late_pouch', () => {
   it('good: the card reads the day and the time in the app\'s words', () => {
     expect(check('add_late_pouch', good).action).toEqual({
       toolUseId: 'toolu_1', name: 'add_late_pouch', verb: 'logLatePouch', args: [{ day: TODAY, time: '16:30', triggers: ['boredom'], note: '' }],
-      summary: 'Add a pouch · Thu Oct 1 · 4:30 PM · boredom', facts: 'Thu Oct 1 · 4:30 PM · boredom · added later',
+      summary: 'Add a pouch · Thu Oct 1 · 4:30 PM · boredom', facts: 'Thu Oct 1 · 4:30 PM · boredom · added later', note: '',
     });
   });
   it('time null is "time unknown"; the note is trimmed', () => {
     const a = check('add_late_pouch', { ...good, time: null, triggers: [], note: '  after the meeting ' }).action;
     expect(a.args).toEqual([{ day: TODAY, time: null, triggers: [], note: 'after the meeting' }]);
     expect(a.summary).toBe('Add a pouch · Thu Oct 1 · time unknown');
-    expect(a.facts).toBe('Thu Oct 1 · time unknown · no reason · “after the meeting” · added later');
+    expect(a.facts).toBe('Thu Oct 1 · time unknown · no reason · added later');
+    expect(a.note).toBe('after the meeting');
+  });
+  it('a note never writes into the card\'s facts, and may not carry control or direction characters', () => {
+    const fake = 'x” · streak kept · “y';
+    const a = check('add_late_pouch', { ...good, note: fake }).action;
+    expect(a.facts).toBe('Thu Oct 1 · 4:30 PM · boredom · added later');
+    expect(a.note).toBe(fake);
+    for (const c of ['\u0000', '\n', '\u001f', '\u007f', '\u202a', '\u202e', '\u2066', '\u2069']) {
+      expect(reasonOf('add_late_pouch', { ...good, note: `ok${c}ok` })).toBe("note has characters the app can't show");
+      expect(reasonOf('add_reason', { pouch_id: P.id, triggers: ['stress'], note: `ok${c}ok` })).toBe("note has characters the app can't show");
+    }
   });
   it('a day past quit day is allowed (the still-free check-in must not be blocked)', () => {
     // 30 days from Aug 30: quit day is Sep 28, so Sep 30 is Day 32.
@@ -119,7 +130,10 @@ describe('mark_mistake / add_reason — only ids the prompt showed', () => {
     expect(check('add_reason', { pouch_id: P.id, triggers: ['stress'], note: '' }).action).toMatchObject({
       verb: 'logReason', args: [{ target: P.id, triggers: ['stress'], note: '' }], summary: 'Add a reason · 2:14 PM pouch · stress',
     });
-    expect(check('add_reason', { pouch_id: P.id, triggers: [], note: ' late call ' }).action.summary).toBe('Add a reason · 2:14 PM pouch · a note');
+    const noted = check('add_reason', { pouch_id: P.id, triggers: [], note: ' late call ' }).action;
+    expect(noted.summary).toBe('Add a reason · 2:14 PM pouch · a note');
+    expect(noted.facts).toBe('Thu Oct 1 · 2:14 PM');
+    expect(noted.note).toBe('late call');
   });
   it('a foreign id, a voided pouch, a pouch older than 7 days, a pouch of another attempt', () => {
     const old = ev('pouch', '2026-09-24', { ts: '2026-09-24T15:00:00.000Z' });
@@ -156,13 +170,49 @@ describe('fill_missed_day — BackfillForm\'s streak rule', () => {
     ['a count as text', { count: '7' }, 'count must be a whole number from 0 to 60'],
     ['a streak word outside the two', { streak: 'maybe' }, "streak must be 'keep' or 'break'"],
     ['a future day', { day: '2026-10-05' }, 'day is in the future'],
+    ['today, still being logged', { day: TODAY }, 'day must be before today'],
+    ['a logged day', { day: '2026-09-30' }, 'that day is already logged'],
   ])('%s', (_, patch, reason) => {
-    expect(reasonOf('fill_missed_day', { day: '2026-09-29', count: 7, streak: 'keep', ...patch })).toBe(reason);
+    const logged = attempt([...S.events, ev('pouch', '2026-09-30')]);
+    expect(reasonOf('fill_missed_day', { day: '2026-09-29', count: 7, streak: 'keep', ...patch }, logged)).toBe(reason);
+  });
+  it('a day after the plan ends', () => {
+    const done = attempt([], { plan: generatePlan({ pouchesPerDay: 9, mg: 6, lengthDays: 30, startDate: '2026-08-30', mealTimes: settings.mealTimes }) });
+    expect(reasonOf('fill_missed_day', { day: '2026-09-30', count: 0, streak: 'keep' }, done)).toBe('day is after the plan ends');
+  });
+  it('a day whose pouches were all marked as mistakes cannot be filled green', () => {
+    // Over cap with ten pouches, then each one marked a mistake: the day reads
+    // as no log, and a fill of 0 would make it green and part of the streak.
+    const taps = Array.from({ length: 10 }, (_, i) => ev('pouch', '2026-09-29', { ts: `2026-09-29T${14 + (i % 8)}:0${i % 10}:00.000Z` }));
+    const voided = attempt([...taps, ...taps.map((t) => ({ ...ev('void', '2026-09-29'), target: t.id }))]);
+    const { cards } = takeProposals(voided, [call('fill_missed_day', { day: '2026-09-29', count: 0, streak: 'keep' })], NOW);
+    expect(cards).toEqual([{ toolUseId: 'toolu_1', name: 'fill_missed_day', status: 'invalid', reason: 'that day has pouches on it, some marked as mistakes — fill it in from Calendar if it needs fixing' }]);
+    expect(check('fill_missed_day', { day: '2026-09-29', count: 0, streak: 'keep' }).ok).toBe(true);
   });
 });
 
 describe('correct_day_total', () => {
+  // Sep 29 has three logged pouches; Sep 30 has none.
+  const L = attempt([...S.events, ...['14', '15', '16'].map((h) => ev('pouch', '2026-09-29', { ts: `2026-09-29T${h}:00:00.000Z` }))]);
+  const check = (name, input) => validateProposal(L, call(name, input), NOW);
+  const reasonOf = (name, input, state = L) => {
+    const r = validateProposal(state, call(name, input), NOW);
+    expect(r.ok).toBe(false);
+    return r.reason;
+  };
+  it.each([
+    ['today, still being logged', { day: TODAY, count: 9 }, 'day must be before today'],
+    ['an unlogged day', { day: '2026-09-30', count: 9 }, 'that day has no log to correct'],
+    ['below the pouches already logged', { day: '2026-09-29', count: 2 }, 'count is below the pouches already logged that day'],
+  ])('%s', (_, input, reason) => {
+    expect(reasonOf('correct_day_total', input)).toBe(reason);
+  });
+  it('a day after the plan ends', () => {
+    const done = attempt([ev('pouch', '2026-09-30')], { plan: generatePlan({ pouchesPerDay: 9, mg: 6, lengthDays: 30, startDate: '2026-08-30', mealTimes: settings.mealTimes }) });
+    expect(reasonOf('correct_day_total', { day: '2026-09-30', count: 4 }, done)).toBe('day is after the plan ends');
+  });
   it('good, and the bounds', () => {
+    expect(check('correct_day_total', { day: '2026-09-29', count: 3 }).ok).toBe(true);
     expect(check('correct_day_total', { day: '2026-09-29', count: 9 }).action).toMatchObject({ verb: 'logCorrection', args: [{ day: '2026-09-29', count: 9 }], summary: 'Correct Tue Sep 29 · total 9' });
     expect(reasonOf('correct_day_total', { day: '2026-09-29', count: 61 })).toBe('count must be a whole number from 0 to 60');
     expect(reasonOf('correct_day_total', { day: '2026-09-27', count: 3 })).toBe('day is before Day 1');
@@ -258,6 +308,14 @@ describe('applyAction — the one place a verb is called', () => {
     expect(applyAction(api, { verb: 'updateSettings', args: [{}] }).outcome).toBe('refused');
     expect(api.startFresh).not.toHaveBeenCalled();
     expect(api.updateSettings).not.toHaveBeenCalled();
+  });
+  it('args that are not a list never reach the api', () => {
+    const api = { logPouch: vi.fn(() => 'x') };
+    expect(applyAction(api, { verb: 'logPouch', args: 'x' })).toEqual({ outcome: 'refused', reason: REFUSED });
+    expect(api.logPouch).not.toHaveBeenCalled();
+  });
+  it('an api method that throws is a refused card, not a crash in the sheet', () => {
+    expect(applyAction({ logLatePouch: () => { throw new Error('storage full'); } }, action)).toEqual({ outcome: 'refused', reason: REFUSED });
   });
 });
 
