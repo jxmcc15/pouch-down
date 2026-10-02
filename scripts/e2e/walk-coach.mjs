@@ -439,7 +439,11 @@ async function walk(browser, base, rec) {
   rec.check(`${L} the coach's words render`, said);
   rec.check(`${L} a card reads "${LATE_SUMMARY}"`, await late.isVisible().catch(() => false));
   const lateText = (await late.innerText().catch(() => '')).replace(/\s+/g, ' ');
-  rec.check(`${L} its facts line: Thu Oct 1 · 4:30 PM · boredom · added later`, lateText.includes('Thu Oct 1 · 4:30 PM · boredom · added later'), lateText);
+  // The facts line says only what the headline doesn't: the day, time and
+  // reason are already up there.
+  const facts = (await late.locator('div.small.faint').first().innerText().catch(() => '')).trim();
+  rec.check(`${L} its facts line reads "added later" and doesn't repeat the headline's 4:30 PM`,
+    facts === 'added later' && !facts.includes('4:30 PM') && lateText.includes('added later'), facts);
   const b1 = posted[0]?.body;
   rec.check(`${L} request 1: max_tokens 800, the eight tools, the typed words as a string`,
     b1?.max_tokens === 800 && same(b1?.tools?.map((t) => t.name), TOOL_NAMES) && same(b1?.messages, [{ role: 'user', content: SAY_LATE }]),
@@ -521,7 +525,7 @@ async function walk(browser, base, rec) {
   const odd = sheet.getByRole('group', { name: 'Proposed action the app can’t do', exact: true });
   rec.check(`${L} the foreign id renders as "can't do", with its reason and no buttons`,
     ok5 && (await odd.innerText().catch(() => '')).includes("The coach proposed something the app can't do")
-      && (await odd.innerText().catch(() => '')).includes('pouch_id is not a live pouch from the last 7 days') && (await odd.getByRole('button').count()) === 0);
+      && (await odd.innerText().catch(() => '')).includes("that pouch isn't one from the last 7 days") && (await odd.getByRole('button').count()) === 0);
   const pendingNow = [];
   for (const s of PENDING5) pendingNow.push(await card(sheet, s).getByRole('button', { name: `Confirm: ${s}`, exact: true }).isVisible().catch(() => false));
   rec.check(`${L} four cards pending, each with its Confirm: ${PENDING5.join(' / ')}`, pendingNow.every(Boolean), pendingNow.join(','));
@@ -541,7 +545,7 @@ async function walk(browser, base, rec) {
   for (const s of PENDING5) skippedNow.push((await card(sheet, s).innerText().catch(() => '')).includes('Skipped'));
   rec.check(`${L} all four pending cards now read "Skipped"`, skippedNow.every(Boolean), skippedNow.join(','));
   rec.check(`${L} request 6 leads with every tool_result (invalid + overflow is_error, four skipped), then the words`, same(lastUser(posted[5]?.body), { role: 'user', content: [
-    { type: 'tool_result', tool_use_id: 'toolu_walk_05', content: 'invalid: pouch_id is not a live pouch from the last 7 days', is_error: true },
+    { type: 'tool_result', tool_use_id: 'toolu_walk_05', content: "invalid: that pouch isn't one from the last 7 days", is_error: true },
     { type: 'tool_result', tool_use_id: 'toolu_walk_06', content: 'skipped by the user' },
     { type: 'tool_result', tool_use_id: 'toolu_walk_07', content: 'skipped by the user' },
     { type: 'tool_result', tool_use_id: 'toolu_walk_08', content: 'skipped by the user' },
@@ -613,7 +617,7 @@ async function walk(browser, base, rec) {
   rec.check(`${L} the six-proposal reply records the five cards it drew`, msgs[9]?.actions?.length === 5, JSON.stringify(msgs[9]?.actions));
   rec.check(`${L} the typed turn records "invalid" (with its reason) and four "skipped"`,
     msgs[10]?.text === SAY_NEVERMIND && same(msgs[10]?.outcomes?.map((o) => o.outcome), ['invalid', 'skipped', 'skipped', 'skipped', 'skipped'])
-      && msgs[10]?.outcomes?.[0]?.reason === 'pouch_id is not a live pouch from the last 7 days', JSON.stringify(msgs[10]));
+      && msgs[10]?.outcomes?.[0]?.reason === "that pouch isn't one from the last 7 days", JSON.stringify(msgs[10]));
   rec.check(`${L} the 5:00 PM follow-up records "saved" and the coach's mark proposal`,
     same(msgs[14]?.outcomes?.map((o) => o.outcome), ['saved']) && same(msgs[15]?.actions, [{ name: 'mark_mistake', summary: MARK5_SUMMARY }]), JSON.stringify([msgs[14]?.outcomes, msgs[15]?.actions]));
   rec.check(`${L} the refusal is saved in words: "Didn't save: …" with its reason`,
