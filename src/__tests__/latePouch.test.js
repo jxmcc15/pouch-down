@@ -112,6 +112,38 @@ describe('lateInstant — the 4am rule meets a time picker (America/Chicago)', (
   });
 });
 
+describe('DST nights (America/Chicago) — a skipped time is refused, a repeated one is the first', () => {
+  // Spring forward 2026-03-08: clocks jump 2→3 AM, so 02:30 that night never
+  // happened. App day 2026-03-07 owns it under the 4am rule. (The api fixture's
+  // plan runs 2026-09-01..30 and holds no DST gap, so these are pure-function
+  // tests; logLatePouch refuses via the same resolveLate.)
+  it('02:30 on the spring-forward night is null, not a quiet 03:30', () => {
+    expect(lateInstant('2026-03-07', '02:30')).toBeNull();
+  });
+  it('resolveLate says the time was skipped, and is not ok', () => {
+    const r = resolveLate({ day: '2026-03-07', time: '02:30', now: T0 });
+    expect(r.ok).toBe(false);
+    expect(r.skipped).toBe(true);
+  });
+  it('03:00 that night exists', () => {
+    const r = resolveLate({ day: '2026-03-07', time: '03:00', now: T0 });
+    expect(r.ok).toBe(true);
+    expect(r.skipped).toBe(false);
+    expect(new Date(r.ms).toISOString()).toBe('2026-03-08T08:00:00.000Z');
+  });
+  it('01:30 on the fall-back night resolves to its first occurrence (CDT)', () => {
+    const r = resolveLate({ day: '2026-10-31', time: '01:30', now: Date.parse('2026-11-05T15:00:00Z') });
+    expect(r.ok).toBe(true);
+    expect(r.skipped).toBe(false);
+    expect(r.tzOffsetMin).toBe(-300);
+    expect(new Date(r.ms).toISOString()).toBe('2026-11-01T06:30:00.000Z');
+  });
+  it('malformed input is not ok and not skipped', () => {
+    expect(resolveLate({ day: '2026-03-07', time: 'noon', now: T0 }).skipped).toBe(false);
+    expect(resolveLate({ day: '2026-02-30', time: '02:30', now: T0 }).skipped).toBe(false);
+  });
+});
+
 describe('resolveLate', () => {
   const now = Date.parse('2026-09-24T15:00:00Z'); // 10:00 CDT
   it('a time later than now on today is future', () => {
@@ -122,7 +154,7 @@ describe('resolveLate', () => {
     expect(resolveLate({ day: '2026-09-24', time: '10:00', now: now - 4000 }).future).toBe(false);
   });
   it('unknown time resolves to now, never future', () => {
-    expect(resolveLate({ day: '2026-09-23', time: null, now })).toEqual({ ok: true, ms: now, tzOffsetMin: -300, future: false, nextCalendarDay: false });
+    expect(resolveLate({ day: '2026-09-23', time: null, now })).toEqual({ ok: true, ms: now, tzOffsetMin: -300, future: false, nextCalendarDay: false, skipped: false });
   });
   it('malformed is not ok', () => {
     expect(resolveLate({ day: '2026-09-23', time: 'noon', now }).ok).toBe(false);

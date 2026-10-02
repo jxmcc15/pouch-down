@@ -22,24 +22,34 @@ function isCalendarDay(day) {
 // The instant of `time` (HH:MM) on app day `day`, or null if either won't do.
 // The 4am rule: 00:00–03:59 belongs to the app day that started the evening
 // before, so a time before the cutoff lands on the NEXT calendar date.
+// A wall-clock time the spring-forward jump skipped (2:30 AM when clocks go
+// 2→3) is null too: Date would quietly stamp 3:30, a time the user never said.
 export function lateInstant(day, time) {
-  if (!isCalendarDay(day) || typeof time !== 'string' || !TIME_RE.test(time)) return null;
+  return isCalendarDay(day) && typeof time === 'string' && TIME_RE.test(time) ? instantOf(day, time) : null;
+}
+
+function instantOf(day, time) {
   const [y, mo, d] = day.split('-').map(Number);
   const [h, m] = time.split(':').map(Number);
   const nextCalendarDay = h < DAY_CUTOFF_HOURS;
   const at = new Date(y, mo - 1, d + (nextCalendarDay ? 1 : 0), h, m);
+  if (at.getHours() !== h) return null; // only a DST gap moves the hour
   return { ms: at.getTime(), tzOffsetMin: localOffsetMin(at), nextCalendarDay };
 }
 
 // What the sheet shows above Save, and what the api checks. `time` null means
 // the time is unknown: the pouch is stamped at `now` with timeKnown:false.
-// → { ok, ms, tzOffsetMin, future, nextCalendarDay } — `ok` false when the
-// inputs are malformed; `future` true when the instant is past now (+ skew).
+// → { ok, ms, tzOffsetMin, future, nextCalendarDay, skipped } — `ok` false
+// when the inputs are malformed or the time didn't exist (`skipped`, a DST
+// gap); `future` true when the instant is past now (+ skew).
 export function resolveLate({ day, time, now = Date.now() }) {
-  if (time === null) return { ok: isCalendarDay(day), ms: now, tzOffsetMin: localOffsetMin(new Date(now)), future: false, nextCalendarDay: false };
+  if (time === null) return { ok: isCalendarDay(day), ms: now, tzOffsetMin: localOffsetMin(new Date(now)), future: false, nextCalendarDay: false, skipped: false };
   const at = lateInstant(day, time);
-  if (!at) return { ok: false, ms: null, tzOffsetMin: null, future: false, nextCalendarDay: false };
-  return { ok: true, ...at, future: at.ms > now + CLOCK_SKEW_MS };
+  if (!at) {
+    const skipped = isCalendarDay(day) && typeof time === 'string' && TIME_RE.test(time);
+    return { ok: false, ms: null, tzOffsetMin: null, future: false, nextCalendarDay: false, skipped };
+  }
+  return { ok: true, ...at, future: at.ms > now + CLOCK_SKEW_MS, skipped: false };
 }
 
 // "4:30 PM" from "16:30" — for the resolved line, in the user's own words.

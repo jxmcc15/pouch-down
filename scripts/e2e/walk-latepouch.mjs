@@ -39,7 +39,7 @@ import * as e2e from './lib.mjs';
 import { generatePlan } from '../../src/planGenerator.js';
 import { capForDay } from '../../src/plan.js';
 import {
-  statusForDay, pouchesForDay, rawEventsForDay, isVoided, missedDays, todayKey, triggersFor, fmtTime,
+  statusForDay, pouchesForDay, rawEventsForDay, isVoided, missedDays, todayKey, triggersFor, fmtTime, streaks,
 } from '../../src/store.js';
 import { moneyStats } from '../../src/money.js';
 import { awardsFor } from '../../src/awards.js';
@@ -297,16 +297,21 @@ const notes = [];
 // An award unlock sitting on top of the sheet would block every tap. The
 // fixture pre-marks every reachable award, so this should never fire; if it
 // does, dismiss it and say so rather than let it masquerade as a sheet bug.
-async function clearOverlay(page, where) {
+// Pass `rec` after a write (Save pouch, Confirm): there an overlay means the
+// pre-marking is wrong for what the write earned, so it fails instead of noting.
+async function clearOverlay(page, where, rec = null) {
+  const seen = [];
   for (let i = 0; i < 4; i++) {
     const n = await page.locator(UNLOCK).count();
-    if (!n) return;
+    if (!n) break;
     const t = (await page.locator(UNLOCK).first().innerText().catch(() => '')).split('\n')[0];
-    notes.push(`unexpected award overlay at ${where}: "${t}"`);
+    seen.push(t);
+    if (!rec) notes.push(`unexpected award overlay at ${where}: "${t}"`);
     log(`  (dismissed an unexpected award overlay at ${where}: "${t}")`);
     await page.keyboard.press('Escape');
     await page.waitForTimeout(300);
   }
+  if (rec) rec.check(`${where}: no award unlock overlay`, seen.length === 0, seen.map((t) => `"${t}"`).join(', '));
 }
 
 const sheetLoc = (page) => page.getByRole('dialog', { name: 'Fix this day' });
@@ -473,7 +478,7 @@ async function walk(browser, base, rec) {
 
   await save.click();
   await page.waitForTimeout(400);
-  await clearOverlay(page, `${L} after Save pouch`);
+  await clearOverlay(page, `${L} after Save pouch`, rec);
   const added = await sheet.getByRole('status').filter({ hasText: 'Added' }).isVisible().catch(() => false);
   rec.check(`${L} the card shows "Added"`, added);
   rec.check(`${L} and an Undo chip ("Undo adding this pouch")`,
@@ -529,7 +534,7 @@ async function walk(browser, base, rec) {
   await rec.snap(page, 'confirm');
   await sheet.getByRole('button', { name: 'Confirm', exact: true }).click();
   await page.waitForTimeout(500);
-  await clearOverlay(page, `${L} after Confirm`);
+  await clearOverlay(page, `${L} after Confirm`, rec);
   rec.check(`${L} the editor closes`, (await sheet.getByRole('button', { name: 'Mark as mistake', exact: true }).count()) === 0);
   // The struck row is no longer a button: nothing is left to do on it. Right
   // after marking it shows "Marked" + Undo where "mistake" will sit.
@@ -572,6 +577,15 @@ async function walk(browser, base, rec) {
   const s2 = storedA2(await storedRoot(page));
   checkAppendOnly(rec, `${L} [void]`, s2, ['reason', 'pouch', 'void']);
   checkStored(rec, `${L} [void]`, s2, 2);
+
+  // The streak chip after the void, against store.js on the stored attempt.
+  // Its spoken label is "N day streak…" while one is live, and names no number
+  // at zero ("No streak going yet" / "A new streak starts tomorrow").
+  const want = s2 ? atNow(() => streaks(s2)).current : NaN;
+  const streakLabel = (await page.getByRole('button', { name: /day streak|No streak going yet|new streak starts tomorrow/ }).first()
+    .getAttribute('aria-label', { timeout: 5000 }).catch(() => null)) ?? '';
+  const shown = /^(\d+) day streak/.test(streakLabel) ? Number(streakLabel.match(/^(\d+)/)[1]) : (streakLabel ? 0 : NaN);
+  rec.check(`${L} [void] streak chip reads ${want}, as streaks() on the stored attempt`, shown === want, streakLabel || 'no streak chip');
 
   await e2e.v1Unchanged(page, null, rec);
   if (!args.keep) await ctx.close();

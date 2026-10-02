@@ -395,8 +395,12 @@ function AddPouchCard({ day }) {
   const [note, setNote] = useState('');
   const [failed, setFailed] = useState(false);
   const [added, setAdded] = useState(null); // { id, until } after a save
+  // Once per open: after a save the form plays its closing animation with Save
+  // still on screen, and a second tap would append a second pouch that undo
+  // can't reach. Set before the api call, cleared only when the card reopens.
+  const [saved, setSaved] = useState(false);
   const resolved = resolveLate({ day, time: unknown ? null : time });
-  const canSave = resolved.ok && !resolved.future;
+  const canSave = resolved.ok && !resolved.future && !saved;
   const showAdded = added && Date.now() < added.until;
 
   // Opening starts clean, and today's guess is the minute it opens, not the
@@ -409,6 +413,7 @@ function AddPouchCard({ day }) {
       setNote('');
       setFailed(false);
       setAdded(null);
+      setSaved(false);
     }
     setOpen(!open);
   };
@@ -417,14 +422,17 @@ function AddPouchCard({ day }) {
     setFailed(false);
   };
   const save = () => {
+    if (saved) return;
+    setSaved(true);
     const id = api.logLatePouch({ day, time: unknown ? null : time, triggers: picked, note });
-    if (!id) { setFailed(true); return; }
+    if (!id) { setSaved(false); setFailed(true); return; }
     setAdded({ id, until: Date.now() + UNDO_SHOWN_MS });
     setOpen(false);
   };
 
   let line;
-  if (resolved.future) line = `${fmtHM(time)} — that’s later than now`;
+  if (resolved.skipped) line = <span style={{ color: 'var(--fg-muted)' }}>that time didn’t exist — clocks went forward</span>;
+  else if (resolved.future) line = `${fmtHM(time)} — that’s later than now`;
   else if (!resolved.ok) line = `${fmtHeader(day)} · pick a time`;
   else {
     line = (
@@ -483,7 +491,8 @@ function AddPouchCard({ day }) {
 
       <AnimatePresence initial={false}>
         {open && (
-          <motion.div key="form" {...grow}>
+          // A closing form takes no taps: Save is still drawn while it folds away.
+          <motion.div key="form" {...grow} style={saved ? { pointerEvents: 'none' } : undefined}>
             <div style={{ padding: '4px 0 16px' }}>
               <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
                 <input
