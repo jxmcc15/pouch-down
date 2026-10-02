@@ -13,7 +13,8 @@ vi.mock('../state.jsx', () => ({ useApp: () => ({ state: app.state, tick: 0, rea
 const { default: TodayLog } = await import('../components/TodayLog.jsx');
 const { default: HistoryTimeline } = await import('../components/HistoryTimeline.jsx');
 const { default: PlanView } = await import('../components/PlanView.jsx');
-const { default: ActionCard } = await import('../components/ActionCard.jsx');
+const { default: ActionCard, Footer: ActionCardFooter } = await import('../components/ActionCard.jsx');
+const { PresenceContext } = await import('framer-motion');
 
 const settings = { mealTimes: { breakfast: '08:00', lunch: '12:30', dinner: '18:30' }, costPerTin: 5, pouchesPerTin: 20, wakeTime: '07:00', sleepTime: '23:00' };
 const plan = generatePlan({ pouchesPerDay: 9, mg: 9, strengths: [6, 3], lengthDays: 90, startDate: '2026-09-21', ...settings });
@@ -115,6 +116,17 @@ describe('ActionCard draws each state from the validated action, never the model
   const card = (status, extra = {}) => ({ toolUseId: 'toolu_1', name: 'add_late_pouch', status, action, ...extra });
   const draw = (props) => renderToStaticMarkup(createElement(ActionCard, { onConfirm() {}, onSkip() {}, onUndo() {}, ...props }));
   const buttons = (out) => out.match(/<button[^>]*>/g) ?? [];
+  // A button's floor: its inline min-height if it has one, else its class's
+  // from index.css. 44 is the minimum, not the target — .btn keeps its 48.
+  // (readFileSync is the chips block's import below; it has landed by the time
+  // any test runs.)
+  const minHeight = (tag) => {
+    const inline = tag.match(/min-height:(\d+)px/);
+    if (inline) return Number(inline[1]);
+    const css = readFileSync(new URL('../index.css', import.meta.url), 'utf8');
+    const cls = tag.match(/class="([^" ]+)/)[1];
+    return Number(css.match(new RegExp(`\\n\\.${cls} \\{[^}]*?min-height: (\\d+)px`))?.[1] ?? 0);
+  };
 
   it('pending: headline, facts, Skip and Confirm, both 44px', () => {
     const out = draw({ card: card('pending') });
@@ -122,8 +134,9 @@ describe('ActionCard draws each state from the validated action, never the model
     expect(out).toContain('Thu Oct 1 · 4:30 PM · boredom · added later');
     expect(out).toContain('aria-label="Confirm: Add a pouch · Thu Oct 1 · 4:30 PM · boredom"');
     expect(out).toContain('aria-label="Skip: Add a pouch · Thu Oct 1 · 4:30 PM · boredom"');
+    expect(out).not.toContain('add_late_pouch');
     expect(buttons(out)).toHaveLength(2);
-    for (const b of buttons(out)) expect(b).toContain('min-height:44px');
+    for (const b of buttons(out)) expect(minHeight(b)).toBeGreaterThanOrEqual(44);
   });
   it('pending while busy: both buttons disabled', () => {
     const bs = buttons(draw({ card: card('pending'), busy: true }));
@@ -135,8 +148,9 @@ describe('ActionCard draws each state from the validated action, never the model
     expect(live).toContain('Saved');
     expect(live).toContain('aria-label="Undo: Add a pouch · Thu Oct 1 · 4:30 PM · boredom"');
     expect(live).not.toContain('Confirm');
+    expect(live).not.toContain('add_late_pouch');
     expect(buttons(live)).toHaveLength(1);
-    expect(buttons(live)[0]).toContain('min-height:44px');
+    expect(minHeight(buttons(live)[0])).toBeGreaterThanOrEqual(44);
     expect(buttons(draw({ card: card('saved', { eventId: 'e1' }), undoable: false }))).toHaveLength(0);
   });
   it('refused: amber "Didn’t save — reason", no buttons', () => {
@@ -165,6 +179,19 @@ describe('ActionCard draws each state from the validated action, never the model
     // ICON['constructor'] is Object — rendered as a component it would throw.
     const out = draw({ card: { ...card('pending'), name: 'constructor' } });
     expect(out).toContain('Confirm');
+  });
+  it('a footer fading out takes no taps: a second Confirm can never save twice', () => {
+    // AnimatePresence keeps the old footer mounted, handlers and all, through
+    // its exit spring. The node test can't drive an exit, so it draws the
+    // footer the way AnimatePresence does while one leaves: not present.
+    const leaving = (c) => renderToStaticMarkup(createElement(PresenceContext.Provider, { value: { isPresent: false, onExitComplete() {}, register: () => () => {}, initial: false, custom: undefined, id: 'x' } },
+      createElement(ActionCardFooter, { card: c, headline: action.summary, undoable: true, onConfirm() {}, onSkip() {}, onUndo() {} })));
+    for (const c of [card('pending'), card('saved', { eventId: 'e1' })]) {
+      const bs = buttons(leaving(c));
+      expect(bs.length).toBeGreaterThan(0);
+      for (const b of bs) expect(b).toContain('disabled');
+    }
+    for (const b of buttons(draw({ card: card('pending') }))) expect(b).not.toContain('disabled');
   });
 });
 
