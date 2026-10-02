@@ -29,6 +29,9 @@ const HEADLINE = {
   log_checkin: 'Morning check-in',
 };
 const UNKNOWN = "An action the app doesn't have";
+// A reason reaches a card a person reads, and the coach as its tool_result: the
+// app's words, never a field name.
+const FIELD_WORDS = { day: 'day', time: 'time', triggers: 'list of reasons', note: 'note', pouch_id: 'pouch', count: 'count', streak: 'streak choice' };
 
 export const REFUSED = "the app wouldn't save it — it may already be logged, or the day isn't in this attempt";
 const OVERFLOW = `more than ${MAX_PROPOSALS} actions in one reply — ask the user to split them up`;
@@ -41,17 +44,17 @@ const clock = (time) => (time === null ? 'time unknown' : fmtHM(time));
 
 function dayProblem(state, day, today) {
   // resolveLate with no time is the app's own "is this a real calendar day".
-  if (typeof day !== 'string' || !resolveLate({ day, time: null }).ok) return 'day is not a real date';
-  if (dayNumberFor(state, day) < 1) return 'day is before Day 1';
-  if (day > today) return 'day is in the future';
+  if (typeof day !== 'string' || !resolveLate({ day, time: null }).ok) return "that day isn't on the calendar";
+  if (dayNumberFor(state, day) < 1) return 'that day is before the plan started';
+  if (day > today) return 'that day is after today';
   return null;
 }
 
 function triggersProblem(list) {
-  if (!Array.isArray(list)) return 'triggers must be a list';
-  if (list.length > TRIGGERS.length) return 'too many triggers';
-  if (!list.every((t) => TRIGGERS.includes(t))) return "a trigger isn't one of the app's";
-  if (new Set(list).size !== list.length) return 'a trigger appears twice';
+  if (!Array.isArray(list)) return "the reasons didn't come as a list";
+  if (list.length > TRIGGERS.length) return 'more reasons than the app has';
+  if (!list.every((t) => TRIGGERS.includes(t))) return "that's not one of the app's reasons";
+  if (new Set(list).size !== list.length) return 'a reason appears twice';
   return null;
 }
 
@@ -60,23 +63,23 @@ function triggersProblem(list) {
 const unshowable = (c) => c <= 0x1f || c === 0x7f || (c >= 0x202a && c <= 0x202e) || (c >= 0x2066 && c <= 0x2069);
 
 function noteProblem(note) {
-  if (typeof note !== 'string') return 'note must be text';
-  if (note.trim().length > NOTE_MAX) return `note is longer than ${NOTE_MAX} characters`;
-  for (let i = 0; i < note.length; i++) if (unshowable(note.charCodeAt(i))) return "note has characters the app can't show";
+  if (typeof note !== 'string') return "the note isn't text";
+  if (note.trim().length > NOTE_MAX) return `the note is too long — ${NOTE_MAX} characters at most`;
+  for (let i = 0; i < note.length; i++) if (unshowable(note.charCodeAt(i))) return "the note has characters the app can't show";
   return null;
 }
 
 // The api's own guards for a past day (backfillOk / correctionOk in state.jsx),
 // asked here first so no card offers a Confirm that can only be refused.
 function pastDayProblem(state, day, today) {
-  if (day >= today) return 'day must be before today';
-  if (dayNumberFor(state, day) > state.plan.totalDays) return 'day is after the plan ends';
+  if (day >= today) return "that day isn't over yet";
+  if (dayNumberFor(state, day) > state.plan.totalDays) return 'that day is after the plan ends';
   return null;
 }
 
-const countProblem = (n) => (Number.isInteger(n) && n >= 0 && n <= COUNT_MAX ? null : `count must be a whole number from 0 to ${COUNT_MAX}`);
+const countProblem = (n) => (Number.isInteger(n) && n >= 0 && n <= COUNT_MAX ? null : `the count has to be a whole number from 0 to ${COUNT_MAX}`);
 // An optional field may be absent or null; models send both for "not given".
-const triggerProblem = (t) => (t == null || TRIGGERS.includes(t) ? null : "the trigger isn't one of the app's");
+const triggerProblem = (t) => (t == null || TRIGGERS.includes(t) ? null : "that's not one of the app's reasons");
 
 // ── one builder per tool: a reason string, or { verb, args, summary, facts } ──
 
@@ -96,11 +99,11 @@ const BUILD = {
   add_late_pouch(state, { day, time, triggers, note }, { today, now }) {
     const bad = dayProblem(state, day, today) ?? triggersProblem(triggers) ?? noteProblem(note);
     if (bad) return bad;
-    if (time !== null && typeof time !== 'string') return 'time must be HH:MM or null';
+    if (time !== null && typeof time !== 'string') return "that time isn't a time of day";
     const r = resolveLate({ day, time, now });
     if (r.skipped) return "that time didn't happen on that day (the clocks changed)";
-    if (!r.ok) return 'time must be HH:MM or null';
-    if (r.future) return 'that time is later than now';
+    if (!r.ok) return "that time isn't a time of day";
+    if (r.future) return "that time hasn't happened yet";
     const why = triggers.join(', ');
     const n = note.trim();
     return {
@@ -113,7 +116,7 @@ const BUILD = {
   },
   mark_mistake(state, { pouch_id }, { pouches: live }) {
     const p = live.get(pouch_id);
-    if (!p) return 'pouch_id is not a live pouch from the last 7 days';
+    if (!p) return "that pouch isn't one from the last 7 days";
     const which = p.time === null ? 'the time-unknown pouch' : `the ${fmtHM(p.time)} pouch`;
     return {
       verb: 'voidPouch', args: [pouch_id],
@@ -123,11 +126,11 @@ const BUILD = {
   },
   add_reason(state, { pouch_id, triggers, note }, { pouches: live }) {
     const p = live.get(pouch_id);
-    if (!p) return 'pouch_id is not a live pouch from the last 7 days';
+    if (!p) return "that pouch isn't one from the last 7 days";
     const bad = triggersProblem(triggers) ?? noteProblem(note);
     if (bad) return bad;
     const n = note.trim();
-    if (!triggers.length && !n) return 'a reason needs a trigger or a note';
+    if (!triggers.length && !n) return 'a reason needs at least one trigger or a note';
     const which = p.time === null ? 'time-unknown pouch' : `${fmtHM(p.time)} pouch`;
     return {
       verb: 'logReason', args: [{ target: pouch_id, triggers, note: n }],
@@ -138,7 +141,7 @@ const BUILD = {
   fill_missed_day(state, { day, count, streak }, { today }) {
     const bad = dayProblem(state, day, today) ?? countProblem(count);
     if (bad) return bad;
-    if (streak !== 'keep' && streak !== 'break') return "streak must be 'keep' or 'break'";
+    if (streak !== 'keep' && streak !== 'break') return 'the streak has to be kept or broken';
     const late = pastDayProblem(state, day, today);
     if (late) return late;
     if (isLogged(state, day)) return 'that day is already logged';
@@ -161,7 +164,7 @@ const BUILD = {
     const bad = dayProblem(state, day, today) ?? countProblem(count) ?? pastDayProblem(state, day, today);
     if (bad) return bad;
     if (!isLogged(state, day)) return 'that day has no log to correct';
-    if (count < timedPouchesForDay(state, day)) return 'count is below the pouches already logged that day';
+    if (count < timedPouchesForDay(state, day)) return 'that total is below the pouches already logged that day';
     return {
       verb: 'logCorrection', args: [{ day, count }],
       summary: parts(`Correct ${fmtAppDay(day)}`, `total ${count}`),
@@ -171,9 +174,9 @@ const BUILD = {
   log_checkin(state, { sleep_hours = null, sleep_quality = null, workout = null }) {
     if (sleep_hours === null && sleep_quality === null && workout === null) return 'a check-in needs at least one answer';
     // One decimal at most: 6.5 survives a round to tenths unchanged, 6.55 doesn't.
-    if (sleep_hours !== null && !(typeof sleep_hours === 'number' && sleep_hours >= 0 && sleep_hours <= 16 && Math.round(sleep_hours * 10) / 10 === sleep_hours)) return 'sleep_hours must be 0 to 16, in tenths';
-    if (sleep_quality !== null && !(Number.isInteger(sleep_quality) && sleep_quality >= 1 && sleep_quality <= 5)) return 'sleep_quality must be a whole number from 1 to 5';
-    if (workout !== null && typeof workout !== 'boolean') return 'workout must be true or false';
+    if (sleep_hours !== null && !(typeof sleep_hours === 'number' && sleep_hours >= 0 && sleep_hours <= 16 && Math.round(sleep_hours * 10) / 10 === sleep_hours)) return 'sleep hours need to be 0 to 16, one decimal at most';
+    if (sleep_quality !== null && !(Number.isInteger(sleep_quality) && sleep_quality >= 1 && sleep_quality <= 5)) return 'sleep quality has to be a whole number from 1 to 5';
+    if (workout !== null && typeof workout !== 'boolean') return 'the workout answer has to be yes or no';
     const payload = {
       ...(sleep_hours !== null ? { sleepHours: sleep_hours } : {}),
       ...(sleep_quality !== null ? { sleepQuality: sleep_quality } : {}),
@@ -198,15 +201,15 @@ export function validateProposal(state, proposal, now = Date.now()) {
   const toolUseId = typeof proposal?.id === 'string' ? proposal.id : '';
   const name = typeof proposal?.name === 'string' ? proposal.name : '';
   const no = (reason) => ({ ok: false, toolUseId, name, reason });
-  if (!toolUseId) return no('the proposal has no id');
-  if (!TOOL_NAMES.includes(name)) return no('unknown action');
-  if (state?.status !== 'active') return no('this attempt is read-only');
+  if (!toolUseId) return no('the proposal came without an id');
+  if (!TOOL_NAMES.includes(name)) return no("the app doesn't have that action");
+  if (state?.status !== 'active') return no("a past attempt can't change");
   const input = proposal.input;
-  if (!isObj(input)) return no('the input is not an object');
+  if (!isObj(input)) return no("the proposal's details couldn't be read");
   const schema = SCHEMA[name];
-  if (Object.keys(input).some((k) => !has(schema.properties, k))) return no('unexpected field');
+  if (Object.keys(input).some((k) => !has(schema.properties, k))) return no("the proposal had a detail the app doesn't take");
   const missing = schema.required.find((k) => !has(input, k));
-  if (missing) return no(`missing ${missing}`);
+  if (missing) return no(`the ${FIELD_WORDS[missing]} is missing`);
   const ctx = { now, today: todayKey(new Date(now)), pouches: new Map(livePouchesForPrompt(state, now).map((p) => [p.id, p])) };
   const built = BUILD[name](state, input, ctx);
   return typeof built === 'string' ? no(built) : { ok: true, action: { toolUseId, name, ...built } };
