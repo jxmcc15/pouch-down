@@ -185,9 +185,11 @@ describe('ActionCard draws each state from the validated action, never the model
     const out = draw({ card: { ...card('pending'), action: noted } });
     const facts = out.match(/<div class="small faint"[^>]*>([^<]*)<\/div>/)[1];
     expect(facts).toBe(noted.facts);
-    expect(out).toMatch(/<q data-note[^>]*>x” · streak kept · “y<\/q>/);
-    expect(draw({ card: card('pending') })).not.toContain('data-note');
-    expect(draw({ card: { ...card('pending'), action: { ...action, note: '' } } })).not.toContain('data-note');
+    expect(out).toMatch(/<span class="faint">your note <\/span><q data-note[^>]*>x” · streak kept · “y<\/q>/);
+    for (const bare of [draw({ card: card('pending') }), draw({ card: { ...card('pending'), action: { ...action, note: '' } } })]) {
+      expect(bare).not.toContain('data-note');
+      expect(bare).not.toContain('your note');
+    }
   });
   it('a footer fading out takes no taps: a second Confirm can never save twice', () => {
     // AnimatePresence keeps the old footer mounted, handlers and all, through
