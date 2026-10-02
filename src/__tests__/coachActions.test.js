@@ -52,7 +52,7 @@ describe('log_pouch_now / log_resisted_now', () => {
   it('good, with and without a trigger (null counts as none)', () => {
     expect(check('log_pouch_now', { trigger: 'boredom' })).toEqual({ ok: true, action: {
       toolUseId: 'toolu_1', name: 'log_pouch_now', verb: 'logPouch', args: ['boredom'],
-      summary: 'Log a pouch now · boredom', facts: 'stamped when you confirm · boredom',
+      summary: 'Log a pouch now · boredom', facts: 'stamped when you confirm',
     } });
     expect(check('log_pouch_now', {}).action.args).toEqual([null]);
     expect(check('log_resisted_now', { trigger: null }).action).toMatchObject({ verb: 'logResisted', args: [null], summary: 'Log a craving resisted' });
@@ -68,20 +68,20 @@ describe('add_late_pouch', () => {
   it('good: the card reads the day and the time in the app\'s words', () => {
     expect(check('add_late_pouch', good).action).toEqual({
       toolUseId: 'toolu_1', name: 'add_late_pouch', verb: 'logLatePouch', args: [{ day: TODAY, time: '16:30', triggers: ['boredom'], note: '' }],
-      summary: 'Add a pouch · Thu Oct 1 · 4:30 PM · boredom', facts: 'Thu Oct 1 · 4:30 PM · boredom · added later', note: '',
+      summary: 'Add a pouch · Thu Oct 1 · 4:30 PM · boredom', facts: 'added later', note: '',
     });
   });
   it('time null is "time unknown"; the note is trimmed', () => {
     const a = check('add_late_pouch', { ...good, time: null, triggers: [], note: '  after the meeting ' }).action;
     expect(a.args).toEqual([{ day: TODAY, time: null, triggers: [], note: 'after the meeting' }]);
     expect(a.summary).toBe('Add a pouch · Thu Oct 1 · time unknown');
-    expect(a.facts).toBe('Thu Oct 1 · time unknown · no reason · added later');
+    expect(a.facts).toBe('no reason · added later');
     expect(a.note).toBe('after the meeting');
   });
   it('a note never writes into the card\'s facts, and may not carry control or direction characters', () => {
     const fake = 'x” · streak kept · “y';
     const a = check('add_late_pouch', { ...good, note: fake }).action;
-    expect(a.facts).toBe('Thu Oct 1 · 4:30 PM · boredom · added later');
+    expect(a.facts).toBe('added later');
     expect(a.note).toBe(fake);
     for (const c of ['\u0000', '\n', '\u001f', '\u007f', '\u202a', '\u202e', '\u2066', '\u2069']) {
       expect(reasonOf('add_late_pouch', { ...good, note: `ok${c}ok` })).toBe("note has characters the app can't show");
@@ -125,14 +125,14 @@ describe('mark_mistake / add_reason — only ids the prompt showed', () => {
   it('good', () => {
     expect(check('mark_mistake', { pouch_id: P.id }).action).toEqual({
       toolUseId: 'toolu_1', name: 'mark_mistake', verb: 'voidPouch', args: [P.id],
-      summary: 'Mark as mistake · the 2:14 PM pouch on Thu Oct 1', facts: 'Thu Oct 1 · 2:14 PM · stops counting · stays in your history',
+      summary: 'Mark as mistake · the 2:14 PM pouch on Thu Oct 1', facts: 'stops counting · stays in your history',
     });
     expect(check('add_reason', { pouch_id: P.id, triggers: ['stress'], note: '' }).action).toMatchObject({
       verb: 'logReason', args: [{ target: P.id, triggers: ['stress'], note: '' }], summary: 'Add a reason · 2:14 PM pouch · stress',
     });
     const noted = check('add_reason', { pouch_id: P.id, triggers: [], note: ' late call ' }).action;
     expect(noted.summary).toBe('Add a reason · 2:14 PM pouch · a note');
-    expect(noted.facts).toBe('Thu Oct 1 · 2:14 PM');
+    expect(noted.facts).toBe('Thu Oct 1');
     expect(noted.note).toBe('late call');
   });
   it('a foreign id, a voided pouch, a pouch older than 7 days, a pouch of another attempt', () => {
@@ -154,7 +154,7 @@ describe('fill_missed_day — BackfillForm\'s streak rule', () => {
   it('within cap the model\'s choice stands, and the card says it', () => {
     expect(check('fill_missed_day', { day: '2026-09-29', count: 7, streak: 'keep' }).action).toEqual({
       toolUseId: 'toolu_1', name: 'fill_missed_day', verb: 'logBackfill', args: [{ day: '2026-09-29', count: 7, streak: 'keep' }],
-      summary: 'Fill in Tue Sep 29 · 7 pouches · streak kept', facts: 'Tue Sep 29 · 7 pouches · streak kept · entered later',
+      summary: 'Fill in Tue Sep 29 · 7 pouches · streak kept', facts: 'entered later',
     });
     expect(check('fill_missed_day', { day: '2026-09-29', count: 1, streak: 'break' }).action.summary).toBe('Fill in Tue Sep 29 · 1 pouch · streak breaks');
   });
@@ -162,6 +162,7 @@ describe('fill_missed_day — BackfillForm\'s streak rule', () => {
     const a = check('fill_missed_day', { day: '2026-09-29', count: cap + 1, streak: 'keep' }).action;
     expect(a.args[0].streak).toBe('break');
     expect(a.summary).toBe(`Fill in Tue Sep 29 · ${cap + 1} pouches · streak breaks: over cap`);
+    expect(a.facts).toBe('streak breaks: over cap · entered later');
   });
   it.each([
     ['a negative count', { count: -1 }, 'count must be a whole number from 0 to 60'],
@@ -213,7 +214,7 @@ describe('correct_day_total', () => {
   });
   it('good, and the bounds', () => {
     expect(check('correct_day_total', { day: '2026-09-29', count: 3 }).ok).toBe(true);
-    expect(check('correct_day_total', { day: '2026-09-29', count: 9 }).action).toMatchObject({ verb: 'logCorrection', args: [{ day: '2026-09-29', count: 9 }], summary: 'Correct Tue Sep 29 · total 9' });
+    expect(check('correct_day_total', { day: '2026-09-29', count: 9 }).action).toMatchObject({ verb: 'logCorrection', args: [{ day: '2026-09-29', count: 9 }], summary: 'Correct Tue Sep 29 · total 9', facts: 'the logged pouches stay' });
     expect(reasonOf('correct_day_total', { day: '2026-09-29', count: 61 })).toBe('count must be a whole number from 0 to 60');
     expect(reasonOf('correct_day_total', { day: '2026-09-27', count: 3 })).toBe('day is before Day 1');
   });
@@ -222,7 +223,7 @@ describe('correct_day_total', () => {
 describe('log_checkin', () => {
   it('good: only the answers given reach the api', () => {
     expect(check('log_checkin', { sleep_hours: 6.5, sleep_quality: 3, workout: true }).action).toMatchObject({
-      verb: 'logCheckin', args: [{ sleepHours: 6.5, sleepQuality: 3, workout: true }], summary: 'Morning check-in · 6.5h · 3/5 · workout',
+      verb: 'logCheckin', args: [{ sleepHours: 6.5, sleepQuality: 3, workout: true }], summary: 'Morning check-in · 6.5h · 3/5 · workout', facts: 'for today',
     });
     expect(check('log_checkin', { workout: false }).action).toMatchObject({ args: [{ workout: false }], summary: 'Morning check-in · no workout' });
   });

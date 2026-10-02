@@ -84,13 +84,13 @@ const BUILD = {
   log_pouch_now(state, { trigger = null }) {
     return triggerProblem(trigger) ?? {
       verb: 'logPouch', args: [trigger ?? null],
-      summary: parts('Log a pouch now', trigger), facts: parts('stamped when you confirm', trigger ?? 'no trigger'),
+      summary: parts('Log a pouch now', trigger), facts: 'stamped when you confirm',
     };
   },
   log_resisted_now(state, { trigger = null }) {
     return triggerProblem(trigger) ?? {
       verb: 'logResisted', args: [trigger ?? null],
-      summary: parts('Log a craving resisted', trigger), facts: parts('stamped when you confirm', trigger ?? 'no trigger'),
+      summary: parts('Log a craving resisted', trigger), facts: 'stamped when you confirm',
     };
   },
   add_late_pouch(state, { day, time, triggers, note }, { today, now }) {
@@ -108,7 +108,7 @@ const BUILD = {
       summary: parts('Add a pouch', fmtAppDay(day), clock(time), why),
       // The note is the user's own words via the model: it rides on its own
       // line (`note`), never inside the facts the app vouches for.
-      facts: parts(fmtAppDay(day), clock(time), why || 'no reason', 'added later'), note: n,
+      facts: parts(!why && 'no reason', 'added later'), note: n,
     };
   },
   mark_mistake(state, { pouch_id }, { pouches: live }) {
@@ -118,7 +118,7 @@ const BUILD = {
     return {
       verb: 'voidPouch', args: [pouch_id],
       summary: parts('Mark as mistake', `${which} on ${fmtAppDay(p.day)}`),
-      facts: parts(fmtAppDay(p.day), clock(p.time), 'stops counting', 'stays in your history'),
+      facts: parts('stops counting', 'stays in your history'),
     };
   },
   add_reason(state, { pouch_id, triggers, note }, { pouches: live }) {
@@ -132,7 +132,7 @@ const BUILD = {
     return {
       verb: 'logReason', args: [{ target: pouch_id, triggers, note: n }],
       summary: parts('Add a reason', which, triggers.join(', ') || 'a note'),
-      facts: parts(fmtAppDay(p.day), clock(p.time), triggers.join(', ')), note: n,
+      facts: fmtAppDay(p.day), note: n,
     };
   },
   fill_missed_day(state, { day, count, streak }, { today }) {
@@ -154,7 +154,7 @@ const BUILD = {
     return {
       verb: 'logBackfill', args: [{ day, count, streak: final }],
       summary: parts(`Fill in ${fmtAppDay(day)}`, pouches(count), said),
-      facts: parts(fmtAppDay(day), pouches(count), said, 'entered later'),
+      facts: parts(over && said, 'entered later'),
     };
   },
   correct_day_total(state, { day, count }, { today }) {
@@ -165,7 +165,7 @@ const BUILD = {
     return {
       verb: 'logCorrection', args: [{ day, count }],
       summary: parts(`Correct ${fmtAppDay(day)}`, `total ${count}`),
-      facts: parts(fmtAppDay(day), `total ${count}`, 'the logged pouches stay'),
+      facts: 'the logged pouches stay',
     };
   },
   log_checkin(state, { sleep_hours = null, sleep_quality = null, workout = null }) {
@@ -183,14 +183,15 @@ const BUILD = {
     return {
       verb: 'logCheckin', args: [payload],
       summary: parts('Morning check-in', said),
-      facts: parts('for today', said),
+      facts: 'for today',
     };
   },
 };
 
 // One tool call → { ok: true, action } or { ok: false, toolUseId, name, reason }.
 // `action` = { toolUseId, name, verb, args, summary, facts, note? }: the summary is
-// the card's headline and `facts` its second line, both built here from the
+// the card's headline and `facts` its second line — only what the headline
+// doesn't already say (the consequence or qualifier) — both built here from the
 // validated values — the card never shows the model's own words as fact.
 // `note` (add_late_pouch, add_reason) is the trimmed note, for its own line.
 export function validateProposal(state, proposal, now = Date.now()) {
