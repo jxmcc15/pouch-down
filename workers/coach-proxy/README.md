@@ -153,7 +153,7 @@ Every refusal comes back as `{"error":{"message":"…"}}` with a status code:
 | --- | --- | --- |
 | 403 | Origin not allowed | the `origin` header is missing, or isn't in `ALLOWED_ORIGINS` in `wrangler.toml` |
 | 401 | Unknown device | the `x-pd-device` token doesn't match what you uploaded |
-| 400 | The request itself is refused | wrong model, `max_tokens` over 400, an extra field, or too much text |
+| 400 | The request itself is refused | wrong model, `max_tokens` over 800, an extra field, a tool the app doesn't have, or too much text |
 | 405 | Wrong method or path | it has to be `POST` to `/v1/messages` |
 | 502 | The call to Claude failed | no API key uploaded, key rejected, or Claude is having a moment |
 
@@ -214,7 +214,7 @@ the code only ever prints a failure's name and an upstream status number.
 Cloudflare's free plan includes 100,000 Worker requests a day. Coach chats and
 price look-ups are a handful of requests a day, so this stays free with a very
 large margin. The part that does cost money is the Claude API usage itself,
-which is why the model is pinned to Haiku, `max_tokens` is capped at 400, and the
+which is why the model is pinned to Haiku, `max_tokens` is capped at 800, and the
 key should sit on a workspace with a monthly spend cap.
 
 ---
@@ -228,22 +228,34 @@ in one object (`LIMITS`) so they can't drift from the tests or this README:
 | Limit | Value |
 | --- | --- |
 | Model allowed | `claude-haiku-4-5-20251001` only |
-| `max_tokens` | 400 or less |
-| Request body | 16 KB |
+| `max_tokens` | 800 or less |
+| Request body | 48 KB |
 | Messages per request | 40 |
 | Total characters (system + messages) | 60 KB |
-| Body fields allowed | `model`, `max_tokens`, `system`, `messages` — nothing else |
+| Body fields allowed | `model`, `max_tokens`, `system`, `tools`, `messages` — nothing else |
+| Tools | 1 to 8, each only `name` / `description` / `input_schema`; names from `TOOL_NAMES` (the app's eight); description 1 to 1,024 characters; schema ≤ 4,096 characters serialised |
+| Message content | a non-empty string, or 1 to 12 blocks: `text`; `tool_use` (assistant only, input ≤ 2,048 characters serialised); `tool_result` (user only, content ≤ 500 characters, optional boolean `is_error`) |
+
+The tool sizes are characters (string length), the same unit the app measures
+in, so nothing the app replays is refused for its alphabet; the 48 KB body cap
+is bytes and bounds all of them. Every string in a message — text, a tool
+call's id, name and input, a result's id and content — counts toward the
+60 KB total.
+
+`TOOL_NAMES` is the Worker's own copy of the app's tool list;
+`src/__tests__/coachProxyPin.test.js` fails if the two ever differ, and runs
+the app's real request bodies through `checkBody`. A prompt or tool change and
+the matching change here ship in the same commit.
 
 Run the tests:
 
 ```sh
-npx vitest run --root workers/coach-proxy
+npx vitest run workers/coach-proxy
 ```
 
-(from the repo root, or `npx vitest run` from this folder). The repo's own
-`npm test` uses `test.include: ['src/**/*.test.js']` in `vite.config.js`, which
-does not reach this folder — adding `'workers/**/*.test.js'` to that list would
-fold these tests into the main suite.
+from the repo root. There is no separate package here: the repo's own
+`npm test` includes `workers/**/*.test.js` (see `test.include` in
+`vite.config.js`), so these tests run with everything else.
 
 Nothing in here is deployed by the repo's GitHub Actions workflow. The Worker
 only changes when someone runs `npx wrangler deploy` from this folder.
