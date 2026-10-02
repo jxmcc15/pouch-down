@@ -29,12 +29,12 @@ export const LIMITS = {
   messages: 40,
   totalChars: 60 * 1024,
   tools: 8,
+  blocks: 12,
   // These four are characters (string length), the unit the app measures in —
   // a serialised input the app replays whole must never be refused here. Only
   // bodyBytes is bytes; it bounds everything below it whatever the alphabet.
   toolDescription: 1024,
   toolSchema: 4 * 1024,
-  blocks: 12,
   toolInput: 2 * 1024,
   toolResult: 500,
 };
@@ -166,7 +166,7 @@ export function checkBody(raw, limits = {}) {
   // An allowlist, not a blocklist: anything the app doesn't send is refused,
   // so no extra API parameter can ride along on a request.
   for (const key of Object.keys(body)) {
-    if (!lim.fields.includes(key)) return bad(`Unsupported field in request body: ${key}`);
+    if (!lim.fields.includes(key)) return bad("Request body has a field the app doesn't send.");
   }
 
   if (typeof body.model !== 'string' || !lim.models.includes(body.model)) {
@@ -200,7 +200,7 @@ export function checkBody(raw, limits = {}) {
     }
     for (const key of Object.keys(m)) {
       if (key !== 'role' && key !== 'content') {
-        return bad(`Unsupported field in a message: ${key}`);
+        return bad("A message has a field the app doesn't send.");
       }
     }
     if (!lim.roles.includes(m.role)) return bad('Each message needs a role of user or assistant.');

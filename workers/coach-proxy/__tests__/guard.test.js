@@ -173,7 +173,15 @@ describe('checkBody — what it refuses', () => {
     const r = checkBody(validBody({ temperature: 1 }));
     expect(r.ok).toBe(false);
     expect(r.status).toBe(400);
-    expect(r.message).toMatch(/field/i);
+    expect(r.message).toBe("Request body has a field the app doesn't send.");
+  });
+
+  it('names no part of the input when it refuses a field — the caller wrote it', () => {
+    const r = checkBody(validBody({ 'x-pd-device-echo': 1 }));
+    expect(r.message).toBe("Request body has a field the app doesn't send.");
+    const m = checkBody(validBody({ messages: [{ role: 'user', content: 'hi', 'x-pd-device-echo': 1 }] }));
+    expect(m.message).toBe("A message has a field the app doesn't send.");
+    expect(`${r.message}${m.message}`).not.toContain('echo');
   });
 
   it('refuses extra fields whatever they are called', () => {
@@ -403,5 +411,25 @@ describe('checkBody — the new clamps', () => {
     const accented = { ...USE, input: { note: 'é'.repeat(1500) } };
     expect(new TextEncoder().encode(JSON.stringify(accented.input)).length).toBeGreaterThan(LIMITS.toolInput);
     expect(checkBody(withTools([...FIRST, { role: 'assistant', content: [accented] }])).ok).toBe(true);
+  });
+  // Each cap is checked at the limit as well as one past it, so a `>` that
+  // slipped to `>=` would show here.
+  it('every tool size passes exactly at its cap', () => {
+    expect(checkBody(withTools(FIRST, { tools: [tool('log_pouch_now', { description: 'x'.repeat(LIMITS.toolDescription) })] })).ok).toBe(true);
+    const schema = (n) => {
+      const base = { type: 'object', properties: { note: { type: 'string', description: '' } } };
+      base.properties.note.description = 'x'.repeat(n - JSON.stringify(base).length);
+      return base;
+    };
+    expect(JSON.stringify(schema(LIMITS.toolSchema)).length).toBe(LIMITS.toolSchema);
+    expect(checkBody(withTools(FIRST, { tools: [tool('log_pouch_now', { input_schema: schema(LIMITS.toolSchema) })] })).ok).toBe(true);
+    expect(checkBody(withTools(FIRST, { tools: [tool('log_pouch_now', { input_schema: schema(LIMITS.toolSchema + 1) })] })).message).toBe('A tool input_schema is missing or too large.');
+    const input = (n) => ({ note: 'x'.repeat(n - JSON.stringify({ note: '' }).length) });
+    const asCoach = (i) => withTools([...FIRST, { role: 'assistant', content: [{ ...USE, input: i }] }]);
+    expect(JSON.stringify(input(LIMITS.toolInput)).length).toBe(LIMITS.toolInput);
+    expect(checkBody(asCoach(input(LIMITS.toolInput))).ok).toBe(true);
+    expect(checkBody(asCoach(input(LIMITS.toolInput + 1))).message).toBe('A tool_use input is too large.');
+    const asUser = (c) => withTools([...PROPOSED, { role: 'user', content: [{ ...RESULT, content: c }] }]);
+    expect(checkBody(asUser('x'.repeat(LIMITS.toolResult))).ok).toBe(true);
   });
 });
