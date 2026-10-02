@@ -13,6 +13,7 @@ vi.mock('../state.jsx', () => ({ useApp: () => ({ state: app.state, tick: 0, rea
 const { default: TodayLog } = await import('../components/TodayLog.jsx');
 const { default: HistoryTimeline } = await import('../components/HistoryTimeline.jsx');
 const { default: PlanView } = await import('../components/PlanView.jsx');
+const { default: ActionCard } = await import('../components/ActionCard.jsx');
 
 const settings = { mealTimes: { breakfast: '08:00', lunch: '12:30', dinner: '18:30' }, costPerTin: 5, pouchesPerTin: 20, wakeTime: '07:00', sleepTime: '23:00' };
 const plan = generatePlan({ pouchesPerDay: 9, mg: 9, strengths: [6, 3], lengthDays: 90, startDate: '2026-09-21', ...settings });
@@ -104,5 +105,65 @@ describe('display components survive hostile stored strings', () => {
     expect(out).not.toContain('[object Object]');
     expect(out).toContain('House rules');
     expect(out).toContain('Buy'); // the shopping line rendered, its hostile item blank
+  });
+});
+
+// ── the coach's cards (2026-10-02) ──────────────────────────────────────────
+
+describe('ActionCard draws each state from the validated action, never the model\'s words', () => {
+  const action = { toolUseId: 'toolu_1', name: 'add_late_pouch', verb: 'logLatePouch', args: [], summary: 'Add a pouch · Thu Oct 1 · 4:30 PM · boredom', facts: 'Thu Oct 1 · 4:30 PM · boredom · added later' };
+  const card = (status, extra = {}) => ({ toolUseId: 'toolu_1', name: 'add_late_pouch', status, action, ...extra });
+  const draw = (props) => renderToStaticMarkup(createElement(ActionCard, { onConfirm() {}, onSkip() {}, onUndo() {}, ...props }));
+  const buttons = (out) => out.match(/<button[^>]*>/g) ?? [];
+
+  it('pending: headline, facts, Skip and Confirm, both 44px', () => {
+    const out = draw({ card: card('pending') });
+    expect(out).toContain('Add a pouch · Thu Oct 1 · 4:30 PM · boredom');
+    expect(out).toContain('Thu Oct 1 · 4:30 PM · boredom · added later');
+    expect(out).toContain('aria-label="Confirm: Add a pouch · Thu Oct 1 · 4:30 PM · boredom"');
+    expect(out).toContain('aria-label="Skip: Add a pouch · Thu Oct 1 · 4:30 PM · boredom"');
+    expect(buttons(out)).toHaveLength(2);
+    for (const b of buttons(out)) expect(b).toContain('min-height:44px');
+  });
+  it('pending while busy: both buttons disabled', () => {
+    const bs = buttons(draw({ card: card('pending'), busy: true }));
+    expect(bs).toHaveLength(2);
+    for (const b of bs) expect(b).toContain('disabled');
+  });
+  it('saved: "Saved", an Undo chip only while undoable, never a second Confirm', () => {
+    const live = draw({ card: card('saved', { eventId: 'e1' }), undoable: true });
+    expect(live).toContain('Saved');
+    expect(live).toContain('aria-label="Undo: Add a pouch · Thu Oct 1 · 4:30 PM · boredom"');
+    expect(live).not.toContain('Confirm');
+    expect(buttons(live)).toHaveLength(1);
+    expect(buttons(live)[0]).toContain('min-height:44px');
+    expect(buttons(draw({ card: card('saved', { eventId: 'e1' }), undoable: false }))).toHaveLength(0);
+  });
+  it('refused: amber "Didn’t save — reason", no buttons', () => {
+    const out = draw({ card: card('refused', { reason: "the app wouldn't save it" }) });
+    expect(out).toContain('Didn’t save — the app wouldn&#x27;t save it');
+    expect(out).toContain('var(--amber)');
+    expect(out).not.toContain('Error');
+    expect(buttons(out)).toHaveLength(0);
+  });
+  it('skipped and undone: the headline struck, no buttons', () => {
+    for (const [status, word] of [['skipped', 'Skipped'], ['undone', 'Undone']]) {
+      const out = draw({ card: card(status) });
+      expect(out).toContain(word);
+      expect(out).toContain('line-through');
+      expect(buttons(out)).toHaveLength(0);
+    }
+  });
+  it('invalid: the app\'s sentence and the reason, no buttons, no model text', () => {
+    const out = draw({ card: { toolUseId: 'toolu_9', name: 'drop_everything', status: 'invalid', reason: 'unknown action' } });
+    expect(out).toContain('The coach proposed something the app can&#x27;t do');
+    expect(out).toContain('unknown action');
+    expect(out).not.toContain('drop_everything');
+    expect(buttons(out)).toHaveLength(0);
+  });
+  it('a name off the icon table draws the fallback icon, never a prototype key', () => {
+    // ICON['constructor'] is Object — rendered as a component it would throw.
+    const out = draw({ card: { ...card('pending'), name: 'constructor' } });
+    expect(out).toContain('Confirm');
   });
 });
