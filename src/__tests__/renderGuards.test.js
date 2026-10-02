@@ -167,3 +167,28 @@ describe('ActionCard draws each state from the validated action, never the model
     expect(out).toContain('Confirm');
   });
 });
+
+// Imported here, not above, so the ActionCard block keeps its own top. The
+// vi.mock of state.jsx is hoisted, so the toast reads app.state like the rest.
+const { default: LogToast } = await import('../components/LogToast.jsx');
+const { default: SOSOverlay } = await import('../components/SOSOverlay.jsx');
+const { readFileSync } = await import('node:fs');
+
+describe('reason chips are 44px tall on the log toast and the SOS overlay', () => {
+  it('LogToast: undo and every trigger chip carry min-height 44 inline', () => {
+    const p = { id: 'tp', ts: `${DAY}T16:00:00.000Z`, tzOffsetMin: -300, day: DAY, type: 'pouch', trigger: null, ctx: null };
+    app.state = { ...attempt(), events: [p] };
+    const chips = renderToStaticMarkup(createElement(LogToast, { eventId: 'tp', until: Date.now() + 12000, onDone() {} })).match(/<button[^>]*>/g);
+    expect(chips).toHaveLength(7); // undo + six triggers
+    for (const c of chips) expect(c).toContain('min-height:44px');
+  });
+  it('SOSOverlay: every trigger chip is a bare .chip, and .chip is 44px', () => {
+    // The SOS chips take their size from the class alone: no inline style can
+    // shrink them, and the class itself must hold 44.
+    const chips = renderToStaticMarkup(createElement(SOSOverlay, { onClose() {}, onResisted() {}, onUsed() {} })).match(/<button[^>]*class="chip[^>]*>/g) ?? [];
+    expect(chips).toHaveLength(6);
+    for (const c of chips) expect(c).not.toContain('min-height');
+    const css = readFileSync(new URL('../index.css', import.meta.url), 'utf8');
+    expect(css.match(/\n\.chip \{[^}]*\}/)?.[0]).toMatch(/min-height: 44px;/);
+  });
+});
