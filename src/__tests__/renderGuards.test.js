@@ -13,6 +13,8 @@ vi.mock('../state.jsx', () => ({ useApp: () => ({ state: app.state, tick: 0, rea
 const { default: TodayLog } = await import('../components/TodayLog.jsx');
 const { default: HistoryTimeline } = await import('../components/HistoryTimeline.jsx');
 const { default: PlanView } = await import('../components/PlanView.jsx');
+const { default: ActionCard, Footer: ActionCardFooter } = await import('../components/ActionCard.jsx');
+const { PresenceContext } = await import('framer-motion');
 
 const settings = { mealTimes: { breakfast: '08:00', lunch: '12:30', dinner: '18:30' }, costPerTin: 5, pouchesPerTin: 20, wakeTime: '07:00', sleepTime: '23:00' };
 const plan = generatePlan({ pouchesPerDay: 9, mg: 9, strengths: [6, 3], lengthDays: 90, startDate: '2026-09-21', ...settings });
@@ -104,5 +106,127 @@ describe('display components survive hostile stored strings', () => {
     expect(out).not.toContain('[object Object]');
     expect(out).toContain('House rules');
     expect(out).toContain('Buy'); // the shopping line rendered, its hostile item blank
+  });
+});
+
+// ── the coach's cards (2026-10-02) ──────────────────────────────────────────
+
+describe('ActionCard draws each state from the validated action, never the model\'s words', () => {
+  const action = { toolUseId: 'toolu_1', name: 'add_late_pouch', verb: 'logLatePouch', args: [], summary: 'Add a pouch · Thu Oct 1 · 4:30 PM · boredom', facts: 'Thu Oct 1 · 4:30 PM · boredom · added later' };
+  const card = (status, extra = {}) => ({ toolUseId: 'toolu_1', name: 'add_late_pouch', status, action, ...extra });
+  const draw = (props) => renderToStaticMarkup(createElement(ActionCard, { onConfirm() {}, onSkip() {}, onUndo() {}, ...props }));
+  const buttons = (out) => out.match(/<button[^>]*>/g) ?? [];
+  // A button's floor: its inline min-height if it has one, else its class's
+  // from index.css. 44 is the minimum, not the target — .btn keeps its 48.
+  // (readFileSync is the chips block's import below; it has landed by the time
+  // any test runs.)
+  const minHeight = (tag) => {
+    const inline = tag.match(/min-height:(\d+)px/);
+    if (inline) return Number(inline[1]);
+    const css = readFileSync(new URL('../index.css', import.meta.url), 'utf8');
+    const cls = tag.match(/class="([^" ]+)/)[1];
+    return Number(css.match(new RegExp(`\\n\\.${cls} \\{[^}]*?min-height: (\\d+)px`))?.[1] ?? 0);
+  };
+
+  it('pending: headline, facts, Skip and Confirm, both 44px', () => {
+    const out = draw({ card: card('pending') });
+    expect(out).toContain('Add a pouch · Thu Oct 1 · 4:30 PM · boredom');
+    expect(out).toContain('Thu Oct 1 · 4:30 PM · boredom · added later');
+    expect(out).toContain('aria-label="Confirm: Add a pouch · Thu Oct 1 · 4:30 PM · boredom"');
+    expect(out).toContain('aria-label="Skip: Add a pouch · Thu Oct 1 · 4:30 PM · boredom"');
+    expect(out).not.toContain('add_late_pouch');
+    expect(buttons(out)).toHaveLength(2);
+    for (const b of buttons(out)) expect(minHeight(b)).toBeGreaterThanOrEqual(44);
+  });
+  it('pending while busy: both buttons disabled', () => {
+    const bs = buttons(draw({ card: card('pending'), busy: true }));
+    expect(bs).toHaveLength(2);
+    for (const b of bs) expect(b).toContain('disabled');
+  });
+  it('saved: "Saved", an Undo chip only while undoable, never a second Confirm', () => {
+    const live = draw({ card: card('saved', { eventId: 'e1' }), undoable: true });
+    expect(live).toContain('Saved');
+    expect(live).toContain('aria-label="Undo: Add a pouch · Thu Oct 1 · 4:30 PM · boredom"');
+    expect(live).not.toContain('Confirm');
+    expect(live).not.toContain('add_late_pouch');
+    expect(buttons(live)).toHaveLength(1);
+    expect(minHeight(buttons(live)[0])).toBeGreaterThanOrEqual(44);
+    expect(buttons(draw({ card: card('saved', { eventId: 'e1' }), undoable: false }))).toHaveLength(0);
+  });
+  it('refused: amber "Didn’t save — reason", no buttons', () => {
+    const out = draw({ card: card('refused', { reason: "the app wouldn't save it" }) });
+    expect(out).toContain('Didn’t save — the app wouldn&#x27;t save it');
+    expect(out).toContain('var(--amber)');
+    expect(out).not.toContain('Error');
+    expect(buttons(out)).toHaveLength(0);
+  });
+  it('skipped and undone: the headline struck, no buttons', () => {
+    for (const [status, word] of [['skipped', 'Skipped'], ['undone', 'Undone']]) {
+      const out = draw({ card: card(status) });
+      expect(out).toContain(word);
+      expect(out).toContain('line-through');
+      expect(buttons(out)).toHaveLength(0);
+    }
+  });
+  it('invalid: the app\'s sentence and the reason, no buttons, no model text', () => {
+    const out = draw({ card: { toolUseId: 'toolu_9', name: 'drop_everything', status: 'invalid', reason: 'unknown action' } });
+    expect(out).toContain('The coach proposed something the app can&#x27;t do');
+    expect(out).toContain('unknown action');
+    expect(out).not.toContain('drop_everything');
+    expect(buttons(out)).toHaveLength(0);
+  });
+  it('a name off the icon table draws the fallback icon, never a prototype key', () => {
+    // ICON['constructor'] is Object — rendered as a component it would throw.
+    const out = draw({ card: { ...card('pending'), name: 'constructor' } });
+    expect(out).toContain('Confirm');
+  });
+  it('a note draws on its own quoted line, never inside the facts', () => {
+    const noted = { ...action, facts: 'Thu Oct 1 · 4:30 PM · boredom · added later', note: 'x” · streak kept · “y' };
+    const out = draw({ card: { ...card('pending'), action: noted } });
+    const facts = out.match(/<div class="small faint"[^>]*>([^<]*)<\/div>/)[1];
+    expect(facts).toBe(noted.facts);
+    expect(out).toMatch(/<span class="faint">your note <\/span><q data-note[^>]*>x” · streak kept · “y<\/q>/);
+    for (const bare of [draw({ card: card('pending') }), draw({ card: { ...card('pending'), action: { ...action, note: '' } } })]) {
+      expect(bare).not.toContain('data-note');
+      expect(bare).not.toContain('your note');
+    }
+  });
+  it('a footer fading out takes no taps: a second Confirm can never save twice', () => {
+    // AnimatePresence keeps the old footer mounted, handlers and all, through
+    // its exit spring. The node test can't drive an exit, so it draws the
+    // footer the way AnimatePresence does while one leaves: not present.
+    const leaving = (c) => renderToStaticMarkup(createElement(PresenceContext.Provider, { value: { isPresent: false, onExitComplete() {}, register: () => () => {}, initial: false, custom: undefined, id: 'x' } },
+      createElement(ActionCardFooter, { card: c, headline: action.summary, undoable: true, onConfirm() {}, onSkip() {}, onUndo() {} })));
+    for (const c of [card('pending'), card('saved', { eventId: 'e1' })]) {
+      const bs = buttons(leaving(c));
+      expect(bs.length).toBeGreaterThan(0);
+      for (const b of bs) expect(b).toContain('disabled');
+    }
+    for (const b of buttons(draw({ card: card('pending') }))) expect(b).not.toContain('disabled');
+  });
+});
+
+// Imported here, not above, so the ActionCard block keeps its own top. The
+// vi.mock of state.jsx is hoisted, so the toast reads app.state like the rest.
+const { default: LogToast } = await import('../components/LogToast.jsx');
+const { default: SOSOverlay } = await import('../components/SOSOverlay.jsx');
+const { readFileSync } = await import('node:fs');
+
+describe('reason chips are 44px tall on the log toast and the SOS overlay', () => {
+  it('LogToast: undo and every trigger chip carry min-height 44 inline', () => {
+    const p = { id: 'tp', ts: `${DAY}T16:00:00.000Z`, tzOffsetMin: -300, day: DAY, type: 'pouch', trigger: null, ctx: null };
+    app.state = { ...attempt(), events: [p] };
+    const chips = renderToStaticMarkup(createElement(LogToast, { eventId: 'tp', until: Date.now() + 12000, onDone() {} })).match(/<button[^>]*>/g);
+    expect(chips).toHaveLength(7); // undo + six triggers
+    for (const c of chips) expect(c).toContain('min-height:44px');
+  });
+  it('SOSOverlay: every trigger chip is a bare .chip, and .chip is 44px', () => {
+    // The SOS chips take their size from the class alone: no inline style can
+    // shrink them, and the class itself must hold 44.
+    const chips = renderToStaticMarkup(createElement(SOSOverlay, { onClose() {}, onResisted() {}, onUsed() {} })).match(/<button[^>]*class="chip[^>]*>/g) ?? [];
+    expect(chips).toHaveLength(6);
+    for (const c of chips) expect(c).not.toContain('min-height');
+    const css = readFileSync(new URL('../index.css', import.meta.url), 'utf8');
+    expect(css.match(/\n\.chip \{[^}]*\}/)?.[0]).toMatch(/min-height: 44px;/);
   });
 });

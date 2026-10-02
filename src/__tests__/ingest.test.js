@@ -187,6 +187,49 @@ describe('coach chats', () => {
     expect(line).toBe('- **You:** hide % % this and tag \\#craving');
     expect(md).not.toMatch(/%%/);
   });
+  it('lists what the coach proposed under its message, and how each card ended under the reply to it', () => {
+    const add = 'Add a pouch · Thu Sep 24 · 4:30 PM · boredom';
+    const mark = 'Mark as mistake · the 2:14 PM pouch on Thu Sep 24';
+    const fill = 'Fill in Tue Sep 22 · 7 pouches · streak kept';
+    const root = withChats([chat('c1', '2026-09-25', '15:00', [
+      msg('user', 'had one at 4:30, and the 2:14 was an accident'),
+      { ...msg('assistant', 'Three cards.'), actions: [{ name: 'add_late_pouch', summary: add }, { name: 'mark_mistake', summary: mark }, { name: 'fill_missed_day', summary: fill }] },
+      { ...msg('user', 'Confirmed: …'), outcomes: [
+        { name: 'add_late_pouch', summary: add, outcome: 'saved' },
+        { name: 'mark_mistake', summary: mark, outcome: 'skipped' },
+        { name: 'fill_missed_day', summary: fill, outcome: 'refused', reason: "the app wouldn't save it" },
+        { name: 'unknown', summary: "An action the app doesn't have", outcome: 'invalid', reason: 'unknown action' },
+        { name: 'log_pouch_now', summary: 'Log a pouch now', outcome: 'undone' },
+      ] },
+      { ...msg('assistant', ''), actions: [{ name: 'log_pouch_now', summary: 'Log a pouch now' }] },
+    ])]);
+    const md = renderCoachChats(root, { exportedAt, now: new Date() });
+    expect(md).toContain([
+      '- **Coach:** Three cards.',
+      `  - ↳ proposed: ${add}`,
+      `  - ↳ proposed: ${mark}`,
+      `  - ↳ proposed: ${fill}`,
+      '- **You:** Confirmed: …',
+      `  - ✓ saved: ${add}`,
+      `  - – skipped: ${mark}`,
+      `  - ✗ refused: ${fill} (the app wouldn't save it)`,
+      "  - ✗ invalid: An action the app doesn't have (unknown action)",
+      '  - ↺ undone: Log a pouch now',
+      '- **Coach:** —',
+      '  - ↳ proposed: Log a pouch now',
+    ].join('\n'));
+  });
+  it('escapes action and outcome lines like every other line', () => {
+    const root = withChats([chat('c1', '2026-09-25', '15:00', [
+      msg('user', 'hi'),
+      { ...msg('assistant', 'ok'), actions: [{ name: 'x', summary: nasty }] },
+      { ...msg('user', 'next'), outcomes: [{ name: 'x', summary: 'tag #craving', outcome: 'refused', reason: '[[Secret]] %% hide' }] },
+    ])]);
+    const md = renderCoachChats(root, { exportedAt, now: new Date() });
+    expect(md).toContain("  - ↳ proposed: See ((Secret Note)) and 'code' / pipe (script)alert(1)(/script)");
+    expect(md).toContain('  - ✗ refused: tag \\#craving (((Secret)) % % hide)');
+    expect(md).not.toMatch(/\[\[Secret/);
+  });
   it('caps a long message at 2000 characters', () => {
     const md = renderCoachChats(withChats([chat('c1', '2026-09-25', '15:00', [msg('user', 'x'.repeat(3000))])]), { exportedAt, now: new Date() });
     const line = md.split('\n').find((l) => l.startsWith('- **You:**'));

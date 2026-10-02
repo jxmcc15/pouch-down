@@ -68,7 +68,8 @@ export default function LogToast({ eventId, until, onDone }) {
   // had removed the pouch when nothing had changed.
   const isLast = state.events[state.events.length - 1]?.id === eventId;
 
-  const chipStyle = { minHeight: 36, padding: '6px 13px', fontSize: 13 };
+  // 44px tall, like the reason chips in Fix this day: a thumb-sized target.
+  const chipStyle = { minHeight: 44, padding: '6px 13px', fontSize: 13 };
 
   return (
     <motion.div

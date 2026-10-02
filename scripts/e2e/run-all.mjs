@@ -29,6 +29,7 @@ const WALKS = [
   { name: 'walk-recovery', port: 4337 },
   { name: 'walk-fixday', port: 4339 },
   { name: 'walk-latepouch', port: 4341 },
+  { name: 'walk-coach', port: 4343 },
 ];
 
 const argv = process.argv.slice(2);

@@ -7,17 +7,36 @@
 // `message` is what the caller is told — it never carries a secret, a header
 // value, or anything about how the check was made.
 
+// The eight actions the app's coach may propose — its own copy, because the
+// Worker ships alone. src/__tests__/coachProxyPin.test.js pins it equal to
+// TOOL_NAMES in src/coachTools.js, so the two can't drift.
+export const TOOL_NAMES = [
+  'log_pouch_now', 'log_resisted_now', 'add_late_pouch', 'mark_mistake',
+  'add_reason', 'fill_missed_day', 'correct_day_total', 'log_checkin',
+];
+
 // The caps, in one place so the README, the tests and the code can't drift.
 // They exist to bound what a stolen device token can cost: one small model,
-// short answers, small requests.
+// short answers, small requests — and, since the coach proposes actions, only
+// the app's own eight tools, each small, with tool calls and their results
+// only where the conversation can hold them.
 export const LIMITS = {
   models: ['claude-haiku-4-5-20251001'],
-  fields: ['model', 'max_tokens', 'system', 'messages'],
+  fields: ['model', 'max_tokens', 'system', 'tools', 'messages'],
   roles: ['user', 'assistant'],
-  maxTokens: 400,
-  bodyBytes: 16 * 1024,
+  maxTokens: 800,
+  bodyBytes: 48 * 1024,
   messages: 40,
   totalChars: 60 * 1024,
+  tools: 8,
+  blocks: 12,
+  // These four are characters (string length), the unit the app measures in —
+  // a serialised input the app replays whole must never be refused here. Only
+  // bodyBytes is bytes; it bounds everything below it whatever the alphabet.
+  toolDescription: 1024,
+  toolSchema: 4 * 1024,
+  toolInput: 2 * 1024,
+  toolResult: 500,
 };
 
 // `ALLOWED_ORIGINS` and `DEVICE_TOKENS` are both comma-separated settings typed
@@ -73,10 +92,61 @@ function byteLength(text) {
   return new TextEncoder().encode(text).length;
 }
 
+const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
+const onlyKeys = (o, allowed) => Object.keys(o).every((k) => allowed.includes(k));
+
+// The app's tool definitions: name, description and schema, nothing else, and
+// only the names the app has. → a refusal message, or null when they'll do.
+function toolsProblem(tools, lim) {
+  if (!Array.isArray(tools) || tools.length === 0) return 'tools must be a non-empty array.';
+  if (tools.length > lim.tools) return `Too many tools — ${lim.tools} at most.`;
+  const seen = new Set();
+  for (const t of tools) {
+    if (!isObj(t) || !onlyKeys(t, ['name', 'description', 'input_schema'])) return 'Each tool may only have a name, a description and an input_schema.';
+    if (!TOOL_NAMES.includes(t.name) || seen.has(t.name)) return 'That tool is not allowed.';
+    seen.add(t.name);
+    if (typeof t.description !== 'string' || t.description === '' || t.description.length > lim.toolDescription) return 'A tool description is missing or too long.';
+    if (!isObj(t.input_schema) || t.input_schema.type !== 'object' || JSON.stringify(t.input_schema).length > lim.toolSchema) {
+      return 'A tool input_schema is missing or too large.';
+    }
+  }
+  return null;
+}
+
+// One content block of one message. → [refusal message | null, characters it
+// adds to the conversation]. Text in either role; a tool call only from the
+// assistant, a tool result only from the user — the only places the app puts them.
+function blockProblem(b, role, lim) {
+  if (!isObj(b)) return ['Each content block must be an object.', 0];
+  if (b.type === 'text') {
+    if (!onlyKeys(b, ['type', 'text']) || typeof b.text !== 'string' || b.text === '') return ['A text block needs non-empty text and nothing else.', 0];
+    return [null, b.text.length];
+  }
+  if (b.type === 'tool_use') {
+    if (role !== 'assistant') return ['Only the assistant can call a tool.', 0];
+    if (!onlyKeys(b, ['type', 'id', 'name', 'input']) || typeof b.id !== 'string' || b.id === '') return ['A tool_use block needs an id, a name and an input, and nothing else.', 0];
+    if (!TOOL_NAMES.includes(b.name)) return ['That tool is not allowed.', 0];
+    if (!isObj(b.input)) return ['A tool_use input must be an object.', 0];
+    const input = JSON.stringify(b.input);
+    if (input.length > lim.toolInput) return ['A tool_use input is too large.', 0];
+    return [null, b.id.length + b.name.length + input.length];
+  }
+  if (b.type === 'tool_result') {
+    if (role !== 'user') return ['Only the user can return a tool result.', 0];
+    if (!onlyKeys(b, ['type', 'tool_use_id', 'content', 'is_error']) || typeof b.tool_use_id !== 'string' || b.tool_use_id === '') {
+      return ['A tool_result block needs a tool_use_id and content, and nothing else.', 0];
+    }
+    if (typeof b.content !== 'string' || b.content === '' || b.content.length > lim.toolResult) return ['A tool_result content must be a short string.', 0];
+    if (b.is_error !== undefined && typeof b.is_error !== 'boolean') return ['is_error must be true or false.', 0];
+    return [null, b.tool_use_id.length + b.content.length];
+  }
+  return ['That content block type is not allowed.', 0];
+}
+
 // The request body, as the raw text that arrived. Everything about it is
 // checked before a single byte goes upstream: its size, that it parses, that it
-// holds only the four fields the app sends, and that each of those is the shape
-// and size we expect. `limits` is only overridden by tests.
+// holds only the fields the app sends, and that each of those is the shape and
+// size we expect. `limits` is only overridden by tests.
 export function checkBody(raw, limits = {}) {
   const lim = { ...LIMITS, ...limits };
 
@@ -96,7 +166,7 @@ export function checkBody(raw, limits = {}) {
   // An allowlist, not a blocklist: anything the app doesn't send is refused,
   // so no extra API parameter can ride along on a request.
   for (const key of Object.keys(body)) {
-    if (!lim.fields.includes(key)) return bad(`Unsupported field in request body: ${key}`);
+    if (!lim.fields.includes(key)) return bad("Request body has a field the app doesn't send.");
   }
 
   if (typeof body.model !== 'string' || !lim.models.includes(body.model)) {
@@ -109,6 +179,11 @@ export function checkBody(raw, limits = {}) {
 
   if (body.system !== undefined && typeof body.system !== 'string') {
     return bad('system must be a string.');
+  }
+
+  if (body.tools !== undefined) {
+    const problem = toolsProblem(body.tools, lim);
+    if (problem) return bad(problem);
   }
 
   if (!Array.isArray(body.messages) || body.messages.length === 0) {
@@ -125,14 +200,23 @@ export function checkBody(raw, limits = {}) {
     }
     for (const key of Object.keys(m)) {
       if (key !== 'role' && key !== 'content') {
-        return bad(`Unsupported field in a message: ${key}`);
+        return bad("A message has a field the app doesn't send.");
       }
     }
     if (!lim.roles.includes(m.role)) return bad('Each message needs a role of user or assistant.');
-    if (typeof m.content !== 'string' || m.content === '') {
-      return bad('Each message needs content as a non-empty string.');
+    if (typeof m.content === 'string') {
+      if (m.content === '') return bad('Each message needs content as a non-empty string or a list of blocks.');
+      chars += m.content.length;
+    } else if (Array.isArray(m.content)) {
+      if (m.content.length === 0 || m.content.length > lim.blocks) return bad(`A message holds 1 to ${lim.blocks} content blocks.`);
+      for (const b of m.content) {
+        const [problem, n] = blockProblem(b, m.role, lim);
+        if (problem) return bad(problem);
+        chars += n;
+      }
+    } else {
+      return bad('Each message needs content as a non-empty string or a list of blocks.');
     }
-    chars += m.content.length;
   }
   if (chars > lim.totalChars) return bad('The conversation is too long.');
 

@@ -126,6 +126,25 @@ status colors. All motion is Framer springs; `MotionConfig reducedMotion="user"`
   comes back with `device.apiKey: ''`, so no path persists one again. NEVER
   commit a key, never move it into the repo or build, and never reintroduce a
   saved key field.
+- **The coach proposes, James confirms** (2026-10-02): the coach's reply may
+  carry Claude tool-use blocks naming one of the eight verbs in
+  `src/coachTools.js` (log a pouch or a resisted craving now, add a late pouch,
+  mark a mistake, add a reason, fill a missed day, correct a day's total, log a
+  check-in). **Model output is untrusted input, like a backup file.**
+  `src/coachActions.js` is the only gate: an allowlist on names, keys, types,
+  enums and bounds, a `pouch_id` that must be in the list the app itself showed
+  the coach, and the api's own state guards mirrored so a card never offers a
+  Confirm the api would refuse. A valid proposal becomes a card
+  (`ActionCard.jsx`) drawn only from validated values — never model text — and
+  James's tap calls the same api method the sheets use, which runs its guards
+  again. There is no tool for anything on the forbidden list (start or end an
+  attempt, change the plan, quit date, price, meal times, token, key, or the
+  recovery path), so the model cannot even name it. The coach's allowlist is
+  tighter than the app's own forms where the model could nudge: a day whose
+  raw events ever held a pouch (voided or not) cannot be filled as missed from
+  a card — Fix this day stays James's. Saved chats record every proposal and
+  its outcome (`saved` / `refused` / `skipped` / `invalid` / `undone`), so the
+  vault shows what the coach did. A past attempt is sent no tools.
 - **The coach proxy** (`workers/coach-proxy/`, built 2026-09-25, **dormant until
   `COACH_PROXY` in `src/proxyConfig.js` is filled in and deployed**): a
   Cloudflare Worker James owns holds the key as a secret, so the phone holds
@@ -133,8 +152,11 @@ status colors. All motion is Framer springs; `MotionConfig reducedMotion="user"`
   call time — proxy when one is configured *and* this device holds a token,
   otherwise the session-key path, which stays the labelled fallback. The device
   token is a rotatable preference, not a secret of value; the Worker's clamps
-  (one model, `max_tokens` 400, 16 KB body, no field outside the four the app
-  sends) are what bound its misuse. `proxyConfig.js` is the single source of
+  (one model, `max_tokens` 800, 48 KB body, no field outside the five the app
+  sends, content blocks allowlisted by type and role, tool sizes capped in
+  characters) are what bound its misuse. **The Worker's guard changes in the
+  same commit as any change to the request shape** — a prompt or tool change
+  shipped without it is a silent 400 on the day the proxy goes live. `proxyConfig.js` is the single source of
   truth and `vite.config.js` imports it for the CSP, so **filling the constant
   in without deploying a rebuild gives a silent CSP block** — change and ship
   together.

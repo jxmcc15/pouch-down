@@ -204,6 +204,14 @@ describe('loadRoot on a v2 that parses and passes the outer shape but cannot ren
     'a message text is an object': (a) => { a.chats[0].messages[1].text = { t: 'Steady.' }; },
     'a message ts is a number': (a) => { a.chats[0].messages[0].ts = 1758639600000; },
     'a message is null': (a) => { a.chats[0].messages[0] = null; },
+    // actions/outcomes (2026-10-02): absent is fine; present must be text.
+    'a message actions is an object': (a) => { a.chats[0].messages[1].actions = { name: 'x', summary: 'y' }; },
+    'an action is null': (a) => { a.chats[0].messages[1].actions = [null]; },
+    'an action summary is an object': (a) => { a.chats[0].messages[1].actions = [{ name: 'add_late_pouch', summary: { s: 'x' } }]; },
+    'an action has no name': (a) => { a.chats[0].messages[1].actions = [{ summary: 'Add a pouch' }]; },
+    'an outcome is not one of the five': (a) => { a.chats[0].messages[0].outcomes = [{ name: 'x', summary: 'y', outcome: 'done' }]; },
+    'an outcome reason is an object': (a) => { a.chats[0].messages[0].outcomes = [{ name: 'x', summary: 'y', outcome: 'refused', reason: { r: 1 } }]; },
+    'a message outcomes is a string': (a) => { a.chats[0].messages[0].outcomes = 'saved'; },
   };
 
   for (const [label, wreck] of Object.entries(breakIt)) {
@@ -250,6 +258,18 @@ describe('loadRoot on a v2 that parses and passes the outer shape but cannot ren
   it('an attempt with chats keeps them through load', () => {
     const { root } = loadRoot(mem({ [KEY_V2]: JSON.stringify(rootWith(renderable())) }), NOW);
     expect(root.attempts[0].chats).toEqual(renderable().chats);
+  });
+
+  it('a coach message with actions and a user message with outcomes load as they are', () => {
+    const a = renderable();
+    a.chats[0].messages[1].actions = [{ name: 'add_late_pouch', summary: 'Add a pouch · Wed Sep 23 · 4:30 PM · boredom' }];
+    a.chats[0].messages[0].outcomes = [
+      { name: 'add_late_pouch', summary: 'Add a pouch · Wed Sep 23 · 4:30 PM · boredom', outcome: 'saved' },
+      { name: 'unknown', summary: "An action the app doesn't have", outcome: 'invalid', reason: 'unknown action' },
+    ];
+    const { root, problem } = loadRoot(mem({ [KEY_V2]: JSON.stringify(rootWith(a)) }), NOW);
+    expect(problem).toBeNull();
+    expect(root.attempts[0].chats[0].messages).toEqual(a.chats[0].messages);
   });
 
   it('a chat with no messages yet is still legitimate', () => {

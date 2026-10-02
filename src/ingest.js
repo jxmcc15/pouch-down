@@ -260,6 +260,9 @@ export function renderLiveLog(root, { exportedAt, now = new Date() }) {
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
+const SUMMARY_MAX = 200; // a card's headline; the app writes them well inside this
+// How each card ended, as one glyph a reader can scan down the note.
+const OUTCOME_MARK = { saved: '✓', undone: '↺', refused: '✗', invalid: '✗', skipped: '–' };
 const readableChat = (c) => wellFormedChat(c) && c.messages.length > 0;
 const startedMs = (c) => { const t = Date.parse(c.startedAt); return Number.isNaN(t) ? -Infinity : t; };
 
@@ -330,7 +333,17 @@ export function renderCoachChats(root, { exportedAt, now = new Date() }) {
         lines.push(`## Attempt ${safeText(attempt.id)} — ${attempt.status === 'archived' ? 'archived' : 'active'}`, '');
       }
       lines.push(`### ${chatHeading(attempt, chat)}`, '');
-      for (const m of chat.messages) lines.push(`- **${m.role === 'user' ? 'You' : 'Coach'}:** ${safeText(m.text, CHAT_TEXT_MAX)}`);
+      for (const m of chat.messages) {
+        // A coach reply can be only cards, so its words may be blank.
+        lines.push(`- **${m.role === 'user' ? 'You' : 'Coach'}:** ${safeText(m.text, CHAT_TEXT_MAX) || '—'}`);
+        // What the coach proposed, then — on the turn that answered it — what
+        // came of each card. Summaries are the app's words, but they came out
+        // of a backup like everything else here, so they go through safeText.
+        for (const a of m.actions ?? []) lines.push(`  - ↳ proposed: ${safeText(a.summary, SUMMARY_MAX)}`);
+        for (const o of m.outcomes ?? []) {
+          lines.push(`  - ${OUTCOME_MARK[o.outcome]} ${o.outcome}: ${safeText(o.summary, SUMMARY_MAX)}${o.reason ? ` (${safeText(o.reason, SUMMARY_MAX)})` : ''}`);
+        }
+      }
       lines.push('');
     }
   });

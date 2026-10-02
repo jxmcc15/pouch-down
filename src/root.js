@@ -79,9 +79,19 @@ function wellFormedEvent(e) {
   return true;
 }
 
+// What a coach message may carry besides its words (2026-10-02): `actions`,
+// the cards a coach message proposed, and `outcomes`, how each one ended, on the
+// user turn that answered them. Every field is text the ingest prints. Absent is
+// fine (every chat before this build); present must be a list of these.
+export const CHAT_OUTCOMES = ['saved', 'refused', 'skipped', 'invalid', 'undone'];
+export const wellFormedChatAction = (x) => isObj(x) && isStr(x.name) && isStr(x.summary);
+export const wellFormedChatOutcome = (x) => wellFormedChatAction(x) && CHAT_OUTCOMES.includes(x.outcome) && (x.reason === undefined || isStr(x.reason));
+const listOf = (list, ok) => list === undefined || (Array.isArray(list) && list.every(ok));
+
 // A coach chat, as the ingest renders it into the vault: every field is text.
 // Exported so the ingest can skip a bad chat instead of throwing on it.
-const wellFormedMessage = (m) => isObj(m) && (m.role === 'user' || m.role === 'assistant') && isStr(m.text) && isStr(m.ts);
+const wellFormedMessage = (m) => isObj(m) && (m.role === 'user' || m.role === 'assistant') && isStr(m.text) && isStr(m.ts)
+  && listOf(m.actions, wellFormedChatAction) && listOf(m.outcomes, wellFormedChatOutcome);
 export const wellFormedChat = (c) => isObj(c) && isStr(c.id) && isStr(c.startedAt) && isStr(c.day)
   && Array.isArray(c.messages) && c.messages.every(wellFormedMessage);
 

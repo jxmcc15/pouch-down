@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { loadRoot, saveRoot, attemptById, updateAttempt, startAttempt, archiveActive } from './root.js';
+import { loadRoot, saveRoot, attemptById, updateAttempt, startAttempt, archiveActive, wellFormedChatAction, wellFormedChatOutcome } from './root.js';
 import { makeEvent, makeId, pouchCtxForNow, todayKey, isLogged, dayNumberFor, timedPouchesForDay, isVoided } from './store.js';
 import { dayKeyOf } from './time.js';
 import { TRIGGERS } from './triggers.js';
@@ -12,6 +12,11 @@ const Ctx = createContext(null);
 
 const NOTE_MAX = 140;
 const CHAT_TEXT_MAX = 4000;
+// A coach turn's record of its cards: at most one entry per card (5), each
+// field short. The app writes summaries and reasons itself, well inside these.
+const CHAT_ENTRIES_MAX = 5;
+const CHAT_NAME_MAX = 40;
+const CHAT_LINE_MAX = 200;
 
 // A correction raises a logged past day's total. Never today (still being
 // logged), never an unlogged day (silence stays silence), never below the
@@ -48,6 +53,26 @@ function latePouchOk(a, { day, time, triggers, note }) {
   const r = resolveLate({ day, time });
   return r.ok && !r.future && reasonBody({ triggers, note }) !== null;
 }
+
+// A backfill is allowed only on an unlogged past day inside the plan. Checked
+// before the write so the api can say no (null) instead of handing back the id
+// of an event the updater then quietly dropped — a coach card has to know.
+function backfillOk(a, { day, count, streak }) {
+  if (typeof day !== 'string' || !DAY_RE.test(day) || day >= todayKey()) return false;
+  if (!Number.isInteger(count) || count < 0 || (streak !== 'keep' && streak !== 'break')) return false;
+  const n = dayNumberFor(a, day);
+  return n >= 1 && n <= a.plan.totalDays && !isLogged(a, day);
+}
+
+const bounded = (x) => x.name.length <= CHAT_NAME_MAX && x.summary.length <= CHAT_LINE_MAX && (x.reason === undefined || x.reason.length <= CHAT_LINE_MAX);
+// A coach message's actions or outcomes, as stored: 1–5 well-formed, bounded
+// entries holding only their own fields — or null, and the words save without
+// them. A bad list is dropped, never a throw: the reply already happened.
+function chatEntries(list, ok, pick) {
+  return Array.isArray(list) && list.length >= 1 && list.length <= CHAT_ENTRIES_MAX && list.every((x) => ok(x) && bounded(x)) ? list.map(pick) : null;
+}
+const pickAction = ({ name, summary }) => ({ name, summary });
+const pickOutcome = ({ name, summary, outcome, reason }) => ({ name, summary, outcome, ...(reason !== undefined ? { reason } : {}) });
 
 // The pouch a void would name: a pouch of this attempt not already voided.
 const voidable = (a, id) => a.events.some((e) => e.id === id && e.type === 'pouch') && !isVoided(a, { id, type: 'pouch' });
@@ -116,18 +141,27 @@ export function AppStateProvider({ children }) {
       return a && !readOnly && a.id === cur.root.activeAttemptId ? a : null;
     };
     return {
+      // → the new event's id, or null when nothing may change (a past attempt
+      // on screen, unreadable storage). Same for logResisted and logCheckin.
       logPouch(trigger = null) {
+        if (!editable()) return null;
         const ev = makeEvent('pouch', trigger);
         // ctx snapshots slot/cap/nth at log time, computed against the
         // pre-append attempt; verdicts derive at read time.
         onActive((a) => ({ ...a, events: [...a.events, { ...ev, ctx: pouchCtxForNow(a) }] }));
         return ev.id;
       },
-      logResisted(trigger = null) { const ev = makeEvent('resisted', trigger); append(ev); return ev.id; },
+      logResisted(trigger = null) {
+        if (!editable()) return null;
+        const ev = makeEvent('resisted', trigger);
+        append(ev);
+        return ev.id;
+      },
       // Always 'manual': the app is the only way to write a check-in now that the
       // URL entry point is gone. Check-ins stored as 'shortcut' still read and
       // score exactly as they did — history is append-only.
       logCheckin({ sleepQuality, sleepScore, sleepHours, workout } = {}) {
+        if (!editable()) return null;
         const ev = { ...makeEvent('checkin'), source: 'manual' };
         if (sleepQuality != null) ev.sleepQuality = sleepQuality;
         if (sleepScore != null) ev.sleepScore = sleepScore;
@@ -137,21 +171,18 @@ export function AppStateProvider({ children }) {
         return ev.id;
       },
       // Fills in a past day that has no log. `day` is the day being filled, not
-      // today. One backfill per day; bad input is a no-op (returns null).
+      // today. One backfill per day, on an in-plan day only. → the event id, or
+      // null when the day can't take one (logged already, outside the plan,
+      // today or later) or the input won't do — nothing is written then.
       logBackfill({ day, count, streak } = {}) {
-        const valid = typeof day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day) && day < todayKey()
-          && Number.isInteger(count) && count >= 0
-          && (streak === 'keep' || streak === 'break');
-        if (!valid) return null;
+        const a = editable();
+        const input = { day, count, streak };
+        if (!a || !backfillOk(a, input)) return null;
         const ev = { ...makeEvent('backfill'), day, count, streak };
-        // Only an unlogged, in-plan day may be filled — a day already logged (pouch/
-        // resisted/backfill), before the plan starts, or after its last day is a
-        // no-op here too, even though the UI only offers eligible days; the id is
-        // still returned (see comment above).
-        onActive((a) => {
-          const n = dayNumberFor(a, day);
-          return isLogged(a, day) || n < 1 || n > a.plan.totalDays ? a : { ...a, events: [...a.events, ev] };
-        });
+        onActive((cur) => (backfillOk(cur, input) ? { ...cur, events: [...cur.events, ev] } : cur));
+        // A second call before the next render passes the check above and is
+        // then dropped by the updater, yet still gets this id (as logCorrection).
+        // Returning null there would mean waiting on the updater, which runs later.
         return ev.id;
       },
       // The real total for a logged past day, entered later. Appends; the latest
@@ -208,16 +239,22 @@ export function AppStateProvider({ children }) {
       },
       // One coach exchange, saved on the active attempt (not an event: nothing
       // scores it). Appends to chat `chatId`, or starts a chat when that id isn't
-      // there. → the chat id, or null (bad turn, read-only, unreadable storage).
-      appendChatTurn(chatId, { user, assistant } = {}) {
+      // there. `actions` (what the coach's reply proposed) rides on the coach
+      // message; `outcomes` (how the cards it answers ended) on the user message.
+      // A coach reply may be only cards, so its words may be blank when it
+      // proposed something. → the chat id, or null (bad turn, read-only,
+      // unreadable storage).
+      appendChatTurn(chatId, { user, assistant, actions, outcomes } = {}) {
         const a = editable();
         if (!a || typeof user !== 'string' || typeof assistant !== 'string') return null;
-        if (user.trim() === '' || assistant.trim() === '') return null; // a blank turn is nothing to keep
+        const acts = chatEntries(actions, wellFormedChatAction, pickAction);
+        const outs = chatEntries(outcomes, wellFormedChatOutcome, pickOutcome);
+        if (user.trim() === '' || (assistant.trim() === '' && !acts)) return null; // a blank turn is nothing to keep
         const now = new Date();
         const ts = now.toISOString();
         const messages = [
-          { role: 'user', text: user.trim().slice(0, CHAT_TEXT_MAX), ts },
-          { role: 'assistant', text: assistant.trim().slice(0, CHAT_TEXT_MAX), ts },
+          { role: 'user', text: user.trim().slice(0, CHAT_TEXT_MAX), ts, ...(outs ? { outcomes: outs } : {}) },
+          { role: 'assistant', text: assistant.trim().slice(0, CHAT_TEXT_MAX), ts, ...(acts ? { actions: acts } : {}) },
         ];
         const has = (x) => (x.chats ?? []).some((c) => c.id === chatId);
         const id = chatId != null && has(a) ? chatId : makeId(now);
