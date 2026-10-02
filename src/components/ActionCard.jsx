@@ -130,6 +130,13 @@ export default function ActionCard({ card, busy = false, undoable = false, onCon
             {headline}
           </div>
           <div className="small faint" style={{ marginTop: 2, lineHeight: 1.4, overflowWrap: 'anywhere' }}>{invalid ? card.reason : card.action.facts}</div>
+          {/* The note is the user's own words, quoted on a line of its own, so
+              nothing inside it can pass for a fact the app will write. */}
+          {!invalid && typeof card.action.note === 'string' && card.action.note && (
+            <q data-note className="small muted" style={{ display: 'block', marginTop: 4, lineHeight: 1.4, fontStyle: 'italic', overflowWrap: 'anywhere' }}>
+              {card.action.note}
+            </q>
+          )}
         </div>
       </div>
 

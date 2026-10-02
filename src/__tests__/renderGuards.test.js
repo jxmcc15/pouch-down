@@ -180,6 +180,15 @@ describe('ActionCard draws each state from the validated action, never the model
     const out = draw({ card: { ...card('pending'), name: 'constructor' } });
     expect(out).toContain('Confirm');
   });
+  it('a note draws on its own quoted line, never inside the facts', () => {
+    const noted = { ...action, facts: 'Thu Oct 1 · 4:30 PM · boredom · added later', note: 'x” · streak kept · “y' };
+    const out = draw({ card: { ...card('pending'), action: noted } });
+    const facts = out.match(/<div class="small faint"[^>]*>([^<]*)<\/div>/)[1];
+    expect(facts).toBe(noted.facts);
+    expect(out).toMatch(/<q data-note[^>]*>x” · streak kept · “y<\/q>/);
+    expect(draw({ card: card('pending') })).not.toContain('data-note');
+    expect(draw({ card: { ...card('pending'), action: { ...action, note: '' } } })).not.toContain('data-note');
+  });
   it('a footer fading out takes no taps: a second Confirm can never save twice', () => {
     // AnimatePresence keeps the old footer mounted, handlers and all, through
     // its exit spring. The node test can't drive an exit, so it draws the
