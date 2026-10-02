@@ -397,7 +397,7 @@ function AddPouchCard({ day }) {
   const [added, setAdded] = useState(null); // { id, until } after a save
   // Once per open: after a save the form plays its closing animation with Save
   // still on screen, and a second tap would append a second pouch that undo
-  // can't reach. Set before the api call, cleared only when the card reopens.
+  // can't reach. Set before the api call, cleared on a failed save or when the card reopens.
   const [saved, setSaved] = useState(false);
   const resolved = resolveLate({ day, time: unknown ? null : time });
   const canSave = resolved.ok && !resolved.future && !saved;
