@@ -180,6 +180,9 @@ export function AppStateProvider({ children }) {
         if (!a || !backfillOk(a, input)) return null;
         const ev = { ...makeEvent('backfill'), day, count, streak };
         onActive((cur) => (backfillOk(cur, input) ? { ...cur, events: [...cur.events, ev] } : cur));
+        // A second call before the next render passes the check above and is
+        // then dropped by the updater, yet still gets this id (as logCorrection).
+        // Returning null there would mean waiting on the updater, which runs later.
         return ev.id;
       },
       // The real total for a logged past day, entered later. Appends; the latest

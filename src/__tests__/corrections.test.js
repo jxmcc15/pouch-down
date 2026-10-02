@@ -282,12 +282,21 @@ describe('logBackfill and the live logs say no when nothing was written', () => 
     const id = app().api.logBackfill({ day: '2026-09-22', count: 3, streak: 'keep' });
     expect(events()).toEqual([expect.objectContaining({ id, type: 'backfill', day: '2026-09-22', count: 3, streak: 'keep' })]);
   });
-  it('the same day twice in one tick: the second is null', () => {
+  it('the same day again after a render: the second is null', () => {
     seed(withEvents([]));
     const { api } = app();
     expect(api.logBackfill({ day: '2026-09-22', count: 3, streak: 'keep' })).toEqual(expect.any(String));
     expect(app().api.logBackfill({ day: '2026-09-22', count: 3, streak: 'keep' })).toBeNull();
     expect(events()).toHaveLength(1);
+  });
+  it('the same day twice with no render between: the updater still writes only one', () => {
+    // Both calls see the same last render, so both pass the pre-check; only
+    // the guard inside the updater stops the second backfill landing.
+    seed(withEvents([]));
+    const { api } = app();
+    api.logBackfill({ day: '2026-09-22', count: 3, streak: 'keep' });
+    api.logBackfill({ day: '2026-09-22', count: 4, streak: 'keep' });
+    expect(events()).toEqual([expect.objectContaining({ type: 'backfill', day: '2026-09-22', count: 3 })]);
   });
 });
 
