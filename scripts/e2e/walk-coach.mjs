@@ -135,10 +135,12 @@ const tsFor = (day, hm, plusMin = 0) => {
 //   d4  Thu 10/1  3 taps      today 3/8   ← the coach's day, at 9:12 PM
 //
 //   after the 4:30 PM card is confirmed   today 4/8, 0 resisted
-//   after Confirm all (mistake skipped)   today 4/8, 1 resisted, check-in 6.5h · 3/5 · workout
-//   the "can't do" card and the skipped 1:00 PM card write nothing.
+//   after Confirm all (2) + the mistake   today 3/8, 1 resisted, check-in 6.5h · 3/5 · workout
+//                                         (the 8:20 AM tap voided; the 1:30 PM card skipped)
+//   the "can't do" card, the skipped cards and the refused one write nothing;
+//   the 5:00 PM pouch is saved and undone, so it ends as it began.
 const PATTERN = { 1: 6, 2: 5, 3: 4, [TODAY_N]: 3 };
-const TODAY_COUNTS = [3, 4, 4];
+const TODAY_COUNTS = [3, 4, 3];
 const RESISTED = [0, 0, 1];
 
 function buildEvents() {
@@ -178,16 +180,20 @@ const stampNow = (type, extra) => ({ id: `expected-${type}`, ts: enteredAt, tzOf
 const POUCH = { id: 'expected-pouch', ts: new Date(LATE_MS).toISOString(), tzOffsetMin: offsetMinInZone(LATE_MS, TZ), day: TODAY, type: 'pouch', trigger: null, ctx: null, late: true, enteredAt };
 const REASON = stampNow('reason', { target: POUCH.id, triggers: ['boredom'], note: '' });
 const RESIST = stampNow('resisted', { trigger: 'stress' });
+const VOID = stampNow('void', { target: TARGET.id });
 const CHECKIN = stampNow('checkin', { source: 'manual', sleepHours: 6.5, sleepQuality: 3, workout: true });
 const withEvents = (attempt, list) => ({ ...attempt, events: [...attempt.events, ...list] });
-const STATES = (a) => [a, withEvents(a, [REASON, POUCH]), withEvents(a, [REASON, POUCH, RESIST, CHECKIN])];
+const STATES = (a) => [a, withEvents(a, [REASON, POUCH]), withEvents(a, [REASON, POUCH, RESIST, CHECKIN, VOID])];
+// What the log holds, appended, once the batch is through: Confirm all writes
+// in the cards' order, and the mistake's own tap comes last.
+const AFTER_BATCH = ['reason', 'pouch', 'resisted', 'checkin', 'void'];
 
 // The 5:00 PM pouch is saved and then undone; for a moment today reads 5/8.
 const POUCH5 = { ...POUCH, id: 'expected-pouch-5', ts: new Date(tsFor(TODAY, '17:00')).toISOString() };
 
 function celebratedFor(attempt) {
   const ids = new Set();
-  const all = [...STATES(attempt), withEvents(attempt, [REASON, POUCH, RESIST, CHECKIN, POUCH5])];
+  const all = [...STATES(attempt), withEvents(attempt, [REASON, POUCH, RESIST, CHECKIN, VOID, POUCH5])];
   for (const s of all) for (const a of atNow(() => awardsFor(s))) if (a.earned) ids.add(a.id);
   return [...ids].sort();
 }
@@ -221,7 +227,9 @@ const toolUse = (id, name, input) => ({ type: 'tool_use', id, name, input });
 const reply = (content, stop = 'end_turn') => ({ id: 'msg_walk', type: 'message', role: 'assistant', model: 'claude-haiku-4-5-20251001', stop_reason: stop, content });
 
 const SAY_LATE = 'had one at 4:30 I forgot, boredom';
-const SAY_BATCH = 'that first tap today was an accident, I resisted one just now from stress, and I slept 6.5 hours, 3 out of 5, and worked out';
+const SAY_BATCH = 'that first tap today was an accident, I resisted one just now from stress, I slept 6.5 hours, 3 out of 5, and worked out — oh and maybe one at 1:30';
+const BATCH_WORDS = 'Four cards: the accidental tap, the craving you beat, the check-in, and the 1:30 one if it happened.';
+const BATCH_REPLY = 'All in: the tap is marked, the craving and the check-in are logged. 1:30 stays out.';
 const SAY_ODD = 'and mark the one from last week, and add one at 1';
 const SAY_NEVERMIND = 'actually never mind';
 const SAY_FIVE = 'one more at 5 I forgot';
@@ -234,11 +242,13 @@ const MARK_SUMMARY = `Mark as mistake · the ${fmtTime(TARGET)} pouch on Thu Oct
 const RESIST_SUMMARY = 'Log a craving resisted · stress';
 const CHECKIN_SUMMARY = 'Morning check-in · 6.5h · 3/5 · workout';
 const ONE_PM_SUMMARY = 'Add a pouch · Thu Oct 1 · 1:00 PM';
+const ONE_THIRTY_SUMMARY = 'Add a pouch · Thu Oct 1 · 1:30 PM';
 const BORED_SUMMARY = 'Log a craving resisted · boredom';
 const REASON_SUMMARY = `Add a reason · ${fmtTime(REASON_TARGET)} pouch · social`;
 const NOW_SUMMARY = 'Log a pouch now';
 const FIVE_SUMMARY = 'Add a pouch · Thu Oct 1 · 5:00 PM';
 const MARK5_SUMMARY = 'Mark as mistake · the 5:00 PM pouch on Thu Oct 1';
+const UNDO_REPLY = 'Got it — the 5:00 one is off the log.';
 const OVERFLOW_RESULT = 'invalid: more than 5 actions in one reply — ask the user to split them up';
 
 // The 5:00 PM pouch's id is minted by the app at Confirm, so the reply that
@@ -252,12 +262,13 @@ const SCRIPT = [
   reply([text("Here's that 4:30 one — confirm and it's in."), toolUse('toolu_walk_01', 'add_late_pouch', { day: TODAY, time: LATE_HM, triggers: ['boredom'], note: '' })], 'tool_use'),
   reply([text('4:30 is in.')]),
   reply([
-    text('Three cards: the accidental tap, the craving you beat, and the check-in.'),
+    text(BATCH_WORDS),
     toolUse('toolu_walk_02', 'mark_mistake', { pouch_id: TARGET.id }),
     toolUse('toolu_walk_03', 'log_resisted_now', { trigger: 'stress' }),
     toolUse('toolu_walk_04', 'log_checkin', { sleep_hours: 6.5, sleep_quality: 3, workout: true }),
+    toolUse('toolu_walk_04b', 'add_late_pouch', { day: TODAY, time: '13:30', triggers: [], note: '' }),
   ], 'tool_use'),
-  reply([text('Resisted one is in, and the check-in. The tap stays counted.')]),
+  reply([text(BATCH_REPLY)]),
   reply([
     text('Here you go.'),
     toolUse('toolu_walk_05', 'mark_mistake', { pouch_id: 'not-a-real-id' }),
@@ -271,6 +282,7 @@ const SCRIPT = [
   reply([text("Here's the 5:00 one."), toolUse('toolu_walk_11', 'add_late_pouch', { day: TODAY, time: '17:00', triggers: [], note: '' })], 'tool_use'),
   (body) => reply([text('5:00 is in. You said that one was a slip of the thumb — mark it?'), toolUse('toolu_walk_12', 'mark_mistake', { pouch_id: fivePmId(body) })], 'tool_use'),
   reply([text("That one didn't save — the 5:00 pouch is already gone.")]),
+  reply([text(UNDO_REPLY)]),
 ];
 
 /* --------------------------------------------- hand vs store.js, no browser */
@@ -301,7 +313,7 @@ const STEPS = [
   'open → AI coach → "Open Settings" → type the fake key → back to the coach (key never in localStorage)',
   `"${SAY_LATE}" → card "${LATE_SUMMARY}" (Confirm + Skip, 44px) · request has 8 tools, max_tokens 800, Now, today's ids`,
   'Confirm → reason + late pouch appended (ts 4:30 PM CDT, late, ctx null) → follow-up = only the tool_result → "4:30 is in."',
-  `"${SAY_BATCH.slice(0, 40)}…" → three cards + Confirm all → Skip the mistake → Confirm all → resisted + check-in appended`,
+  `"${SAY_BATCH.slice(0, 40)}…" → four cards → Skip 1:30 → "Confirm all (2)" saves resisted + check-in, the mistake waits → its own Confirm voids the tap`,
   `"${SAY_ODD}" → six proposals: a "can't do" card with no Confirm, four pending, the sixth never drawn → "${SAY_NEVERMIND}" skips the four`,
   `"${SAY_FIVE}" → Confirm the 5:00 PM card → the coach proposes marking it → Undo the 5:00 PM pouch → Confirm the mark → "Didn't save"`,
   'reload → events and the saved chat (actions + outcomes) are still there; ring 4 of 8',
@@ -377,7 +389,7 @@ async function connect(rec, page) {
   await page.getByRole('button', { name: 'AI coach', exact: true }).click();
   const sheet = coachLoc(page);
   await sheet.waitFor({ state: 'visible', timeout: 5000 });
-  rec.check('coach: header says "proposes, you confirm"', (await sheet.innerText()).includes('knows your plan & your log · proposes, you confirm'));
+  rec.check('coach: header says "proposes, you confirm"', (await sheet.innerText()).includes('knows your log · proposes, you confirm'));
   await sheet.getByRole('button', { name: 'Open Settings', exact: true }).click();
   const sub = page.getByRole('dialog', { name: 'Coach connection' });
   const up = await sub.waitFor({ state: 'visible', timeout: 5000 }).then(() => true, () => false);
@@ -484,37 +496,57 @@ async function walk(browser, base, rec) {
   rec.check(`${L} the reason targets it with [boredom]`, !!r1 && r1.target === p1?.id && same(r1.triggers, ['boredom']), JSON.stringify(r1));
   await rec.snap(page, 'saved-card');
 
-  // ── 2. three cards: Skip one, Confirm all ──
-  rec.section('three cards → Skip one → Confirm all');
-  const ok3 = await say(page, SAY_BATCH, 'Three cards: the accidental tap, the craving you beat, and the check-in.');
-  rec.check(`${L} three cards render`, ok3 && await card(sheet, MARK_SUMMARY).isVisible() && await card(sheet, RESIST_SUMMARY).isVisible() && await card(sheet, CHECKIN_SUMMARY).isVisible());
-  const all = sheet.getByRole('button', { name: 'Confirm all', exact: true });
-  rec.check(`${L} "Confirm all" sits above them`, await all.isVisible().catch(() => false));
-  await card(sheet, MARK_SUMMARY).getByRole('button', { name: `Skip: ${MARK_SUMMARY}`, exact: true }).click();
-  await page.waitForTimeout(300);
+  // ── 2. four cards: Skip one, Confirm all takes two, the mistake its own tap ──
+  rec.section('four cards → Skip one → Confirm all (2) → the mistake on its own');
+  const ok3 = await say(page, SAY_BATCH, BATCH_WORDS);
+  rec.check(`${L} four cards render`, ok3 && await card(sheet, MARK_SUMMARY).isVisible() && await card(sheet, RESIST_SUMMARY).isVisible()
+    && await card(sheet, CHECKIN_SUMMARY).isVisible() && await card(sheet, ONE_THIRTY_SUMMARY).isVisible());
+  const all = sheet.getByRole('button', { name: /^Confirm all \(\d+\)$/ });
+  const allLabel = async () => ((await all.innerText().catch(() => '')) || '').trim();
+  rec.check(`${L} "Confirm all (3)": the three non-mistake cards, never the mistake`, (await allLabel()) === 'Confirm all (3)', await allLabel());
+  // Below the last card of the reply, so the thumb passes every card first.
+  const allBox = await all.boundingBox();
+  const lastBox = await card(sheet, ONE_THIRTY_SUMMARY).boundingBox();
+  rec.check(`${L} Confirm all sits below the reply's last card`, !!allBox && !!lastBox && allBox.y >= lastBox.y + lastBox.height - 1, `${allBox?.y} vs ${lastBox?.y}+${lastBox?.height}`);
+  await card(sheet, ONE_THIRTY_SUMMARY).getByRole('button', { name: `Skip: ${ONE_THIRTY_SUMMARY}`, exact: true }).click();
+  await page.waitForTimeout(400);
   rec.check(`${L} the skipped card reads "Skipped" and offers nothing`,
-    (await card(sheet, MARK_SUMMARY).innerText()).includes('Skipped') && (await card(sheet, MARK_SUMMARY).getByRole('button').count()) === 0);
-  rec.check(`${L} two pending: "Confirm all" still there`, await all.isVisible().catch(() => false));
+    (await card(sheet, ONE_THIRTY_SUMMARY).innerText()).includes('Skipped') && (await card(sheet, ONE_THIRTY_SUMMARY).getByRole('button').count()) === 0);
+  rec.check(`${L} one mistake + two others pending: "Confirm all (2)"`, (await allLabel()) === 'Confirm all (2)', await allLabel());
+  rec.check(`${L} a faint line says "mistakes need their own tap"`, await sheet.getByText('mistakes need their own tap', { exact: true }).isVisible().catch(() => false));
   await all.scrollIntoViewIfNeeded();
   await page.waitForTimeout(400); // the sheet scrolls smoothly; let it land before the shot
   await rec.snap(page, 'confirm-all');
   await all.click();
-  const ok4 = await sheet.getByText('Resisted one is in, and the check-in. The tap stays counted.', { exact: true }).waitFor({ state: 'visible', timeout: 8000 }).then(() => true, () => false);
-  rec.check(`${L} the follow-up renders`, ok4);
-  rec.check(`${L} both confirmed cards say Saved`,
+  await page.waitForTimeout(600);
+  await clearOverlay(page, `${L} after Confirm all`, rec);
+  rec.check(`${L} Confirm all saved the two`,
     (await card(sheet, RESIST_SUMMARY).innerText()).includes('Saved') && (await card(sheet, CHECKIN_SUMMARY).innerText()).includes('Saved'));
-  rec.check(`${L} request 4 answers all three, in order: skipped, saved, saved`, same(lastUser(posted[3]?.body), { role: 'user', content: [
-    { type: 'tool_result', tool_use_id: 'toolu_walk_02', content: 'skipped by the user' },
+  const markConfirm = card(sheet, MARK_SUMMARY).getByRole('button', { name: `Confirm: ${MARK_SUMMARY}`, exact: true });
+  rec.check(`${L} …and left the mistake pending, with its own Confirm`, await markConfirm.isVisible().catch(() => false));
+  rec.check(`${L} no follow-up while the mistake waits (3 requests so far)`, posted.length === 3, `${posted.length}`);
+  const sMid = storedA2(await storedRoot(page));
+  checkAppendOnly(rec, `${L} [Confirm all]`, sMid, AFTER_BATCH.slice(0, 4));
+  rec.check(`${L} no void yet: Confirm all never marks a mistake`, !(sMid?.events ?? []).some((e) => e.type === 'void'));
+  await markConfirm.click();
+  const ok4 = await sheet.getByText(BATCH_REPLY, { exact: true }).waitFor({ state: 'visible', timeout: 8000 }).then(() => true, () => false);
+  rec.check(`${L} the follow-up renders`, ok4);
+  rec.check(`${L} the mistake card says Saved`, (await card(sheet, MARK_SUMMARY).innerText()).includes('Saved'));
+  rec.check(`${L} request 4 answers all four, in the reply's order: saved, saved, saved, skipped`, same(lastUser(posted[3]?.body), { role: 'user', content: [
+    { type: 'tool_result', tool_use_id: 'toolu_walk_02', content: 'saved' },
     { type: 'tool_result', tool_use_id: 'toolu_walk_03', content: 'saved' },
     { type: 'tool_result', tool_use_id: 'toolu_walk_04', content: 'saved' },
+    { type: 'tool_result', tool_use_id: 'toolu_walk_04b', content: 'skipped by the user' },
   ] }), JSON.stringify(lastUser(posted[3]?.body)));
   const s2 = storedA2(await storedRoot(page));
-  const added2 = checkAppendOnly(rec, `${L} [batch]`, s2, ['reason', 'pouch', 'resisted', 'checkin']);
+  const added2 = checkAppendOnly(rec, `${L} [batch]`, s2, AFTER_BATCH);
   rec.check(`${L} the resisted carries "stress"; the check-in 6.5h · 3/5 · workout, manual`,
     added2[2]?.trigger === 'stress' && added2[3]?.sleepHours === 6.5 && added2[3]?.sleepQuality === 3 && added2[3]?.workout === true && added2[3]?.source === 'manual',
     JSON.stringify(added2.slice(2)));
-  rec.check(`${L} no void was written: the skipped mistake stays a counted tap`, !(s2?.events ?? []).some((e) => e.type === 'void'));
-  await card(sheet, CHECKIN_SUMMARY).scrollIntoViewIfNeeded();
+  rec.check(`${L} the void names the ${fmtTime(TARGET)} tap, filed on its day; the pouch itself untouched`,
+    added2[4]?.target === TARGET.id && added2[4]?.day === TODAY && same(s2?.events?.find((e) => e.id === TARGET.id), TARGET), JSON.stringify(added2[4]));
+  rec.check(`${L} store.js on the stored attempt: today ${TODAY_COUNTS[2]}/${CAP} — the mistake no longer counts`, numbersOf(s2).today === TODAY_COUNTS[2], `${numbersOf(s2).today}`);
+  await card(sheet, ONE_THIRTY_SUMMARY).scrollIntoViewIfNeeded();
   await page.waitForTimeout(400);
   await rec.snap(page, 'saved-skipped');
 
@@ -530,11 +562,13 @@ async function walk(browser, base, rec) {
   for (const s of PENDING5) pendingNow.push(await card(sheet, s).getByRole('button', { name: `Confirm: ${s}`, exact: true }).isVisible().catch(() => false));
   rec.check(`${L} four cards pending, each with its Confirm: ${PENDING5.join(' / ')}`, pendingNow.every(Boolean), pendingNow.join(','));
   rec.check(`${L} the sixth proposal (3:00 PM) is never drawn: five cards, not six`,
-    (await sheet.getByRole('group', { name: /^Proposed/ }).count()) === 1 + 3 + 5 && !(await sheet.innerText()).includes('3:00 PM'),
+    (await sheet.getByRole('group', { name: /^Proposed/ }).count()) === 1 + 4 + 5 && !(await sheet.innerText()).includes('3:00 PM'),
     `${await sheet.getByRole('group', { name: /^Proposed/ }).count()} cards in the sheet`);
   const noteLine = (await card(sheet, REASON_SUMMARY).locator('[data-note]').innerText().catch(() => '')).trim();
+  const noteRow = (await card(sheet, REASON_SUMMARY).locator('[data-note]').locator('..').innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
   rec.check(`${L} the reason card quotes the note on its own line (data-note), apart from the facts`, noteLine === REASON_NOTE, noteLine);
-  rec.check(`${L} four pending: "Confirm all" is offered`, (await all.count()) === 1);
+  rec.check(`${L} the note line says whose words they are: "your note …"`, noteRow.startsWith('your note') && noteRow.includes(REASON_NOTE), noteRow);
+  rec.check(`${L} four pending, none a mistake: "Confirm all (4)" is offered`, (await all.count()) === 1 && (await allLabel()) === 'Confirm all (4)', await allLabel());
   rec.check(`${L} no follow-up was sent while cards are pending (5 requests so far)`, posted.length === 5, `${posted.length}`);
   await odd.scrollIntoViewIfNeeded();
   await page.waitForTimeout(400);
@@ -553,7 +587,7 @@ async function walk(browser, base, rec) {
     { type: 'tool_result', tool_use_id: 'toolu_walk_10', content: OVERFLOW_RESULT, is_error: true },
     text(SAY_NEVERMIND),
   ] }), JSON.stringify(lastUser(posted[5]?.body)));
-  checkAppendOnly(rec, `${L} [invalid + skip]`, storedA2(await storedRoot(page)), ['reason', 'pouch', 'resisted', 'checkin']);
+  checkAppendOnly(rec, `${L} [invalid + skip]`, storedA2(await storedRoot(page)), AFTER_BATCH);
 
   // ── 4. a card the validator allowed and the api refused ──
   rec.section('Confirm the 5:00 PM pouch → Undo it → Confirm "mark it" → Didn\'t save');
@@ -567,7 +601,7 @@ async function walk(browser, base, rec) {
   rec.check(`${L} request 8's user turn is ONLY the tool_result: saved`,
     same(lastUser(posted[7]?.body), { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_walk_11', content: 'saved' }] }), JSON.stringify(lastUser(posted[7]?.body)));
   const s5 = storedA2(await storedRoot(page));
-  const [p5] = checkAppendOnly(rec, `${L} [5:00 PM saved]`, s5, ['reason', 'pouch', 'resisted', 'checkin', 'pouch']).slice(4);
+  const [p5] = checkAppendOnly(rec, `${L} [5:00 PM saved]`, s5, [...AFTER_BATCH, 'pouch']).slice(5);
   rec.check(`${L} the 5:00 PM pouch: late, ts ${POUCH5.ts}, no reason event (no triggers, no note)`,
     !!p5 && p5.late === true && p5.ts === POUCH5.ts && p5.day === TODAY && p5.tzOffsetMin === -300, JSON.stringify(p5));
   const undo5 = card(sheet, FIVE_SUMMARY).getByRole('button', { name: `Undo: ${FIVE_SUMMARY}`, exact: true });
@@ -576,7 +610,7 @@ async function walk(browser, base, rec) {
   if (canUndo) await undo5.click();
   await page.waitForTimeout(400);
   rec.check(`${L} the 5:00 PM card reads "Undone"`, (await card(sheet, FIVE_SUMMARY).innerText().catch(() => '')).includes('Undone'));
-  checkAppendOnly(rec, `${L} [5:00 PM undone]`, storedA2(await storedRoot(page)), ['reason', 'pouch', 'resisted', 'checkin']);
+  checkAppendOnly(rec, `${L} [5:00 PM undone]`, storedA2(await storedRoot(page)), AFTER_BATCH);
   await mark5.getByRole('button', { name: `Confirm: ${MARK5_SUMMARY}`, exact: true }).click();
   const ok9 = await sheet.getByText("That one didn't save — the 5:00 pouch is already gone.", { exact: true }).waitFor({ state: 'visible', timeout: 8000 }).then(() => true, () => false);
   rec.check(`${L} the coach's honest line renders`, ok9);
@@ -587,8 +621,19 @@ async function walk(browser, base, rec) {
     same(lastUser(posted[8]?.body), { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_walk_12', content: `refused: ${REFUSED}`, is_error: true }] }),
     JSON.stringify(lastUser(posted[8]?.body)));
   const s6 = storedA2(await storedRoot(page));
-  checkAppendOnly(rec, `${L} [refused]`, s6, ['reason', 'pouch', 'resisted', 'checkin']);
-  rec.check(`${L} no void was written by the refused card`, !(s6?.events ?? []).some((e) => e.type === 'void'));
+  checkAppendOnly(rec, `${L} [refused]`, s6, AFTER_BATCH);
+  rec.check(`${L} no second void was written by the refused card`, (s6?.events ?? []).filter((e) => e.type === 'void').length === 1);
+
+  // The Undo landed after the coach was told "saved" (request 8). Once the
+  // mistake card's batch was answered, the app sets the record straight in
+  // one more turn, in words — a tool_result may only follow its tool_use.
+  const ok10 = await sheet.getByText(UNDO_REPLY, { exact: true }).waitFor({ state: 'visible', timeout: 8000 }).then(() => true, () => false);
+  rec.check(`${L} the undo is reported in one more turn, and the coach's reply renders`, ok10 && posted.length === 10, `${posted.length} requests`);
+  const undoTurn = lastUser(posted[9]?.body);
+  rec.check(`${L} request 10's last user turn is plain text "Undone: ${FIVE_SUMMARY}", no tool_result`,
+    typeof undoTurn?.content === 'string' && undoTurn.content.startsWith('Undone:') && undoTurn.content === `Undone: ${FIVE_SUMMARY}`, JSON.stringify(undoTurn));
+  rec.check(`${L} the undo report waited for the mistake card's results: request 9 was the refusal`,
+    Array.isArray(lastUser(posted[8]?.body)?.content) && lastUser(posted[8]?.body).content.every((b) => b.type === 'tool_result'));
 
   // ── 5. reload: what was saved, saved ──
   rec.section('reload → events and the saved chat');
@@ -606,14 +651,14 @@ async function walk(browser, base, rec) {
     got.today === TODAY_COUNTS[2] && got.resisted === RESISTED[2] && got.checkin?.sleepHours === 6.5, JSON.stringify({ today: got.today, resisted: got.resisted }));
   rec.check(`${L} Today ring reads ${TODAY_COUNTS[2]} of ${CAP}`, (await ringCount(page)).used === TODAY_COUNTS[2]);
   const msgs = s3?.chats?.[0]?.messages ?? [];
-  rec.check(`${L} one saved chat of 18 messages, user/coach in turn`,
-    s3?.chats?.length === 1 && msgs.length === 18 && msgs.every((m, i) => m.role === (i % 2 ? 'assistant' : 'user')), `${s3?.chats?.length} chats, ${msgs.length} messages`);
+  rec.check(`${L} one saved chat of 20 messages, user/coach in turn`,
+    s3?.chats?.length === 1 && msgs.length === 20 && msgs.every((m, i) => m.role === (i % 2 ? 'assistant' : 'user')), `${s3?.chats?.length} chats, ${msgs.length} messages`);
   rec.check(`${L} the first coach message records its proposal`, same(msgs[1]?.actions, [{ name: 'add_late_pouch', summary: LATE_SUMMARY }]), JSON.stringify(msgs[1]?.actions));
   rec.check(`${L} the follow-up reads "Confirmed: …" and records "saved"`,
     msgs[2]?.text === `Confirmed: ${LATE_SUMMARY}` && same(msgs[2]?.outcomes, [{ name: 'add_late_pouch', summary: LATE_SUMMARY, outcome: 'saved' }]) && msgs[3]?.text === '4:30 is in.',
     JSON.stringify(msgs[2]));
-  rec.check(`${L} the batch: three proposed; skipped, saved, saved`,
-    msgs[5]?.actions?.length === 3 && same(msgs[6]?.outcomes?.map((o) => o.outcome), ['skipped', 'saved', 'saved']), JSON.stringify(msgs[6]?.outcomes));
+  rec.check(`${L} the batch: four proposed; saved, saved, saved, skipped`,
+    msgs[5]?.actions?.length === 4 && same(msgs[6]?.outcomes?.map((o) => o.outcome), ['saved', 'saved', 'saved', 'skipped']), JSON.stringify(msgs[6]?.outcomes));
   rec.check(`${L} the six-proposal reply records the five cards it drew`, msgs[9]?.actions?.length === 5, JSON.stringify(msgs[9]?.actions));
   rec.check(`${L} the typed turn records "invalid" (with its reason) and four "skipped"`,
     msgs[10]?.text === SAY_NEVERMIND && same(msgs[10]?.outcomes?.map((o) => o.outcome), ['invalid', 'skipped', 'skipped', 'skipped', 'skipped'])
@@ -623,6 +668,9 @@ async function walk(browser, base, rec) {
   rec.check(`${L} the refusal is saved in words: "Didn't save: …" with its reason`,
     msgs[16]?.text === `Didn't save: ${MARK5_SUMMARY} (${REFUSED})` && msgs[16]?.outcomes?.[0]?.outcome === 'refused' && msgs[16]?.outcomes?.[0]?.reason === REFUSED,
     JSON.stringify(msgs[16]));
+  rec.check(`${L} the late undo is saved: "Undone: …" with an \`undone\` outcome`,
+    msgs[18]?.text === `Undone: ${FIVE_SUMMARY}` && same(msgs[18]?.outcomes, [{ name: 'add_late_pouch', summary: FIVE_SUMMARY, outcome: 'undone' }]) && msgs[19]?.text === UNDO_REPLY,
+    JSON.stringify(msgs[18]));
   rec.check(`${L} the fake key is still nowhere in localStorage`, !((await e2e.readStorage(page, 'pouch-down-v2')) ?? '').includes(FAKE_KEY));
 
   // ── 6. a past attempt can't reach the coach ──
@@ -639,12 +687,12 @@ async function walk(browser, base, rec) {
   await rec.snap(page, 'viewer-no-coach');
   await page.getByRole('button', { name: 'Exit read-only view', exact: true }).click();
   await page.waitForTimeout(400);
-  rec.check(`${L} nothing was sent from the viewer`, posted.length === requests && requests === 9, `${posted.length} requests`);
+  rec.check(`${L} nothing was sent from the viewer`, posted.length === requests && requests === 10, `${posted.length} requests`);
 
   // The Worker's own gate, on the exact bytes the browser sent: the day the
   // proxy is switched on, none of these conversations would be turned away.
   const refusedBy = posted.map((p, k) => [k + 1, checkBody(p.raw)]).filter(([, r]) => !r.ok);
-  rec.check(`${L} all ${posted.length} request bodies pass the Worker's checkBody`, posted.length === 9 && refusedBy.length === 0,
+  rec.check(`${L} all ${posted.length} request bodies pass the Worker's checkBody`, posted.length === 10 && refusedBy.length === 0,
     refusedBy.map(([k, r]) => `#${k}: ${r.message}`).join('; '));
   rec.check(`${L} every request (active attempt): max_tokens 800 and the eight tools, sent with the fake key`,
     posted.every((p) => p.body?.max_tokens === 800 && same(p.body?.tools?.map((t) => t.name), TOOL_NAMES) && p.headers['x-api-key'] === FAKE_KEY));
