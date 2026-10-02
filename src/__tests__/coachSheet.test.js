@@ -60,8 +60,15 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date(NOW));
   ids = 0;
-  const write = vi.fn(() => `e${++ids}`);
-  api = { logPouch: write, logResisted: write, appendChatTurn: vi.fn(() => 'chat1'), undoEvent: vi.fn() };
+  // Writes land in the state the sheet reads, as the provider's would, so a
+  // saved card's Undo is offered while its event is the newest.
+  const setEvents = (fn) => { ctx.value = { ...ctx.value, state: { ...ctx.value.state, events: fn(ctx.value.state.events) } }; };
+  const write = vi.fn(() => {
+    const id = `e${++ids}`;
+    setEvents((evs) => [...evs, { id, type: 'pouch', ts: new Date().toISOString(), tzOffsetMin: -300, day: '2026-10-01', trigger: null }]);
+    return id;
+  });
+  api = { logPouch: write, logResisted: write, appendChatTurn: vi.fn(() => 'chat1'), undoEvent: vi.fn((id) => setEvents((evs) => (evs.at(-1)?.id === id ? evs.slice(0, -1) : evs))) };
   ctx.value = { state, api, readOnly: false, tick: 0 };
 });
 afterEach(() => vi.useRealTimers());
@@ -218,5 +225,74 @@ describe('CoachSheet — a typed turn never races a confirm', () => {
     await flush();
     expect(askCoach).toHaveBeenCalledTimes(5); // the typed turn only
     expect(walk(render(), (n) => n.type === 'input')[0].props.value).toBe('and now?');
+  });
+});
+
+describe('CoachSheet — an Undo the coach was told about as "saved"', () => {
+  const UNDONE = [{ name: 'log_pouch_now', summary: 'Log a pouch now', outcome: 'undone' }];
+  const settle = async () => { render(); render(); await flush(); return render(); };
+
+  it('an Undo after the follow-up went out sends one more turn, in words, and saves the outcome', async () => {
+    const [card] = cards(await opened([pouchNow('toolu_1')]));
+    askCoach.mockResolvedValueOnce({ text: 'It is in.', proposals: [], stopReason: 'end_turn' });
+    card.onConfirm();
+    const [saved] = cards(await settle());
+    expect(saved.card.status).toBe('saved');
+    expect(saved.undoable).toBe(true);
+    expect(askCoach).toHaveBeenCalledTimes(2);
+    askCoach.mockResolvedValueOnce({ text: 'Taken back.', proposals: [], stopReason: 'end_turn' });
+    saved.onUndo();
+    const tree = await settle();
+    expect(api.undoEvent).toHaveBeenCalledWith('e1');
+    expect(cards(tree)[0].card.status).toBe('undone');
+    expect(askCoach).toHaveBeenCalledTimes(3);
+    expect(askCoach.mock.calls[2][1].at(-1)).toEqual({ role: 'user', content: 'Undone: Log a pouch now' });
+    expect(api.appendChatTurn).toHaveBeenLastCalledWith('chat1', { user: 'Undone: Log a pouch now', assistant: 'Taken back.', outcomes: UNDONE, actions: [] });
+    await settle();
+    expect(askCoach).toHaveBeenCalledTimes(3); // told once, never again
+  });
+
+  it('an Undo before the batch is answered rides in its tool_result, with no extra turn', async () => {
+    const [first, second] = cards(await opened([pouchNow('toolu_1'), pouchNow('toolu_2')]));
+    askCoach.mockResolvedValue({ text: 'Okay.', proposals: [], stopReason: 'end_turn' });
+    first.onConfirm();
+    const [saved] = cards(await settle());
+    expect(askCoach).toHaveBeenCalledTimes(1); // the second card is still pending
+    saved.onUndo();
+    render();
+    second.onSkip();
+    await settle();
+    await settle();
+    expect(askCoach).toHaveBeenCalledTimes(2);
+    expect(askCoach.mock.calls[1][1].at(-1).content).toEqual([
+      { type: 'tool_result', tool_use_id: 'toolu_1', content: 'saved, then undone by the user' },
+      { type: 'tool_result', tool_use_id: 'toolu_2', content: 'skipped by the user' },
+    ]);
+  });
+
+  it('at the follow-up cap the Undo report waits for the user, then goes out after their turn', async () => {
+    let [card] = cards(await opened([pouchNow('toolu_0')]));
+    // Three automatic follow-ups; the third answers with words only.
+    for (let k = 1; k <= 3; k++) {
+      askCoach.mockResolvedValueOnce({ text: `Round ${k}.`, proposals: k < 3 ? [pouchNow(`toolu_${k}`)] : [], stopReason: 'end_turn' });
+      card.onConfirm();
+      const tree = await settle();
+      [card] = cards(tree).filter((c) => c.card.status === 'pending');
+    }
+    expect(askCoach).toHaveBeenCalledTimes(4);
+    const newest = cards(render()).find((c) => c.undoable);
+    expect(newest.card.toolUseId).toBe('toolu_2');
+    newest.onUndo();
+    await settle();
+    expect(askCoach).toHaveBeenCalledTimes(4); // the cap holds it
+    askCoach.mockResolvedValueOnce({ text: 'Sure.', proposals: [], stopReason: 'end_turn' });
+    askCoach.mockResolvedValueOnce({ text: 'Noted.', proposals: [], stopReason: 'end_turn' });
+    walk(render(), (n) => n.type === 'input')[0].props.onChange({ target: { value: 'hi' } });
+    walk(render(), (n) => n.type === 'form')[0].props.onSubmit({ preventDefault() {} });
+    await flush();
+    await settle();
+    expect(askCoach).toHaveBeenCalledTimes(6);
+    expect(askCoach.mock.calls[4][1].at(-1)).toEqual({ role: 'user', content: 'hi' });
+    expect(askCoach.mock.calls[5][1].at(-1)).toEqual({ role: 'user', content: 'Undone: Log a pouch now' });
   });
 });

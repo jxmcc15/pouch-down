@@ -39,6 +39,13 @@ const owes = (m) => !!m && (m.cards?.length ?? 0) > 0 && !m.answered;
 const moveCard = (messages, toolUseId, from, patch) => messages.map((m) => (m.cards?.some((c) => c.toolUseId === toolUseId && c.status === from)
   ? { ...m, cards: m.cards.map((c) => (c.toolUseId === toolUseId ? { ...c, ...patch } : c)) }
   : m));
+// Undos the coach hasn't heard about: a card undone after its batch was
+// answered (it was told "saved"). `told` on a message lists the cards whose
+// undo already went out — in the batch's own results, or in a later turn.
+const undoneIds = (m) => (m.cards ?? []).filter((c) => c.status === 'undone').map((c) => c.toolUseId);
+const unsaidUndos = (messages) => messages.flatMap((m) => (m.answered ? (m.cards ?? []).filter((c) => c.status === 'undone' && !(m.told ?? []).includes(c.toolUseId)) : []));
+const markTold = (messages, ids) => messages.map((m) => (m.cards?.some((c) => ids.includes(c.toolUseId)) ? { ...m, told: [...new Set([...(m.told ?? []), ...ids])] } : m));
+const unmarkTold = (messages, ids) => messages.map((m) => (m.told?.some((id) => ids.includes(id)) ? { ...m, told: m.told.filter((id) => !ids.includes(id)) } : m));
 // What a confirmed card becomes.
 const afterApply = (r) => (r.outcome === 'saved' ? { status: 'saved', eventId: r.eventId } : { status: 'refused', reason: r.reason });
 const pendingCard = (messages, toolUseId) => {
@@ -79,6 +86,7 @@ export default function CoachSheet({ onClose, openSettings }) {
   const [error, setError] = useState(null);
   const [chain, setChain] = useState(0); // automatic follow-ups since the user last typed
   const [queue, setQueue] = useState([]); // card ids confirmed and not yet written, in order
+  const [undoHeld, setUndoHeld] = useState(false); // an undo report failed: wait for the user's words
   const scrollRef = useRef(null);
   // One saved chat per opening of the sheet: null until the first reply lands,
   // then the id appendChatTurn handed back, so later turns join the same chat.
@@ -151,7 +159,7 @@ export default function CoachSheet({ onClose, openSettings }) {
     if (!owes(m) || m.held || m.cards.some((c) => c.status === 'pending')) return;
     const outcomes = outcomesOf(m.cards);
     const auto = { role: 'user', text: renderOutcomes(outcomes), results: resultsFor(m), outcomes, auto: true };
-    const next = [...messages.map((x, k) => (k === i ? { ...x, answered: true } : x)), auto];
+    const next = [...messages.map((x, k) => (k === i ? { ...x, answered: true, told: undoneIds(x) } : x)), auto];
     setMessages(next);
     setChain((c) => c + 1);
     setBusy(true);
@@ -173,6 +181,38 @@ export default function CoachSheet({ onClose, openSettings }) {
       .finally(() => setBusy(false));
   }, [messages, busy, queue, chain, state, api, readOnly]);
 
+  // An Undo that lands after its batch was answered: the coach was told
+  // "saved", and the saved chat says so too. One more automatic turn, in
+  // words (a tool_result may only follow its tool_use), sets the record
+  // straight — several undos fold into one. It never cuts in front of a batch
+  // still owed its results, counts toward MAX_CHAIN like any follow-up, and
+  // after a failure waits for the user's next words.
+  useEffect(() => {
+    if (busy || queue.length || chain >= MAX_CHAIN || undoHeld) return;
+    const late = unsaidUndos(messages);
+    if (!late.length || owes(messages[latestCoach(messages)])) return;
+    const ids = late.map((c) => c.toolUseId);
+    const outcomes = outcomesOf(late);
+    const auto = { role: 'user', text: renderOutcomes(outcomes), outcomes, auto: true };
+    const next = [...markTold(messages, ids), auto];
+    setMessages(next);
+    setChain((c) => c + 1);
+    setBusy(true);
+    setError(null);
+    askCoach(state, toTurns(next), getKey())
+      .then((reply) => {
+        const coach = coachMessage(state, readOnly, reply);
+        setMessages((cur) => [...cur, coach]);
+        saveTurn(api, chatIdRef, { user: auto.text, assistant: coach.text, outcomes, actions: actionsOf(coach.cards) });
+      }, () => {
+        // The undo itself landed; only the coach's answer didn't.
+        setError("Undone — the coach couldn't answer just now.");
+        setMessages((cur) => unmarkTold(cur.filter((x) => x !== auto), ids));
+        setUndoHeld(true);
+      })
+      .finally(() => setBusy(false));
+  }, [messages, busy, queue, chain, undoHeld, state, api, readOnly]);
+
   const send = async (text) => {
     const words = text.trim();
     // Not while a confirmed card is still being written: its skip would land
@@ -188,7 +228,7 @@ export default function CoachSheet({ onClose, openSettings }) {
     let passed = [];
     if (owes(m)) {
       passed = m.cards.filter((c) => c.status === 'pending').map((c) => c.toolUseId);
-      const resolved = { ...m, cards: m.cards.map((c) => (c.status === 'pending' ? { ...c, status: 'skipped' } : c)), answered: true };
+      const resolved = { ...m, cards: m.cards.map((c) => (c.status === 'pending' ? { ...c, status: 'skipped' } : c)), answered: true, told: undoneIds(m) };
       base = messages.map((x, k) => (k === i ? resolved : x));
       answer = { results: resultsFor(resolved), outcomes: outcomesOf(resolved.cards) };
     }
@@ -198,7 +238,9 @@ export default function CoachSheet({ onClose, openSettings }) {
     setInput('');
     setBusy(true);
     const chainBefore = chain;
+    const undoHeldBefore = undoHeld;
     setChain(0);
+    setUndoHeld(false);
     try {
       const coach = coachMessage(state, readOnly, await askCoach(state, toTurns(next), getKey()));
       setMessages((cur) => [...cur, coach]);
@@ -210,9 +252,10 @@ export default function CoachSheet({ onClose, openSettings }) {
       setMessages((cur) => cur.filter((x) => x !== mine).map((x, k) => (k === i && owes(m)
         ? { ...x, answered: false, cards: x.cards.map((c) => (passed.includes(c.toolUseId) && c.status === 'skipped' ? { ...c, status: 'pending' } : c)) }
         : x)));
-      // The chain count comes back too: a failed turn at the cap must not
-      // start a follow-up nobody asked for.
+      // The chain count and a held undo report come back too: a failed turn
+      // must not start a follow-up nobody asked for.
       setChain(chainBefore);
+      setUndoHeld(undoHeldBefore);
       setInput(text);
     } finally {
       setBusy(false);
