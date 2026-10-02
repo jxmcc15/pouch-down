@@ -37,6 +37,22 @@ describe('TOOLS — the eight verbs and nothing else', () => {
   });
 });
 
+describe('TOOLS — the bounds the model is told', () => {
+  const props = (name) => TOOLS.find((t) => t.name === name).input_schema.properties;
+  it.each([
+    ['add_late_pouch', 'note', { type: 'string', maxLength: 140 }],
+    ['add_late_pouch', 'triggers', { type: 'array', maxItems: 6, uniqueItems: true }],
+    ['add_reason', 'note', { type: 'string', maxLength: 140 }],
+    ['add_reason', 'triggers', { type: 'array', maxItems: 6, uniqueItems: true }],
+    ['fill_missed_day', 'count', { type: 'integer', minimum: 0, maximum: 60 }],
+    ['correct_day_total', 'count', { type: 'integer', minimum: 0, maximum: 60 }],
+    ['log_checkin', 'sleep_hours', { type: 'number', minimum: 0, maximum: 16 }],
+    ['log_checkin', 'sleep_quality', { type: 'integer', minimum: 1, maximum: 5 }],
+  ])('%s.%s', (name, field, bounds) => {
+    expect(props(name)[field]).toMatchObject(bounds);
+  });
+});
+
 describe('livePouchesForPrompt', () => {
   it('lists live pouches of the last 7 app days, newest first, with wall-clock HH:MM', () => {
     const old = ev('pouch', '2026-09-24', { ts: '2026-09-24T14:00:00.000Z' }); // 8 app days back
@@ -64,6 +80,10 @@ describe('livePouchesForPrompt', () => {
   it('a 1:30 AM pouch belongs to the app day before, and shows its own wall clock', () => {
     const late = ev('pouch', '2026-09-30', { ts: '2026-10-01T06:30:00.000Z' }); // 1:30 AM CDT on Oct 1 = app day Sep 30
     expect(livePouchesForPrompt(attempt([late]), NOW)).toEqual([{ id: late.id, day: '2026-09-30', time: '01:30', trigger: null }]);
+  });
+  it('shows the wall clock where the pouch was logged, not the reader\'s zone', () => {
+    const east = ev('pouch', '2026-10-01', { ts: '2026-10-01T13:30:00.000Z', tzOffsetMin: -240 }); // 9:30 AM EDT, read on a Chicago phone
+    expect(livePouchesForPrompt(attempt([east]), NOW)).toEqual([{ id: east.id, day: '2026-10-01', time: '09:30', trigger: null }]);
   });
   it('caps the list at 60 rows', () => {
     const many = Array.from({ length: 70 }, (_, i) => ev('pouch', '2026-10-01', { ts: new Date(Date.parse('2026-10-01T10:00:00.000Z') + i * 60000).toISOString() }));
