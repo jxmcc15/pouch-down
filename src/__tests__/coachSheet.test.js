@@ -84,6 +84,8 @@ const walk = (node, hit, out = []) => {
 };
 const cards = (tree) => walk(tree, (n) => n.type === ActionCard).map((n) => n.props);
 const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
+const confirmAllButton = (tree) => walk(tree, (n) => typeof n.props.children?.[1] === 'string' && n.props.children[1].startsWith(' Confirm all'))[0];
+const texts = (tree) => walk(tree, (n) => typeof n.props.children === 'string').map((n) => n.props.children);
 const pouchNow = (id) => ({ id, name: 'log_pouch_now', input: { trigger: null } });
 
 // Opens the sheet and sends a quick chip; the coach answers with `proposals`.
@@ -121,7 +123,7 @@ describe('CoachSheet — a tap applies a card once', () => {
   it('Confirm all goes in order and stops at the first refusal; the rest stay pending', async () => {
     api.logPouch = vi.fn().mockReturnValueOnce('e1').mockReturnValueOnce(null);
     const shown = cards(await opened([pouchNow('toolu_1'), pouchNow('toolu_2'), pouchNow('toolu_3')]));
-    const all = walk(render(), (n) => n.props['aria-label'] === undefined && n.props.children?.[1] === ' Confirm all')[0];
+    const all = confirmAllButton(render());
     expect(shown).toHaveLength(3);
     all.props.onClick();
     for (let i = 0; i < 4; i++) render();
@@ -294,5 +296,39 @@ describe('CoachSheet — an Undo the coach was told about as "saved"', () => {
     expect(askCoach).toHaveBeenCalledTimes(6);
     expect(askCoach.mock.calls[4][1].at(-1)).toEqual({ role: 'user', content: 'hi' });
     expect(askCoach.mock.calls[5][1].at(-1)).toEqual({ role: 'user', content: 'Undone: Log a pouch now' });
+  });
+});
+
+describe('CoachSheet — Confirm all never marks a mistake', () => {
+  // A pouch logged at 2:14 PM today, the one the coach may name.
+  const P = { id: 'p1', type: 'pouch', ts: '2026-10-01T19:14:00.000Z', tzOffsetMin: -300, day: '2026-10-01', trigger: null };
+  const mistake = (id) => ({ id, name: 'mark_mistake', input: { pouch_id: 'p1' } });
+  beforeEach(() => {
+    ctx.value = { ...ctx.value, state: { ...state, events: [P] } };
+    api.voidPouch = vi.fn(() => 'v1');
+  });
+
+  it('applies the other cards in order, counts only them, and leaves the mistake pending', async () => {
+    await opened([pouchNow('toolu_1'), mistake('toolu_2'), pouchNow('toolu_3')]);
+    const tree = render();
+    const all = confirmAllButton(tree);
+    expect(all.props.children[1]).toBe(' Confirm all (2)');
+    expect(texts(tree)).toContain('mistakes need their own tap');
+    all.props.onClick();
+    for (let i = 0; i < 4; i++) render();
+    expect(cards(render()).map((c) => c.card.status)).toEqual(['saved', 'pending', 'saved']);
+    expect(api.logPouch).toHaveBeenCalledTimes(2);
+    expect(api.voidPouch).not.toHaveBeenCalled();
+    expect(askCoach).toHaveBeenCalledTimes(1); // the mistake card still holds the follow-up
+  });
+
+  it('a mistake card confirmed on its own still saves; with one other card there is no Confirm all', async () => {
+    askCoach.mockResolvedValue({ text: 'Done.', proposals: [], stopReason: 'end_turn' });
+    const [, mark] = cards(await opened([pouchNow('toolu_1'), mistake('toolu_2')]));
+    expect(confirmAllButton(render())).toBeUndefined(); // one card left that it could take: no row
+    mark.onConfirm();
+    render();
+    expect(api.voidPouch).toHaveBeenCalledWith('p1');
+    expect(cards(render())[1].card.status).toBe('saved');
   });
 });

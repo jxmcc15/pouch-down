@@ -46,6 +46,9 @@ const undoneIds = (m) => (m.cards ?? []).filter((c) => c.status === 'undone').ma
 const unsaidUndos = (messages) => messages.flatMap((m) => (m.answered ? (m.cards ?? []).filter((c) => c.status === 'undone' && !(m.told ?? []).includes(c.toolUseId)) : []));
 const markTold = (messages, ids) => messages.map((m) => (m.cards?.some((c) => ids.includes(c.toolUseId)) ? { ...m, told: [...new Set([...(m.told ?? []), ...ids])] } : m));
 const unmarkTold = (messages, ids) => messages.map((m) => (m.told?.some((id) => ids.includes(id)) ? { ...m, told: m.told.filter((id) => !ids.includes(id)) } : m));
+// Confirm all never takes a mistake card: marking a pouch is asked one pouch
+// at a time, as Fix this day asks, so one tap can't void a whole day.
+const batchable = (c) => c.status === 'pending' && c.name !== 'mark_mistake';
 // What a confirmed card becomes.
 const afterApply = (r) => (r.outcome === 'saved' ? { status: 'saved', eventId: r.eventId } : { status: 'refused', reason: r.reason });
 const pendingCard = (messages, toolUseId) => {
@@ -263,7 +266,9 @@ export default function CoachSheet({ onClose, openSettings }) {
   };
 
   const newest = latestCoach(messages);
-  const pendingCount = messages[newest]?.cards?.filter((c) => c.status === 'pending').length ?? 0;
+  const newestCards = messages[newest]?.cards ?? [];
+  const batch = newestCards.filter(batchable).map((c) => c.toolUseId);
+  const mistakeWaits = newestCards.some((c) => c.status === 'pending' && !batchable(c));
 
   return (
     <>
@@ -288,7 +293,7 @@ export default function CoachSheet({ onClose, openSettings }) {
         <div className="row" style={{ gap: 8, marginBottom: 12 }}>
           <Sparkles size={18} color="var(--accent-bright)" />
           <h3 style={{ fontSize: 16 }}>Coach</h3>
-          <span className="small faint">knows your plan & your log · proposes, you confirm</span>
+          <span className="small faint">knows your log · proposes, you confirm</span>
         </div>
 
         {!canRun ? (
@@ -348,20 +353,6 @@ export default function CoachSheet({ onClose, openSettings }) {
                   )}
                   {!readOnly && m.cards?.length > 0 && (
                     <AnimatePresence initial={false}>
-                      {i === newest && pendingCount > 1 && (
-                        <motion.div key="all" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ type: 'spring', damping: 26, stiffness: 240 }} style={{ overflow: 'hidden' }}>
-                          <motion.button
-                            type="button"
-                            className="btn btn-ghost"
-                            disabled={busy || queue.length > 0}
-                            whileTap={{ scale: 0.98 }}
-                            onClick={() => confirmAll(m.cards.filter((c) => c.status === 'pending').map((c) => c.toolUseId))}
-                            style={{ width: '100%', minHeight: 44, marginTop: 8, color: 'var(--accent-bright)' }}
-                          >
-                            <CheckCheck size={17} aria-hidden="true" /> Confirm all
-                          </motion.button>
-                        </motion.div>
-                      )}
                       {m.cards.map((c) => (
                         <ActionCard
                           key={c.toolUseId}
@@ -373,6 +364,25 @@ export default function CoachSheet({ onClose, openSettings }) {
                           onUndo={() => undo(c)}
                         />
                       ))}
+                      {/* Below the last card, so the thumb passes every card on its
+                          way here, and counted, so it says what it will do. */}
+                      {i === newest && batch.length > 1 && (
+                        <motion.div key="all" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ type: 'spring', damping: 26, stiffness: 240 }} style={{ overflow: 'hidden' }}>
+                          <motion.button
+                            type="button"
+                            className="btn btn-ghost"
+                            disabled={busy || queue.length > 0}
+                            whileTap={{ scale: 0.98 }}
+                            onClick={() => confirmAll(batch)}
+                            style={{ width: '100%', minHeight: 44, marginTop: 8, color: 'var(--accent-bright)' }}
+                          >
+                            <CheckCheck size={17} aria-hidden="true" />{` Confirm all (${batch.length})`}
+                          </motion.button>
+                          {mistakeWaits && (
+                            <p className="small faint" style={{ textAlign: 'center', marginTop: 4 }}>mistakes need their own tap</p>
+                          )}
+                        </motion.div>
+                      )}
                     </AnimatePresence>
                   )}
                 </div>
