@@ -338,6 +338,7 @@ describe('the coach request carries tools; the reply splits into words and propo
     const ids = state.events.map((e) => e.id);
     const system = await systemFor(state);
     expect(system).toContain('Now: Mon 2026-09-21, 12:00 on the user\'s clock.');
+    expect(system).toContain('- Today is 2026-09-21,'); // one clock: Live data and Now agree
     expect(system).toContain('These ids are the only ones you may name in a tool:');
     expect(system).toContain(`- ${ids[0]} · 2026-09-21 · 09:00 · no trigger`);
     expect(system).toContain(`- ${ids[1]} · 2026-09-20 · 14:30 · no trigger`);

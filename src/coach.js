@@ -49,8 +49,8 @@ function liveData(state) {
 
 // The pouches the coach may name, one per line, ids exactly as the app will
 // check them. Times are the wall clock where each pouch was logged.
-function pouchList(state, now) {
-  const rows = livePouchesForPrompt(state, now).map((p) => `- ${p.id} · ${p.day} · ${p.time ?? 'time unknown'} · ${p.trigger ?? 'no trigger'}`);
+function pouchList(state) {
+  const rows = livePouchesForPrompt(state).map((p) => `- ${p.id} · ${p.day} · ${p.time ?? 'time unknown'} · ${p.trigger ?? 'no trigger'}`);
   return rows.length ? rows.join('\n') : '- (none in the last 7 days)';
 }
 
@@ -60,14 +60,16 @@ const READ_ONLY_RULES = "What you can and can't do: you can talk about the plan 
 
 // The active attempt: the coach proposes with its tools, the user confirms
 // each card, and the app — never the model — decides what a card may write.
-function toolRules(state, now) {
-  const { day, time, weekday } = promptClock(now);
+// Now and the pouch list read the same clock liveData does, so "Today is …"
+// and "Now: …" can never disagree within one prompt.
+function toolRules(state) {
+  const { day, time, weekday } = promptClock();
   return `What you can and can't do: you can propose these actions; the user confirms each on a card in the app, and nothing is saved until they do. You can't change settings, the plan, or the attempt — for those, or anything the tools don't cover, point to the path in the app: tap the day on Calendar, or the pencil beside it in Stats → Fix this day. This conversation is saved with the user's data and reviewed later, so for anything the app can't do yet, ask for the specifics a reviewer needs — which day, what count, which pouch — and confirm you've noted it.
 
 Now: ${weekday} ${day}, ${time} on the user's clock. Days run 4 AM to 4 AM, so before 4 AM it is still the app day above.
 
 Pouches logged in the last 7 days, newest first (id · day · time · triggers). These ids are the only ones you may name in a tool:
-${pouchList(state, now)}
+${pouchList(state)}
 
 Tool rules:
 - Propose only what the user clearly asked for or clearly stated as a fact. A guess is a question, not a card.
@@ -80,7 +82,7 @@ Tool rules:
 
 // "You" is the coach; the person is always "the user". Nothing here names
 // anyone — the plan, dates, and numbers all come from the attempt.
-function systemPrompt(state, now) {
+function systemPrompt(state) {
   const plan = state.plan;
   const kept = moneyStats(state).kept;
   return `You are the in-app coach for "Pouch Down", a nicotine pouch taper app. The user ${state.status === 'archived' ? 'was' : 'is'} on a ${plan.totalDays}-day taper, ${plan.startDate} to quit day ${plan.quitDate}.
@@ -98,7 +100,7 @@ In the log, "early" means before the pacing slot unlocked and "over" means beyon
 
 Coaching style: direct, warm, zero shame, zero toxic positivity. Cravings are waves; delay beats willpower. Reference the user's actual numbers when relevant. If the user went over, normalize it fast and refocus on the next slot, not the miss. 2-4 sentences per reply — this is a phone chat, not an essay. Never give medical advice; suggest a doctor for anything clinical.
 
-${state.status === 'archived' ? READ_ONLY_RULES : toolRules(state, now)}`;
+${state.status === 'archived' ? READ_ONLY_RULES : toolRules(state)}`;
 }
 
 // Thrown error names the sheet maps to copy: 'no-key' (no proxy and no key),
@@ -111,7 +113,7 @@ ${state.status === 'archived' ? READ_ONLY_RULES : toolRules(state, now)}`;
 // toTurns). → { text, proposals: [{ id, name, input }], stopReason }: every
 // text block joined, every tool_use block a proposal, in order. Proposals are
 // untrusted — the caller validates them before anything is shown.
-export async function askCoach(state, turns, apiKey, now = Date.now()) {
+export async function askCoach(state, turns, apiKey) {
   const { url, headers, mode } = coachTransport(apiKey);
   const archived = state.status === 'archived';
 
@@ -121,7 +123,7 @@ export async function askCoach(state, turns, apiKey, now = Date.now()) {
     body: JSON.stringify({
       model: MODEL,
       max_tokens: MAX_TOKENS,
-      system: systemPrompt(state, now),
+      system: systemPrompt(state),
       // History is read-only: a past attempt is never offered a tool.
       ...(archived ? {} : { tools: TOOLS }),
       messages: turns,
