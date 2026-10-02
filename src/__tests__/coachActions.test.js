@@ -205,9 +205,20 @@ describe('correct_day_total', () => {
   it.each([
     ['today, still being logged', { day: TODAY, count: 9 }, "that day isn't over yet"],
     ['an unlogged day', { day: '2026-09-30', count: 9 }, 'that day has no log to correct'],
-    ['below the pouches already logged', { day: '2026-09-29', count: 2 }, 'that total is below the pouches already logged that day'],
+    ['below the pouches already logged', { day: '2026-09-29', count: 2 }, "that's below what the day already shows — lower it from Calendar if it's wrong"],
   ])('%s', (_, input, reason) => {
     expect(reasonOf('correct_day_total', input)).toBe(reason);
+  });
+  it('never below what the day already shows, a correction included', () => {
+    // Two pouches, corrected up to 12 (over cap 8): a coach "correction" to 3
+    // would pull the day under cap and turn it green.
+    const taps = ['14', '15'].map((h) => ev('pouch', '2026-09-29', { ts: `2026-09-29T${h}:00:00.000Z` }));
+    const up = attempt([...taps, ev('correction', '2026-09-29', { ts: '2026-09-30T15:00:00.000Z', count: 12 })]);
+    expect(capForDay(plan, 2)).toBe(8);
+    expect(reasonOf('correct_day_total', { day: '2026-09-29', count: 3 }, up)).toBe("that's below what the day already shows — lower it from Calendar if it's wrong");
+    expect(reasonOf('correct_day_total', { day: '2026-09-29', count: 11 }, up)).toBe("that's below what the day already shows — lower it from Calendar if it's wrong");
+    expect(validateProposal(up, call('correct_day_total', { day: '2026-09-29', count: 12 }), NOW).ok).toBe(true);
+    expect(validateProposal(up, call('correct_day_total', { day: '2026-09-29', count: 14 }), NOW).ok).toBe(true);
   });
   it('a day after the plan ends', () => {
     const done = attempt([ev('pouch', '2026-09-30')], { plan: generatePlan({ pouchesPerDay: 9, mg: 6, lengthDays: 30, startDate: '2026-08-30', mealTimes: settings.mealTimes }) });

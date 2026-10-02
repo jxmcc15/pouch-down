@@ -8,7 +8,7 @@
 import { TRIGGERS } from './triggers.js';
 import { TOOLS, TOOL_NAMES, MAX_PROPOSALS, NOTE_MAX, COUNT_MAX, TOOL_INPUT_MAX, RESULT_MAX, livePouchesForPrompt, fmtAppDay } from './coachTools.js';
 import { resolveLate, fmtHM } from './latePouch.js';
-import { todayKey, dayNumberFor, isLogged, timedPouchesForDay, rawEventsForDay } from './store.js';
+import { todayKey, dayNumberFor, isLogged, pouchesForDay, rawEventsForDay } from './store.js';
 import { capForDay } from './plan.js';
 
 const isObj = (x) => !!x && typeof x === 'object' && !Array.isArray(x);
@@ -164,7 +164,10 @@ const BUILD = {
     const bad = dayProblem(state, day, today) ?? countProblem(count) ?? pastDayProblem(state, day, today);
     if (bad) return bad;
     if (!isLogged(state, day)) return 'that day has no log to correct';
-    if (count < timedPouchesForDay(state, day)) return 'that total is below the pouches already logged that day';
+    // Tighter than the app's own guard, which floors only at the timed pouches:
+    // the coach may never lower a day below what it shows now — an earlier
+    // correction or a backfill included — or an over-cap day could turn green.
+    if (count < pouchesForDay(state, day)) return "that's below what the day already shows — lower it from Calendar if it's wrong";
     return {
       verb: 'logCorrection', args: [{ day, count }],
       summary: parts(`Correct ${fmtAppDay(day)}`, `total ${count}`),
@@ -283,7 +286,8 @@ export function applyAction(api, action) {
 // A tool_use whose name the app doesn't have is left out of the replay, and so
 // is its tool_result: the proxy refuses any request naming a tool outside its
 // list, so one invented name would otherwise refuse every later turn of the
-// chat. Its card was already invalid and the coach already heard so.
+// chat. Dropping the pair keeps the replay legal; the live turn already
+// answered that call with an invalid tool_result.
 export function toTurns(messages) {
   const dropped = new Set();
   return messages.map((m) => {
