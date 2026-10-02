@@ -78,6 +78,20 @@ describe('renderLiveLog', () => {
     expect(md).toMatch(/\*\*Awards earned:\*\* .*7-day streak(,|$)/m);
     expect(md).not.toMatch(/null/);
   });
+
+  it('follows the live list: a voided pouch leaves used, an untimed-only day has no first pouch, a voided-only day is no log', () => {
+    const d1 = '2026-09-21', d2 = '2026-09-22', d3 = '2026-09-23';
+    const p1 = ev('pouch', d1), p2 = ev('pouch', d1), only = ev('pouch', d3);
+    const u = { ...ev('pouch', d2), ts: '2026-09-25T17:00:00.000Z', ctx: null, late: true, timeKnown: false, enteredAt: '2026-09-25T17:00:00.000Z' };
+    const v = (p) => ({ ...ev('void', p.day), target: p.id });
+    const root = { version: 2, device: { apiKey: '' }, activeAttemptId: 'a2', attempts: [{ ...a2, events: [p1, p2, v(p2), u, only, v(only)] }] };
+    const md = renderLiveLog(root, { exportedAt: '2026-09-25T17:00:00.000Z', now: new Date() });
+    const row = (d) => md.split('\n').find((l) => l.includes(`| ${d} |`));
+    // Day | Date | Cap | Used | Early | Over | First | Resisted | Sleep | Status
+    expect(row(d1)).toContain(`| ${d1} | 8 | 1 | 0 | 0 |`);
+    expect(row(d2)).toContain(`| ${d2} | 8 | 1 | 0 | 0 | — |`);
+    expect(row(d3)).toMatch(/\| no log \|$/);
+  });
 });
 
 // A backup is scored as of the moment the phone exported it. Scoring it by the

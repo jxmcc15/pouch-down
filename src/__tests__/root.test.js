@@ -596,3 +596,24 @@ describe('an inherited API key moves into the session, never back to storage', (
     expect(getKey()).toBe('');
   });
 });
+
+// No new clause in wellFormedEvent: the new fields are booleans and strings,
+// all renderable. The existing fixtures above still passing is the other half.
+describe('wellFormed accepts the late-pouch and void shapes without a new clause', () => {
+  const root = (events) => ({ ...freshRoot(), attempts: [{ ...attemptShape('a1'), events }] });
+  const base = { id: 'p', ts: '2026-10-01T21:30:00.000Z', tzOffsetMin: -300, day: '2026-10-01', type: 'pouch', trigger: null, ctx: null };
+  it('a timed late pouch and an untimed one pass', () => {
+    expect(wellFormed(root([{ ...base, late: true, enteredAt: '2026-10-02T02:05:11.000Z' }]))).toBe(true);
+    expect(wellFormed(root([{ ...base, ts: '2026-10-02T02:05:11.000Z', late: true, timeKnown: false, enteredAt: '2026-10-02T02:05:11.000Z' }]))).toBe(true);
+  });
+  it('a void passes, even with a non-string target (stored data that never matches a pouch)', () => {
+    const v = { id: 'v', ts: '2026-10-02T02:05:11.000Z', tzOffsetMin: -300, day: '2026-10-01', type: 'void', target: 'p', trigger: null };
+    expect(wellFormed(root([base, v]))).toBe(true);
+    expect(wellFormed(root([base, { ...v, target: 42 }]))).toBe(true);
+    expect(wellFormed(root([base, { ...v, target: null }]))).toBe(true);
+  });
+  it('an object where a renderable belongs still fails', () => {
+    expect(wellFormed(root([{ ...base, late: { yes: true } }]))).toBe(false);
+    expect(wellFormed(root([{ ...base, enteredAt: {} }]))).toBe(false);
+  });
+});

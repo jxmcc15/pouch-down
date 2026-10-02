@@ -3,8 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ShieldCheck, Moon, ChevronDown, PencilLine } from 'lucide-react';
 import { useApp } from '../state.jsx';
 import {
-  eventsForDay, pouchesForDay, asOfDay, dayNumberFor, dateForDayNumber,
-  statusForDay, fmtTime, triggersFor, reasonFor, timedPouchesForDay,
+  rawEventsForDay, pouchesForDay, asOfDay, dayNumberFor, dateForDayNumber,
+  statusForDay, fmtTime, triggersFor, reasonFor, timedPouchesForDay, pouchFlags,
 } from '../store.js';
 import { capForDay } from '../plan.js';
 import { pouchVerdict } from '../pouchVerdict.js';
@@ -68,14 +68,25 @@ function EventRow({ state, ev }) {
   const tagSeg = tags.length ? [<span key="g" className="faint">{tags.join(', ')}</span>] : [];
 
   if (ev.type === 'pouch') {
+    const { voided, late, untimed } = pouchFlags(state, ev);
     const v = pouchVerdict(state, ev);
     const slotLabel = asText(ev.ctx?.slotLabel);
     const note = asText(reasonFor(state, ev)?.note);
-    icon = <span style={{ width: 8, height: 8, borderRadius: '50%', background: v.color, display: 'block', opacity: 0.85 }} />;
+    // A mistake stays on the page — history the user corrected, not a slip.
+    // Its text is muted, not faint, so it stays readable under the strike; the
+    // strike and the faint "mistake" tag carry the meaning. Never red.
+    const dot = voided ? 'var(--fg-faint)' : v.color;
+    const struck = voided ? { color: 'var(--fg-muted)', textDecoration: 'line-through' } : undefined;
+    icon = <span style={{ width: 8, height: 8, borderRadius: '50%', background: dot, display: 'block', opacity: 0.85 }} />;
     segs = [
-      <span key="t" className="muted num">{fmtTime(ev)}</span>,
-      ...(slotLabel ? [<span key="s" className="muted">{slotLabel}</span>] : []),
-      <span key="v" style={{ color: v.color, fontWeight: 500 }}>{v.text}</span>,
+      // An untimed pouch's ts is when it was entered, not when it happened, so
+      // the clock gives way to "time unknown" — which is also its whole
+      // verdict, so the verdict segment is not drawn twice.
+      <span key="t" className="muted num" style={struck}>{untimed ? 'time unknown' : fmtTime(ev)}</span>,
+      ...(slotLabel ? [<span key="s" className="muted" style={struck}>{slotLabel}</span>] : []),
+      ...(untimed ? [] : [<span key="v" style={{ color: v.color, fontWeight: 500, ...struck }}>{v.text}</span>]),
+      ...(late ? [<span key="l" className="faint">added later</span>] : []),
+      ...(voided ? [<span key="x" className="faint">mistake</span>] : []),
       ...tagSeg,
       ...(note ? [<span key="n" className="faint" style={{ fontStyle: 'italic' }}>{note}</span>] : []),
     ];
@@ -118,8 +129,9 @@ function EventRow({ state, ev }) {
       <span key="c" className="muted num">Corrected total: {c} ({timed} timed)</span>,
     ];
   } else {
-    // `reason` events never render as lines — they show on their pouch via
-    // triggersFor + the note. Unknown types: never crash.
+    // `reason` and `void` events never render as lines — a reason shows on its
+    // pouch via triggersFor + the note; a void shows as the strike on its
+    // pouch. Unknown types: never crash.
     return null;
   }
 
@@ -135,8 +147,9 @@ function EventRow({ state, ev }) {
 
 // Rows are built ONLY for expanded days: this only mounts inside the open
 // <AnimatePresence> branch, so 60 collapsed sections never touch the event log.
+// The raw list, so a voided pouch is still drawn — struck — where it was logged.
 function DayRows({ state, dateStr }) {
-  const evs = [...eventsForDay(state, dateStr)].sort((a, b) => new Date(a.ts) - new Date(b.ts));
+  const evs = [...rawEventsForDay(state, dateStr)].sort((a, b) => new Date(a.ts) - new Date(b.ts));
   if (!evs.length) return <div className="tiny faint" style={{ padding: '2px 2px 12px' }}>nothing logged</div>;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: '2px 2px 12px' }}>

@@ -8,7 +8,7 @@
 // past on purpose (a price fixed in Settings, an honest backfill of a bad day),
 // so a badge whose celebration already played stays earned regardless.
 
-import { asOfDay, dayNumberFor, dateForDayNumber, eventsForDay, isLogged, pouchesForDay, dayCountsForStreak, classifyPouch } from './store.js';
+import { asOfDay, dayNumberFor, dateForDayNumber, eventsForDay, isLogged, pouchesForDay, dayCountsForStreak, classifyPouch, liveEvents } from './store.js';
 import { capForDay } from './plan.js';
 import { dayKeyOf } from './time.js';
 import { moneyCents } from './money.js';
@@ -78,7 +78,7 @@ export function awardsFor(state) {
   };
 
   // "First log of the attempt" — a log before Day 1 counts too.
-  const eventDays = [...new Set(state.events.map(dayKeyOf))].filter((d) => d <= asOf).sort();
+  const eventDays = [...new Set(liveEvents(state).map(dayKeyOf))].filter((d) => d <= asOf).sort();
   add('showed-up', 'bronze', 'Showed up', 'Your first log. Everything else is built on this.', eventDays.find((d) => isLogged(state, d)) ?? null);
 
   for (const [len, tier] of STREAKS) {
@@ -98,7 +98,7 @@ export function awardsFor(state) {
   add('came-back', 'silver', 'Came back', 'You missed a day and logged the next one. That is the whole skill.', back?.day ?? null);
 
   // Cravings count wherever they happen — before Day 1 and after quit day too.
-  const resisted = state.events.filter((e) => e.type === 'resisted' && dayKeyOf(e) <= asOf).map(dayKeyOf).sort();
+  const resisted = liveEvents(state).filter((e) => e.type === 'resisted' && dayKeyOf(e) <= asOf).map(dayKeyOf).sort();
   add('rode-it-out', 'bronze', 'Rode it out', 'A craving came and went without a pouch.', resisted[0] ?? null, resisted.length);
   add('rode-it-out-10', 'gold', 'Ten waves', 'Ten cravings ridden out. They pass whether you feed them or not.', resisted[9] ?? null, resisted.length / 10);
 

@@ -12,7 +12,7 @@ import { stageForDay, capForDay } from './plan.js';
 import {
   asOfDay, todayKey, dayKeyFor, dayNumberFor, dateForDayNumber, eventsForDay, isLogged,
   pouchesForDay, timedPouchesForDay, resistedForDay, streaks, classifyPouch, disciplineStats, checkinForDay,
-  fmtTime, localDateStr, triggersFor,
+  fmtTime, localDateStr, triggersFor, liveEvents,
 } from './store.js';
 import { moneyStats } from './money.js';
 import { awardsFor } from './awards.js';
@@ -135,7 +135,8 @@ function dayRow(state, n, { today, exportDay }) {
     const v = classifyPouch(state, e);
     if (v.bucket === 'early') early++;
     if (v.bucket === 'over-cap') over++;
-    if (first == null || Date.parse(e.ts) < Date.parse(first.ts)) first = e;
+    // an untimed pouch has no time to show; its ts is when it was entered
+    if (e.timeKnown !== false && (first == null || Date.parse(e.ts) < Date.parse(first.ts))) first = e;
   }
   const used = pouchesForDay(state, d);
   // A corrected day reads as the coach's table does: the real total, starred,
@@ -187,7 +188,7 @@ function attemptSection(state, { exportDay, shownThrough }) {
   );
 
   const triggers = {};
-  for (const e of state.events) for (const t of triggersFor(state, e)) triggers[t] = (triggers[t] || 0) + 1;
+  for (const e of liveEvents(state)) for (const t of triggersFor(state, e)) triggers[t] = (triggers[t] || 0) + 1;
   const top = Object.entries(triggers).sort((a, b) => b[1] - a[1]).slice(0, 5);
   lines.push(`- **Top triggers:** ${top.length ? top.map(([t, c]) => `${safeText(t)} (${c})`).join(', ') : 'none tagged'}`);
 

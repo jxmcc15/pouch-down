@@ -1,14 +1,17 @@
-import { classifyPouch } from './store.js';
+import { classifyPouch, fmtDuration } from './store.js';
 
 // Verdict text + color for a pouch, always via classifyPouch (which reconstructs
 // missing ctx for pre-stamp events). Colors: on-time green, early/over-cap amber,
-// baseline muted — over-cap stays plain amber, never alarm-red.
+// baseline and untimed muted — over-cap stays plain amber, never alarm-red.
 export function pouchVerdict(state, ev) {
   const v = classifyPouch(state, ev);
+  if (v.bucket === 'untimed') return { text: 'time unknown', color: 'var(--fg-muted)' };
   if (v.bucket === 'early') return { text: `${Math.abs(v.deltaMin ?? 0)}m early`, color: 'var(--amber)' };
   if (v.bucket === 'over-cap') return { text: 'over cap', color: 'var(--amber)' };
   if (v.bucket === 'baseline') return { text: 'baseline', color: 'var(--fg-muted)' };
-  // ≥1 matches TodayLog: a 0-minute delta reads "on time", not "on time +0m"
-  return { text: v.deltaMin >= 1 ? `on time +${v.deltaMin}m` : 'on time', color: 'var(--green)' };
+  // ≥1 matches TodayLog: a 0-minute delta reads "on time", not "on time +0m".
+  // An hour or more reads in hours (a late-added pouch can be hours past its
+  // slot): fmtDuration gives "5h 15m", and "45m" under an hour.
+  return { text: v.deltaMin >= 1 ? `on time +${fmtDuration(v.deltaMin * 60000)}` : 'on time', color: 'var(--green)' };
 }
 

@@ -14,7 +14,12 @@ export const TAG_WINDOW_MS = 15000;
 // back after logging. Its age can't be trusted, so it isn't "just logged".
 export const CLOCK_SKEW_MS = 5000;
 
+// When the event was WRITTEN. A tap's ts is that moment; a late pouch's ts is
+// when it happened, hours earlier, so it carries `enteredAt` as well. Undo and
+// the just-logged window read this, never ts alone.
+export const enteredAtOf = (ev) => ev.enteredAt ?? ev.ts;
+
 export function isJustLogged(ev, windowMs, now = Date.now()) {
-  const age = now - Date.parse(ev.ts);
-  return age >= -CLOCK_SKEW_MS && age <= windowMs; // NaN (bad ts) fails both
+  const age = now - Date.parse(enteredAtOf(ev));
+  return age >= -CLOCK_SKEW_MS && age <= windowMs; // NaN (bad stamp) fails both
 }

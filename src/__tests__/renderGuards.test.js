@@ -23,7 +23,32 @@ const hostile = [
   { id: 'r1', ts: `${DAY}T14:00:05.000Z`, tzOffsetMin: -300, day: DAY, type: 'reason', trigger: null, target: 'p1', triggers: [{ no: 1 }, 'stress'], note: { evil: true } },
   { id: 'x1', ts: `${DAY}T15:00:00.000Z`, tzOffsetMin: -300, day: DAY, type: 'resisted', trigger: { evil: true } },
   { id: 'c1', ts: `${DAY}T13:00:00.000Z`, tzOffsetMin: -300, day: DAY, type: 'checkin', trigger: null, source: 'manual', sleepQuality: { deep: true }, sleepHours: 'seven' },
+  // A string `late` and an object `enteredAt` are not a late pouch.
+  { id: 'p2', ts: `${DAY}T16:00:00.000Z`, tzOffsetMin: -300, day: DAY, type: 'pouch', trigger: null, ctx: null, late: 'yes', enteredAt: {} },
+  { id: 'p3', ts: `${DAY}T17:00:00.000Z`, tzOffsetMin: -300, day: DAY, type: 'pouch', trigger: null, ctx: null, late: true, timeKnown: false, enteredAt: `${DAY}T17:00:00.000Z` },
+  { id: 'p4', ts: `${DAY}T18:00:00.000Z`, tzOffsetMin: -300, day: DAY, type: 'pouch', trigger: null, ctx: null },
+  { id: 'v1', ts: `${DAY}T18:30:00.000Z`, tzOffsetMin: -300, day: DAY, type: 'void', target: 'p4', trigger: null },
+  { id: 'v2', ts: `${DAY}T18:31:00.000Z`, tzOffsetMin: -300, day: DAY, type: 'void', target: { evil: true }, trigger: null },
 ];
+const count = (out, s) => out.split(s).length - 1;
+// The three row facts, each exactly once: p3 is the only real late pouch and
+// the only untimed one, p4 the only mistake. The strike sits on p4's time and
+// verdict — two spans, one row. A void draws no row of its own: without v2
+// (target not a string) the output is unchanged, and without v1 the strike
+// and "mistake" are gone with nothing left in their place.
+const expectRowFacts = (render) => {
+  const out = render();
+  expect(count(out, 'time unknown')).toBe(1);
+  expect(count(out, 'added later')).toBe(1);
+  expect(count(out, 'mistake')).toBe(1);
+  expect(count(out, 'line-through')).toBe(2);
+  app.state = { ...app.state, events: hostile.filter((e) => e.id !== 'v2') };
+  expect(render()).toBe(out);
+  app.state = { ...app.state, events: hostile.filter((e) => e.type !== 'void') };
+  const unvoided = render();
+  expect(count(unvoided, 'line-through')).toBe(0);
+  expect(count(unvoided, 'mistake')).toBe(0);
+};
 // The first stage carries the hostile name/tagline/label; the first stage
 // with a shopping line (still ahead on day 5) carries a hostile `what`.
 const shopAt = plan.stages.findIndex((s) => s.shopBefore);
@@ -60,6 +85,7 @@ describe('display components survive hostile stored strings', () => {
     const out = renderToStaticMarkup(createElement(TodayLog));
     expect(out).not.toContain('[object Object]');
     expect(out).toContain('stress'); // the one real trigger survives
+    expectRowFacts(() => renderToStaticMarkup(createElement(TodayLog)));
   });
   it('HistoryTimeline renders the day, its rows, and nothing garbled', () => {
     const out = renderToStaticMarkup(createElement(HistoryTimeline));
@@ -67,6 +93,8 @@ describe('display components survive hostile stored strings', () => {
     expect(out).not.toContain('NaN'); // sleepHours: 'seven' never reaches fmtHours
     expect(out).toContain('check-in');
     expect(out).toContain('resisted');
+    // today's section is open by default for a live attempt
+    expectRowFacts(() => renderToStaticMarkup(createElement(HistoryTimeline)));
   });
   it('PlanView renders every stage, with the hostile name and slot label blank', () => {
     // Meal times only matter to PlanView's footer; the other screens read them

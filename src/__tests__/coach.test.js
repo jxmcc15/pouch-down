@@ -92,6 +92,7 @@ describe('coach prompt — honest about what it can do', () => {
     expect(system).toContain('cannot add, change, backfill or tag');
     expect(system).toContain('Never claim a change was made');
     expect(system).toContain('Fix this day');
+    expect(system).toContain("Fix this day (add a pouch you missed, with its time or 'unknown'; mark an accidental tap as a mistake; correct a past total; add reasons)");
     expect(system).not.toMatch(/\byour\b/i);
   });
 

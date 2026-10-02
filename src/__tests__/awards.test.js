@@ -204,3 +204,42 @@ describe('kept-25 and the Money card read the same cents', () => {
     expect(get(s, 'kept-25')).toMatchObject({ earned: true, earnedOn: '2026-10-03' });
   });
 });
+
+describe('voids and untimed pouches', () => {
+  const voidOf = (p) => ({ id: `v${++seq}`, ts: '2026-09-25T17:00:00.000Z', tzOffsetMin: -300, day: p.day, type: 'void', target: p.id, trigger: null });
+  it('a celebrated award survives a void that un-derives it (latched, earnedOn null)', () => {
+    // honest-yellow: day 1 at 9 > cap 8 — then the ninth pouch is voided
+    const evs = pouches('2026-09-21', 9);
+    expect(get(attempt(evs), 'honest-yellow')).toMatchObject({ earned: true, earnedOn: '2026-09-21' });
+    const voided = [...evs, voidOf(evs[8])];
+    expect(get(attempt(voided), 'honest-yellow').earned).toBe(false); // not celebrated → truly un-derived
+    expect(get(attempt(voided, { celebratedAwards: ['honest-yellow'] }), 'honest-yellow')).toMatchObject({ earned: true, earnedOn: null, progress: 1 });
+  });
+  it('a day with an untimed pouch is never allOnTime', () => {
+    // a settled day whose every tap is at or after its slot earns on-the-clock;
+    // swap one tap for an untimed pouch and it doesn't. Without the untimed
+    // bucket its ctx would be derived from the entry time — after every slot.
+    const D = '2026-09-21';
+    const stage = plan.stages[0];
+    const at = (h) => `${D}T${String(h).padStart(2, '0')}:00:00.000Z`;
+    const onTime = stage.slots.slice(0, stage.pouchesPerDay).map((s, i) => ({ ...ev('pouch', D), ts: at(12 + i), ctx: { nth: i + 1, cap: stage.pouchesPerDay, slotId: s.id, slotLabel: s.label, slotAt: at(11 + i), firstSlotAt: at(11) } }));
+    expect(get(attempt(onTime), 'on-the-clock').earned).toBe(true);
+    const u = { ...ev('pouch', D), ts: '2026-09-25T17:00:00.000Z', ctx: null, late: true, timeKnown: false, enteredAt: '2026-09-25T17:00:00.000Z' };
+    expect(get(attempt([...onTime.slice(1), u]), 'on-the-clock').earned).toBe(false);
+  });
+  it('day-zero: a mistaken tap on quit day, voided, leaves the day at zero', () => {
+    vi.setSystemTime(new Date('2026-12-20T18:00:00.000Z')); // the day after quit day, so it is settled
+    const Q = plan.quitDate;
+    const tap = ev('pouch', Q);
+    const held = ev('resisted', Q);
+    expect(get(attempt([held]), 'day-zero')).toMatchObject({ earned: true, earnedOn: Q });
+    expect(get(attempt([tap, held]), 'day-zero').earned).toBe(false);
+    expect(get(attempt([tap, held, voidOf(tap)]), 'day-zero')).toMatchObject({ earned: true, earnedOn: Q });
+  });
+  it('day-zero: a quit day whose only tap is voided is silence, not zero', () => {
+    vi.setSystemTime(new Date('2026-12-20T18:00:00.000Z'));
+    const tap = ev('pouch', plan.quitDate);
+    // the void leaves nothing live on the day, and silence is never success
+    expect(get(attempt([tap, voidOf(tap)]), 'day-zero').earned).toBe(false);
+  });
+});
