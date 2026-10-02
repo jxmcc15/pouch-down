@@ -223,6 +223,72 @@ describe('appendChatTurn — coach chats saved with the attempt', () => {
     app().api.appendChatTurn(null, { user: 'hi', assistant: 'hello' });
     expect(events()).toEqual([]);
   });
+
+  // ── what the coach proposed, and how each card ended (2026-10-02) ──
+  const ACT = { name: 'add_late_pouch', summary: 'Add a pouch · Thu Sep 24 · 4:30 PM · boredom' };
+  const OUT = { ...ACT, outcome: 'saved' };
+
+  it('actions ride on the coach message, outcomes on the user message', () => {
+    const id = app().api.appendChatTurn(null, { user: 'had one at 4:30', assistant: 'Confirm and it is in.', actions: [ACT] });
+    app().api.appendChatTurn(id, { user: 'Confirmed: Add a pouch · Thu Sep 24 · 4:30 PM · boredom', assistant: '4:30 is in.', outcomes: [OUT] });
+    const [u1, c1, u2, c2] = chats()[0].messages;
+    expect(u1).not.toHaveProperty('outcomes');
+    expect(c1.actions).toEqual([ACT]);
+    expect(u2.outcomes).toEqual([OUT]);
+    expect(c2).not.toHaveProperty('actions');
+  });
+
+  it('a coach reply that is only cards saves with blank words; with no cards it is still refused', () => {
+    expect(app().api.appendChatTurn(null, { user: 'log one', assistant: '', actions: [ACT] })).toEqual(expect.any(String));
+    expect(chats()[0].messages[1]).toEqual({ role: 'assistant', text: '', ts: new Date(T0).toISOString(), actions: [ACT] });
+    expect(app().api.appendChatTurn(null, { user: 'log one', assistant: '', actions: 'nope' })).toBeNull();
+  });
+
+  it('a refused or invalid outcome keeps its reason; extra fields are not stored', () => {
+    const refused = { name: 'fill_missed_day', summary: 'Fill in Tue Sep 22 · 7 pouches · streak kept', outcome: 'refused', reason: "the app wouldn't save it", extra: 'x' };
+    app().api.appendChatTurn(null, { user: "Didn't save: …", assistant: 'That one did not save.', outcomes: [refused] });
+    expect(chats()[0].messages[0].outcomes).toEqual([{ name: 'fill_missed_day', summary: refused.summary, outcome: 'refused', reason: refused.reason }]);
+  });
+
+  it.each([
+    ['actions not a list', { actions: { name: 'x', summary: 'y' } }],
+    ['an empty list', { actions: [] }],
+    ['six entries', { actions: Array.from({ length: 6 }, () => ACT) }],
+    ['a summary that is not text', { actions: [{ name: 'x', summary: 5 }] }],
+    ['a summary over 200 characters', { actions: [{ name: 'x', summary: 's'.repeat(201) }] }],
+    ['a name over 40 characters', { actions: [{ name: 'n'.repeat(41), summary: 'y' }] }],
+    ['an outcome outside the five', { outcomes: [{ ...OUT, outcome: 'done' }] }],
+    ['a reason that is not text', { outcomes: [{ ...OUT, outcome: 'refused', reason: { why: 1 } }] }],
+  ])('%s → dropped; the words still save, nothing throws', (_, extra) => {
+    expect(app().api.appendChatTurn(null, { user: 'hi', assistant: 'hello', ...extra })).toEqual(expect.any(String));
+    const [u, c] = chats()[0].messages;
+    expect(u).not.toHaveProperty('outcomes');
+    expect(c).not.toHaveProperty('actions');
+  });
+});
+
+describe('logBackfill and the live logs say no when nothing was written', () => {
+  it('a logged day, a day outside the plan, today: null and no event', () => {
+    seed(withEvents([ev('pouch', Y)]));
+    expect(app().api.logBackfill({ day: Y, count: 3, streak: 'keep' })).toBeNull(); // already logged
+    expect(app().api.logBackfill({ day: '2026-08-31', count: 3, streak: 'keep' })).toBeNull(); // before Day 1
+    expect(app().api.logBackfill({ day: '2026-09-24', count: 3, streak: 'keep' })).toBeNull(); // today
+    expect(app().api.logBackfill({ day: '2026-09-22', count: 2.5, streak: 'keep' })).toBeNull();
+    expect(app().api.logBackfill({ day: '2026-09-22', count: 3, streak: 'maybe' })).toBeNull();
+    expect(events()).toHaveLength(1);
+  });
+  it('an unlogged past day: the id of the event that landed', () => {
+    seed(withEvents([]));
+    const id = app().api.logBackfill({ day: '2026-09-22', count: 3, streak: 'keep' });
+    expect(events()).toEqual([expect.objectContaining({ id, type: 'backfill', day: '2026-09-22', count: 3, streak: 'keep' })]);
+  });
+  it('the same day twice in one tick: the second is null', () => {
+    seed(withEvents([]));
+    const { api } = app();
+    expect(api.logBackfill({ day: '2026-09-22', count: 3, streak: 'keep' })).toEqual(expect.any(String));
+    expect(app().api.logBackfill({ day: '2026-09-22', count: 3, streak: 'keep' })).toBeNull();
+    expect(events()).toHaveLength(1);
+  });
 });
 
 describe('read-only and unreadable storage: every new mutation is a no-op returning null', () => {
@@ -237,6 +303,10 @@ describe('read-only and unreadable storage: every new mutation is a no-op return
     expect(app().api.logCorrection({ day: Y, count: 9 })).toBeNull();
     expect(app().api.logReason({ target: p.id, triggers: ['stress'] })).toBeNull();
     expect(app().api.appendChatTurn(null, { user: 'hi', assistant: 'hello' })).toBeNull();
+    expect(app().api.logPouch('stress')).toBeNull();
+    expect(app().api.logResisted(null)).toBeNull();
+    expect(app().api.logCheckin({ sleepQuality: 3 })).toBeNull();
+    expect(app().api.logBackfill({ day: '2026-09-22', count: 3, streak: 'keep' })).toBeNull();
     expect(app().state.events).toHaveLength(1);
     expect(app().state.chats).toEqual([]);
   });
