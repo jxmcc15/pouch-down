@@ -162,7 +162,9 @@ export default function CoachSheet({ onClose, openSettings }) {
         setMessages((cur) => [...cur, coach]);
         saveTurn(api, chatIdRef, { user: auto.text, assistant: coach.text, outcomes, actions: actionsOf(coach.cards) });
       }, (e) => {
-        setError(errorCopy(e));
+        // The cards' writes already landed: say so first, so a failed reply
+        // never reads as a failed save.
+        setError(m.cards.some((c) => c.status === 'saved') ? "Saved — the coach couldn't answer just now." : errorCopy(e));
         // The follow-up rolls back and isn't retried on its own; the cards keep
         // their states (the events are saved), and their results lead the next
         // thing the user types.
@@ -173,7 +175,9 @@ export default function CoachSheet({ onClose, openSettings }) {
 
   const send = async (text) => {
     const words = text.trim();
-    if (!words || busy) return;
+    // Not while a confirmed card is still being written: its skip would land
+    // on a pouch that saved, and the coach would hear "skipped".
+    if (!words || busy || queue.length) return;
     setError(null);
     // Typing past pending cards skips them; whatever the coach hasn't been told
     // about the newest cards leads this turn, before the words.
@@ -193,8 +197,8 @@ export default function CoachSheet({ onClose, openSettings }) {
     setMessages(next);
     setInput('');
     setBusy(true);
+    const chainBefore = chain;
     setChain(0);
-    setQueue([]);
     try {
       const coach = coachMessage(state, readOnly, await askCoach(state, toTurns(next), getKey()));
       setMessages((cur) => [...cur, coach]);
@@ -206,6 +210,9 @@ export default function CoachSheet({ onClose, openSettings }) {
       setMessages((cur) => cur.filter((x) => x !== mine).map((x, k) => (k === i && owes(m)
         ? { ...x, answered: false, cards: x.cards.map((c) => (passed.includes(c.toolUseId) && c.status === 'skipped' ? { ...c, status: 'pending' } : c)) }
         : x)));
+      // The chain count comes back too: a failed turn at the cap must not
+      // start a follow-up nobody asked for.
+      setChain(chainBefore);
       setInput(text);
     } finally {
       setBusy(false);
@@ -391,7 +398,7 @@ export default function CoachSheet({ onClose, openSettings }) {
                 className="btn btn-accent"
                 style={{ minWidth: 52, padding: 0 }}
                 whileTap={{ scale: 0.94 }}
-                disabled={busy || !input.trim()}
+                disabled={busy || queue.length > 0 || !input.trim()}
                 aria-label="Send"
               >
                 <SendHorizontal size={19} />

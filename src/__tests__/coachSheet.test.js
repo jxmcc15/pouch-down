@@ -167,7 +167,56 @@ describe('CoachSheet — the coach hears how it went', () => {
     await flush();
     const tree = render();
     expect(cards(tree)[0].card.status).toBe('saved');
-    expect(walk(tree, (n) => n.props.role === 'alert')[0].props.children).toBe("Couldn't reach the coach: offline");
+    // The save landed; only the reply didn't. The banner says so, in that order.
+    expect(walk(tree, (n) => n.props.role === 'alert')[0].props.children).toBe("Saved — the coach couldn't answer just now.");
     expect(askCoach).toHaveBeenCalledTimes(2); // held: no automatic retry
+  });
+});
+
+describe('CoachSheet — a typed turn never races a confirm', () => {
+  const type = (words) => {
+    walk(render(), (n) => n.type === 'input')[0].props.onChange({ target: { value: words } });
+  };
+  const submit = (tree) => walk(tree, (n) => n.type === 'form')[0].props.onSubmit({ preventDefault() {} });
+
+  it('Enter while a confirmed card is still being written sends nothing and skips nothing', async () => {
+    const [card] = cards(await opened([pouchNow('toolu_1')]));
+    askCoach.mockResolvedValue({ text: 'In.', proposals: [], stopReason: 'end_turn' });
+    type('later');
+    card.onConfirm();
+    const writing = render(); // drawn with the card queued; its effect writes the pouch
+    expect(walk(writing, (n) => n.props['aria-label'] === 'Send')[0].props.disabled).toBe(true);
+    submit(writing); // Enter lands before the next render
+    const after = cards(render());
+    expect(api.logPouch).toHaveBeenCalledTimes(1);
+    expect(after[0].card.status).toBe('saved');
+    expect(askCoach.mock.calls.every(([, turns]) => turns.at(-1).content !== 'later')).toBe(true);
+  });
+
+  it('a failed typed turn at the follow-up cap starts no follow-up of its own', async () => {
+    let [card] = cards(await opened([pouchNow('toolu_0')]));
+    // Three automatic follow-ups in a row, each answered with one more card.
+    for (let k = 1; k <= 3; k++) {
+      askCoach.mockResolvedValueOnce({ text: `Round ${k}.`, proposals: [pouchNow(`toolu_${k}`)], stopReason: 'tool_use' });
+      card.onConfirm();
+      render();
+      render();
+      await flush();
+      [card] = cards(render()).filter((c) => c.card.status === 'pending');
+    }
+    expect(askCoach).toHaveBeenCalledTimes(4);
+    card.onConfirm(); // the cap: this one waits for James's words
+    render();
+    render();
+    expect(askCoach).toHaveBeenCalledTimes(4);
+    askCoach.mockRejectedValueOnce(new Error('offline'));
+    type('and now?');
+    submit(render());
+    await flush();
+    render();
+    render();
+    await flush();
+    expect(askCoach).toHaveBeenCalledTimes(5); // the typed turn only
+    expect(walk(render(), (n) => n.type === 'input')[0].props.value).toBe('and now?');
   });
 });
